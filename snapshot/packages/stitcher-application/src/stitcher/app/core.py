@@ -5,11 +5,20 @@ from stitcher.scanner import parse_source_code
 from stitcher.io import StubGenerator
 
 
+from stitcher.config import load_config_from_path
+
 class StitcherApp:
     def __init__(self, root_path: Path):
         self.root_path = root_path
         # The app 'has a' generator, it uses it as a tool.
         self.generator = StubGenerator()
+
+    def run_from_config(self) -> List[Path]:
+        """
+        Loads config, discovers files, and generates stubs.
+        """
+        # TODO: Implement config loading and file discovery
+        return []
 
     def run_generate(self, files: List[Path]) -> List[Path]:
         """

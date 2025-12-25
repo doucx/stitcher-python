@@ -1,4 +1,5 @@
 import pytest
+import shutil
 from pathlib import Path
 from textwrap import dedent
 
@@ -32,3 +33,31 @@ def test_app_scan_and_generate_single_file(tmp_path):
     assert "def greet(name: str) -> str:" in pyi_content
     assert '"""Returns a greeting."""' in pyi_content
     assert "..." in pyi_content
+
+
+def test_app_run_from_config(tmp_path):
+    # 1. Arrange: Copy the fixture project into a temporary directory
+    fixture_root = Path(__file__).parent.parent / "fixtures" / "sample_project"
+    project_root = tmp_path / "sample_project"
+    shutil.copytree(fixture_root, project_root)
+
+    # 2. Act
+    app = StitcherApp(root_path=project_root)
+    # This new method should discover config and run generation
+    generated_files = app.run_from_config()
+
+    # 3. Assert
+    main_pyi = project_root / "src" / "app" / "main.pyi"
+    helpers_pyi = project_root / "src" / "app" / "utils" / "helpers.pyi"
+    test_pyi = project_root / "tests" / "test_helpers.pyi"
+
+    assert main_pyi.exists()
+    assert helpers_pyi.exists()
+    assert not test_pyi.exists() # Crucially, this should NOT be generated
+
+    assert main_pyi in generated_files
+    assert helpers_pyi in generated_files
+
+    main_content = main_pyi.read_text()
+    assert "def start():" in main_content
+    assert '"""Starts the application."""' in main_content
