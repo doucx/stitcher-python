@@ -1,84 +1,119 @@
 简要回答：
-好的，我看到问题了。这是一个细微的格式化错误，但非常关键。
+好的，我们现在从单元测试升级到集成测试。这将是项目的第一个端到端 (E2E) 测试，它不仅验证各个组件的逻辑，还验证它们之间的协同工作以及对文件系统的实际操作。
 
-**错误**：我们的 `StubGenerator` 目前对所有函数（无论有无 docstring）都生成多行格式。
-**预期**：测试用例（`expected_pyi`）遵循一个常见的 `.pyi` 风格约定——对于没有 docstring 的简短函数（如 `__init__`），其函数体 `...` 应放在同一行。
+**RED 阶段**：我们将编写一个测试，它创建一个临时的 Python 源文件，然后调用 `stitcher-application`（我们还没实现）去扫描它并在旁边生成一个 `.pyi` 文件。
 
-我们将修复 `_generate_function` 的逻辑来处理这种情况。
-
-## [WIP] fix(io): 调整 StubGenerator 以支持单行函数格式
-
-### 错误分析
-`test_generate_simple_pyi` 测试失败的原因在于 `StubGenerator._generate_function` 的实现。它总是将函数体 `...` 放在新的一行并进行缩进。然而，该测试的“黄金标准”输出要求 `__init__` 方法（因为它没有提供 docstring）被格式化为单行：`def __init__(self, val: float) -> None: ...`。这导致了字符串比对的失败。
+## [WIP] test(e2e): 添加 Application 层端到端集成测试 (Red Phase)
 
 ### 用户需求
-修复 `StubGenerator` 的格式化逻辑，使其能够根据 docstring 的有无来决定函数的输出格式，从而通过测试。
+开始 Application 层的开发。首先创建一个 E2E 集成测试，该测试通过验证从源文件到 `.pyi` 文件的完整生成流程，来驱动 `StitcherApp` 类的设计与实现。
 
 ### 评论
-这是一个对 `.pyi` 文件代码风格的典型优化。通过区分处理，我们生成的存根文件将更紧凑、更易读，更符合社区的最佳实践。
+**测试策略**：
+我们将使用 `pytest` 的 `tmp_path` fixture 来创建一个隔离的测试环境。
+1.  **Arrange**: 在 `tmp_path` 中写入一个 `source.py` 文件。
+2.  **Act**: 初始化 `StitcherApp` 并调用其 `run_scan_and_generate(file_path)` 方法。
+3.  **Assert**: 检查 `source.pyi` 是否被创建，且内容包含预期的函数签名和文档字符串。
+
+这个测试不仅验证了逻辑，还隐式地验证了文件 I/O 操作。
 
 ### 目标
-1.  修改 `packages/stitcher-io/src/stitcher/io/stub_generator.py` 中的 `_generate_function` 方法。
-2.  当 `FunctionDef` 对象**没有** `docstring` 时，生成单行格式。
-3.  当 `FunctionDef` 对象**有** `docstring` 时，维持现有的多行格式。
-4.  确保所有测试通过。
+1.  创建 `tests/integration/test_end_to_end.py`。
+2.  编写 `test_app_scan_and_generate_single_file` 测试用例。
+3.  引用 `stitcher.app.StitcherApp`（即使它还不存在）。
+4.  运行 `pytest` 并预期失败。
 
 ### 基本原理
-通过一个简单的 `if/else` 条件分支，我们可以轻松实现这两种格式化路径，从而满足测试的精确要求。
+通过在集成层进行 TDD，我们确保了所有组件（Scanner, IO, Config, App）能够正确地“缝合”在一起，形成一个可交付的功能。
 
 ### 标签
-#intent/fix #flow/ready #priority/high
-#comp/io #scope/core #ai/instruct
-#task/domain/implementation #task/object/stub-generator #task-action/refine
+#intent/tooling #flow/ready #priority/high
+#comp/tests #comp/app #scope/core #ai/instruct
+#task/domain/testing #task/object/e2e-tests #task/action/create-case
 #task/state/continue #task/status/active
 
 ---
 
 ### Script
 
-#### Acts 1: 修复函数生成逻辑
-我们将重构 `_generate_function` 方法，使其能够处理单行和多行两种情况。
+#### Acts 1: 创建集成测试文件 (RED)
+~~~~~act
+write_file
+tests/integration/test_end_to_end.py
+~~~~~
+~~~~~python
+import pytest
+from pathlib import Path
+from textwrap import dedent
+
+# This module doesn't exist yet, driving its creation
+from stitcher.app import StitcherApp
+
+def test_app_scan_and_generate_single_file(tmp_path):
+    # 1. Arrange: Create a source python file
+    source_content = dedent("""
+        def greet(name: str) -> str:
+            \"\"\"Returns a greeting.\"\"\"
+            return f"Hello, {name}!"
+    """)
+    source_file = tmp_path / "greet.py"
+    source_file.write_text(source_content, encoding="utf-8")
+    
+    # 2. Act: Initialize App and run generation
+    app = StitcherApp(root_path=tmp_path)
+    # We expect this method to scan the file and generate a .pyi next to it
+    generated_files = app.run_generate(files=[source_file])
+    
+    # 3. Assert: Verify the .pyi file exists and has correct content
+    expected_pyi_path = tmp_path / "greet.pyi"
+    
+    assert expected_pyi_path.exists()
+    assert expected_pyi_path in generated_files
+    
+    pyi_content = expected_pyi_path.read_text(encoding="utf-8")
+    
+    # Verify core components are present
+    assert "def greet(name: str) -> str:" in pyi_content
+    assert '"""Returns a greeting."""' in pyi_content
+    assert "..." in pyi_content
+~~~~~
+
+#### Acts 2: 创建 App 占位符
+为了让导入不报错（或者是为了让测试更进一层），我们需要创建 `StitcherApp` 的骨架。
 
 ~~~~~act
-patch_file
-packages/stitcher-io/src/stitcher/io/stub_generator.py
+write_file
+packages/stitcher-application/src/stitcher/app/core.py
 ~~~~~
-~~~~~python.old
-        def_line = f"{indent}{prefix}def {func.name}({args_str}){ret_str}:"
-        lines.append(def_line)
+~~~~~python
+from pathlib import Path
+from typing import List
 
-        # Body
-        body_indent = self._indent(level + 1)
-        if func.docstring:
-            lines.append(self._format_docstring(func.docstring, level + 1))
-            lines.append(f"{body_indent}...")
-        else:
-            lines.append(f"{body_indent}...")
-            
-        return "\n".join(lines)
+class StitcherApp:
+    def __init__(self, root_path: Path):
+        self.root_path = root_path
+
+    def run_generate(self, files: List[Path]) -> List[Path]:
+        """
+        Scans the given files and generates .pyi stubs for them.
+        Returns the list of generated .pyi file paths.
+        """
+        # TODO: Implement orchestration logic
+        return []
 ~~~~~
-~~~~~python.new
-        def_line = f"{indent}{prefix}def {func.name}({args_str}){ret_str}:"
 
-        # Body
-        if func.docstring:
-            lines.append(def_line)
-            lines.append(self._format_docstring(func.docstring, level + 1))
-            lines.append(f"{self._indent(level + 1)}...")
-        else:
-            # For functions without docstrings, use a single line format.
-            lines.append(f"{def_line} ...")
-            
-        return "\n".join(lines)
+~~~~~act
+write_file
+packages/stitcher-application/src/stitcher/app/__init__.py
+~~~~~
+~~~~~python
+__path__ = __import__("pkgutil").extend_path(__path__, __name__)
+
+from .core import StitcherApp
+
+__all__ = ["StitcherApp"]
 ~~~~~
 
 ### 下一步建议
-运行 `pytest`。现在所有测试都应该通过了。
-
-我们已经成功地构建并验证了 `Spec` -> `Scanner` -> `IO` 的核心数据流。
-
-下一步是进入 **Application Layer** 的开发。我们将：
-1.  **编写一个集成测试**: 这个测试将不再手动构造 IR，而是提供一个真实的 Python 源文件路径，调用 `Application` 层的方法，然后断言在文件系统上生成了正确的 `.pyi` 文件。
-2.  **实现 `stitcher-application`**: 创建一个 `StitcherApp` 类，它会调用 `Scanner` 来解析文件，然后将得到的 `ModuleDef` 传递给 `StubGenerator` 来生成内容，最后将内容写入文件。
-
-这会将我们所有的独立组件**“缝合”**在一起，形成一个可用的端到端工作流。
+运行 `pytest`。测试将因断言失败（返回空列表或文件不存在）而失败。
+接下来，我们将进入 **GREEN** 阶段：在 `StitcherApp.run_generate` 中编排 Scanner 和 StubGenerator，真正地实现文件生成逻辑。
