@@ -14,7 +14,8 @@ from stitcher.spec import (
 class IRBuildingVisitor(cst.CSTVisitor):
     def __init__(self):
         self.functions: List[FunctionDef] = []
-        # Future: attributes, classes, etc.
+        self.classes: List[ClassDef] = []
+        # Future: attributes, etc.
 
     def visit_FunctionDef(self, node: cst.FunctionDef) -> Optional[bool]:
         # 1. Extract Name
@@ -53,6 +54,41 @@ class IRBuildingVisitor(cst.CSTVisitor):
 
         # Don't visit children for now (to avoid collecting nested functions into the top level)
         # In a real implementation, we need a stack to handle nesting.
+        return False
+
+    def visit_ClassDef(self, node: cst.ClassDef) -> Optional[bool]:
+        # 1. Extract Name
+        class_name = node.name.value
+
+        # 2. Extract Docstring
+        docstring = node.get_docstring()
+        if isinstance(docstring, bool):
+            docstring = None
+
+        # 3. Extract Bases
+        bases = []
+        dummy_module = cst.Module([])
+        for base in node.bases:
+            bases.append(dummy_module.code_for_node(base.value))
+
+        # 4. Recursively visit the class body to find methods/attributes
+        body_visitor = IRBuildingVisitor()
+        # The class body is a cst.IndentedBlock, which has a 'body' attribute (tuple of statements)
+        # We wrap it in a dummy module to visit it.
+        class_body_node = cst.Module(body=node.body.body)
+        class_body_node.visit(body_visitor)
+
+        # 5. Build the ClassDef object
+        class_def = ClassDef(
+            name=class_name,
+            bases=bases,
+            docstring=docstring,
+            methods=body_visitor.functions,
+            attributes=body_visitor.attributes,
+        )
+        self.classes.append(class_def)
+
+        # We have handled the children, so prevent the main visitor from descending further
         return False
 
     def _parse_parameters(self, params: cst.Parameters) -> List[Argument]:
@@ -132,5 +168,6 @@ def parse_source_code(source_code: str, file_path: str = "") -> ModuleDef:
         file_path=file_path,
         docstring=cst_module.get_docstring() if isinstance(cst_module.get_docstring(), str) else None,
         functions=visitor.functions,
-        # classes and attributes to be added
+        classes=visitor.classes,
+        # attributes to be added
     )
