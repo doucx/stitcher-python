@@ -1,85 +1,35 @@
 简要回答：
-好的，我们现在从单元测试升级到集成测试。这将是项目的第一个端到端 (E2E) 测试，它不仅验证各个组件的逻辑，还验证它们之间的协同工作以及对文件系统的实际操作。
+测试失败在意料之中。现在进入 **GREEN** 阶段，我们将为 `StitcherApp` 注入生命，实现其作为**编排者 (Orchestrator)** 的核心职责：调用 `Scanner` 解析源码，然后将产出的 IR 传递给 `Generator` 生成 `.pyi` 文件，并最终写入磁盘。
 
-**RED 阶段**：我们将编写一个测试，它创建一个临时的 Python 源文件，然后调用 `stitcher-application`（我们还没实现）去扫描它并在旁边生成一个 `.pyi` 文件。
-
-## [WIP] test(e2e): 添加 Application 层端到端集成测试 (Red Phase)
+## [WIP] feat(app): 实现 Application 层的核心编排逻辑 (Green Phase)
 
 ### 用户需求
-开始 Application 层的开发。首先创建一个 E2E 集成测试，该测试通过验证从源文件到 `.pyi` 文件的完整生成流程，来驱动 `StitcherApp` 类的设计与实现。
+通过实现 `StitcherApp.run_generate` 方法的完整逻辑，使 `test_app_scan_and_generate_single_file` 端到端集成测试通过。
 
 ### 评论
-**测试策略**：
-我们将使用 `pytest` 的 `tmp_path` fixture 来创建一个隔离的测试环境。
-1.  **Arrange**: 在 `tmp_path` 中写入一个 `source.py` 文件。
-2.  **Act**: 初始化 `StitcherApp` 并调用其 `run_scan_and_generate(file_path)` 方法。
-3.  **Assert**: 检查 `source.pyi` 是否被创建，且内容包含预期的函数签名和文档字符串。
-
-这个测试不仅验证了逻辑，还隐式地验证了文件 I/O 操作。
+这是我们首次将 `scanner` 和 `io` 这两个独立的组件“缝合”在一起。`StitcherApp` 的职责非常清晰：它不包含复杂的业务逻辑，只负责协调其他组件完成一个完整的工作流。我们将在 `__init__` 中实例化 `StubGenerator`，使其成为 `StitcherApp` 的一个工具，这是一种简单的依赖注入形式。
 
 ### 目标
-1.  创建 `tests/integration/test_end_to_end.py`。
-2.  编写 `test_app_scan_and_generate_single_file` 测试用例。
-3.  引用 `stitcher.app.StitcherApp`（即使它还不存在）。
-4.  运行 `pytest` 并预期失败。
+1.  修改 `packages/stitcher-application/src/stitcher/app/core.py`。
+2.  导入 `parse_source_code` 和 `StubGenerator`。
+3.  在 `run_generate` 方法中，实现读取文件、调用解析器、调用生成器、写入文件的完整流程。
+4.  运行 `pytest` 并确认测试通过。
 
 ### 基本原理
-通过在集成层进行 TDD，我们确保了所有组件（Scanner, IO, Config, App）能够正确地“缝合”在一起，形成一个可交付的功能。
+`StitcherApp` 是用户（或 CLI）与 Stitcher 核心库交互的主要入口点。它封装了从输入（文件路径）到输出（生成的 `.pyi` 文件）的整个过程，为上层提供了一个简洁、稳定的 API。
 
 ### 标签
-#intent/tooling #flow/ready #priority/high
-#comp/tests #comp/app #scope/core #ai/instruct
-#task/domain/testing #task/object/e2e-tests #task/action/create-case
+#intent/build #flow/ready #priority/high
+#comp/app #scope/core #ai/instruct
+#task/domain/implementation #task/object/orchestrator-logic #task/action/implement
 #task/state/continue #task/status/active
 
 ---
 
 ### Script
 
-#### Acts 1: 创建集成测试文件 (RED)
-~~~~~act
-write_file
-tests/integration/test_end_to_end.py
-~~~~~
-~~~~~python
-import pytest
-from pathlib import Path
-from textwrap import dedent
-
-# This module doesn't exist yet, driving its creation
-from stitcher.app import StitcherApp
-
-def test_app_scan_and_generate_single_file(tmp_path):
-    # 1. Arrange: Create a source python file
-    source_content = dedent("""
-        def greet(name: str) -> str:
-            \"\"\"Returns a greeting.\"\"\"
-            return f"Hello, {name}!"
-    """)
-    source_file = tmp_path / "greet.py"
-    source_file.write_text(source_content, encoding="utf-8")
-    
-    # 2. Act: Initialize App and run generation
-    app = StitcherApp(root_path=tmp_path)
-    # We expect this method to scan the file and generate a .pyi next to it
-    generated_files = app.run_generate(files=[source_file])
-    
-    # 3. Assert: Verify the .pyi file exists and has correct content
-    expected_pyi_path = tmp_path / "greet.pyi"
-    
-    assert expected_pyi_path.exists()
-    assert expected_pyi_path in generated_files
-    
-    pyi_content = expected_pyi_path.read_text(encoding="utf-8")
-    
-    # Verify core components are present
-    assert "def greet(name: str) -> str:" in pyi_content
-    assert '"""Returns a greeting."""' in pyi_content
-    assert "..." in pyi_content
-~~~~~
-
-#### Acts 2: 创建 App 占位符
-为了让导入不报错（或者是为了让测试更进一层），我们需要创建 `StitcherApp` 的骨架。
+#### Acts 1: 实现 StitcherApp 的核心逻辑
+我们将用完整的实现替换掉 `core.py` 中的占位符。
 
 ~~~~~act
 write_file
@@ -89,31 +39,48 @@ packages/stitcher-application/src/stitcher/app/core.py
 from pathlib import Path
 from typing import List
 
+from stitcher.scanner import parse_source_code
+from stitcher.io import StubGenerator
+
+
 class StitcherApp:
     def __init__(self, root_path: Path):
         self.root_path = root_path
+        # The app 'has a' generator, it uses it as a tool.
+        self.generator = StubGenerator()
 
     def run_generate(self, files: List[Path]) -> List[Path]:
         """
         Scans the given files and generates .pyi stubs for them.
         Returns the list of generated .pyi file paths.
         """
-        # TODO: Implement orchestration logic
-        return []
-~~~~~
-
-~~~~~act
-write_file
-packages/stitcher-application/src/stitcher/app/__init__.py
-~~~~~
-~~~~~python
-__path__ = __import__("pkgutil").extend_path(__path__, __name__)
-
-from .core import StitcherApp
-
-__all__ = ["StitcherApp"]
+        generated_files: List[Path] = []
+        
+        for source_file in files:
+            # 1. Read the source content
+            content = source_file.read_text(encoding="utf-8")
+            
+            # 2. Scan the content to get the IR
+            # Pass the file path for better error messages in the future
+            module_def = parse_source_code(content, file_path=str(source_file))
+            
+            # 3. Generate the .pyi string from the IR
+            pyi_content = self.generator.generate(module_def)
+            
+            # 4. Determine output path and write the file
+            output_path = source_file.with_suffix(".pyi")
+            output_path.write_text(pyi_content, encoding="utf-8")
+            
+            generated_files.append(output_path)
+            
+        return generated_files
 ~~~~~
 
 ### 下一步建议
-运行 `pytest`。测试将因断言失败（返回空列表或文件不存在）而失败。
-接下来，我们将进入 **GREEN** 阶段：在 `StitcherApp.run_generate` 中编排 Scanner 和 StubGenerator，真正地实现文件生成逻辑。
+运行 `pytest`。现在所有测试（单元测试和集成测试）都应该通过了。
+
+我们已经成功验证了单文件处理的核心工作流。下一步是扩展 `StitcherApp` 以支持更真实的使用场景，这将涉及到 `stitcher-config` 包的实现：
+
+1.  **编写新的集成测试**: 创建一个测试，模拟一个包含 `pyproject.toml` 配置和多个源文件的项目结构。
+2.  **实现配置加载**: 在 `StitcherApp` 中集成 `stitcher-config`，让它能够读取 `[tool.stitcher]` 配置，例如 `scan_paths`。
+3.  **实现目录扫描**: 扩展 `run_generate`（或创建一个新方法），使其能够根据配置自动发现和处理目录下的所有 Python 文件。
