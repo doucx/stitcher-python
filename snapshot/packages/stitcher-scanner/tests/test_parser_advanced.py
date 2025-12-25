@@ -1,46 +1,3 @@
-简要回答：
-明白。我们将**批量创建**一组覆盖关键边缘情况的测试用例，一次性将测试覆盖率推高。这将包括 `Attribute` 解析、`Decorator` 处理、复杂 Type Hints 以及 `async/await` 场景。
-
-这会让测试套件在短时间内“大面积飘红”，然后在下一步我们通过完善 `IRBuildingVisitor` 来“收复失地”。
-
-## [WIP] test(scanner): 批量添加复杂场景测试用例 (Red Phase)
-
-### 用户需求
-一次性添加大量覆盖复杂场景的测试用例，包括：
-1.  **Attributes**: 模块级和类级变量（带/不带类型注解）。
-2.  **Decorators**: 装饰器堆叠，包括带参数的装饰器。
-3.  **Static/Class Method**: `@staticmethod` 和 `@classmethod` 的识别。
-4.  **Complex Types**: `Union`, `List[int]`, `Optional["ForwardRef"]` 等复杂类型注解。
-
-### 评论
-这是一种“激进”的 TDD 策略，适合当我们对目标行为非常清楚时。我们将创建 `test_parser_advanced.py` 来容纳这些新测试，保持 `test_parser_basic.py` 的简洁。
-
-### 目标
-1.  创建 `packages/stitcher-scanner/tests/test_parser_advanced.py`。
-2.  编写 `test_parse_attributes`。
-3.  编写 `test_parse_decorators`。
-4.  编写 `test_parse_special_methods` (static/class methods)。
-5.  编写 `test_parse_complex_types`。
-
-### 基本原理
-这些测试定义了 `Scanner` 在真实世界复杂代码库中的预期行为，是其迈向“生产级”的关键一步。
-
-### 标签
-#intent/tooling #flow/ready #priority/high
-#comp/tests #comp/scanner #scope/core #ai/instruct
-#task/domain/testing #task/object/scanner-tests #task/action/create-case
-#task/state/continue #task/status/active
-
----
-
-### Script
-
-#### Acts 1: 创建高级测试文件
-~~~~~act
-write_file
-packages/stitcher-scanner/tests/test_parser_advanced.py
-~~~~~
-~~~~~python
 import pytest
 from stitcher.spec import Attribute, FunctionDef, ModuleDef, ClassDef
 from stitcher.scanner import parse_source_code
@@ -158,8 +115,3 @@ def process(
     assert arg_cb.annotation == 'Optional["Callable"]'
     
     assert func.return_annotation == "Tuple[int, int]"
-~~~~~
-
-### 下一步建议
-运行 `pytest`。预期应该有 4 个测试失败（Attribute 解析未实现，Decorators 字段未填充，is_static/is_class 逻辑未实现）。
-然后我们将通过一次大型的 `parser.py` 重构来通过所有这些测试。
