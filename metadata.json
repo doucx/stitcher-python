@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat(scanner): 实现 Attribute 解析与高级函数元数据提取 (Green Phase)", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766670658.9615343, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test(io): 添加 StubGenerator 单元测试 (Red Phase)", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766670743.1214147, "duration_ms": 0}}
