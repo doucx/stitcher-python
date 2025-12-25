@@ -12,6 +12,7 @@ else:
 @dataclass
 class StitcherConfig:
     scan_paths: List[str] = field(default_factory=list)
+    plugins: Dict[str, str] = field(default_factory=dict)
 
 
 def _find_pyproject_toml(search_path: Path) -> Path:
@@ -25,21 +26,40 @@ def _find_pyproject_toml(search_path: Path) -> Path:
     raise FileNotFoundError("Could not find pyproject.toml in any parent directory.")
 
 
+def _find_plugins(workspace_root: Path) -> Dict[str, str]:
+    """Scans the entire workspace for stitcher plugins in pyproject.toml files."""
+    plugins: Dict[str, str] = {}
+    for toml_file in workspace_root.rglob("**/pyproject.toml"):
+        try:
+            with open(toml_file, "rb") as f:
+                data = tomllib.load(f)
+            
+            entry_points = data.get("project", {}).get("entry-points", {})
+            stitcher_plugins = entry_points.get("stitcher.plugins", {})
+            if stitcher_plugins:
+                plugins.update(stitcher_plugins)
+        except Exception:
+            # Silently ignore parsing errors in other projects' toml files
+            pass
+    return plugins
+
+
 def load_config_from_path(search_path: Path) -> StitcherConfig:
-    """Finds and loads stitcher config from pyproject.toml."""
+    """Finds and loads stitcher config from pyproject.toml, and discovers plugins."""
+    plugins = _find_plugins(search_path)
+    
     try:
         config_path = _find_pyproject_toml(search_path)
+        with open(config_path, "rb") as f:
+            data = tomllib.load(f)
+        stitcher_data: Dict[str, Any] = data.get("tool", {}).get("stitcher", {})
     except FileNotFoundError:
-        # If no config file, return a default config.
-        # This allows running stitcher on projects without explicit setup.
-        return StitcherConfig()
+        # If no root config file, still return discovered plugins with default scan_paths
+        return StitcherConfig(plugins=plugins)
 
-    with open(config_path, "rb") as f:
-        data = tomllib.load(f)
-
-    stitcher_data: Dict[str, Any] = data.get("tool", {}).get("stitcher", {})
     
     # Create config with data from file, falling back to defaults.
     return StitcherConfig(
-        scan_paths=stitcher_data.get("scan_paths", [])
+        scan_paths=stitcher_data.get("scan_paths", []),
+        plugins=plugins
     )
