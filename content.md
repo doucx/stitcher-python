@@ -1,56 +1,74 @@
-## [WIP] fix(app): Prevent generation of root-level __init__.pyi
+太棒了！测试全部通过。这意味着我们的 `stitcher-python` 现在已经具备了处理动态插件的核心能力。
 
-### 错误分析
-集成测试失败，提示实际生成了 4 个文件，而预期是 3 个。
-多出来的文件是位于项目根目录的 `__init__.pyi`。
-这是因为在 `_process_plugins` 方法中，构建中间目录的循环 `range(len(module_path_parts) + 1)` 从 0 开始迭代。
-当 `i=0` 时，`parts[:0]` 为空列表，导致 `Path(*[], "__init__.py")` 解析为根目录下的 `__init__.py`。
-在大多数情况下，我们不应该将项目根目录本身标记为一个 Python 包。
+我将生成一个 `[COMMIT]` 计划，将这些里程碑式的变更持久化到仓库中。
+
+## [COMMIT] feat: implement plugin discovery and dynamic introspection
 
 ### 用户需求
-修复 `_process_plugins` 逻辑，使其只为插件路径中的子目录创建 `__init__.pyi`，而跳过根目录。
+完成任务 1.4：集成插件发现机制。系统现在可以发现、内省并为通过 `stitcher.plugins` 入口点注册的动态插件生成类型存根。
 
 ### 评论
-这是一个经典的 Off-by-one 错误。
+这是项目的一个重大里程碑。通过引入动态内省和虚拟模块树，我们证明了中间表示 (IR) 层的强大灵活性。现在的架构不仅能看穿静态代码，还能看穿运行时的动态扩展。这也为即将开始的第二阶段（文档解耦）奠定了坚实的基础。
 
 ### 目标
-1.  修改 `stitcher.app.core` 中的 `_process_plugins` 方法，将循环范围修改为从 1 开始。
+1.  提交所有涉及插件发现、动态内省和应用层编排的代码变更。
+2.  提交相应的单元测试和集成测试，确保功能的长期稳定性。
 
 ### 基本原理
-当 `parts=["A", "B", "func"]` 时，我们需要 `A/__init__.py` 和 `A/B/__init__.py`。
-`module_path_parts` 为 `["A", "B"]`。
-我们需要切片 `[:1]` 和 `[:2]`。
-因此循环应为 `range(1, len(module_path_parts) + 1)`。
+此提交涵盖了从配置加载（`stitcher-config`）到动态解析（`stitcher-scanner`）再到全局编排（`stitcher-application`）的完整链路。我们在实现过程中通过 TDD 确保了质量，并修复了关于函数命名和路径生成的细节 bug。至此，路线图中的“第一阶段：核心引擎与 MVP”已基本完成。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/application #scope/core #ai/refine #task/domain/plugins #task/object/orchestration-layer #task/action/bug-fix #task/state/continue
+#intent/build #flow/ready #priority/high #comp/config #comp/scanner #comp/application #comp/tests #concept/executor #scope/core #ai/instruct #task/domain/plugins #task/object/discovery-mechanism #task/action/implementation #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 修复循环范围
+#### Acts 1: 提交插件机制相关变更
+
+我们将把受影响的包和测试目录添加到暂存区并提交。
 
 ~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
+git_add
+packages/stitcher-config
+packages/stitcher-scanner
+packages/stitcher-application
+tests/integration
 ~~~~~
-~~~~~python.old
-                func_path = Path(*module_path_parts, f"{func_file_name}.py")
-                
-                # Ensure all intermediate __init__.py modules exist
-                for i in range(len(module_path_parts) + 1):
-                    init_path = Path(*parts[:i], "__init__.py")
-                    if not virtual_modules[init_path].file_path:
-                         virtual_modules[init_path].file_path = init_path.as_posix()
+
+~~~~~act
+git_commit
 ~~~~~
-~~~~~python.new
-                func_path = Path(*module_path_parts, f"{func_file_name}.py")
-                
-                # Ensure all intermediate __init__.py modules exist
-                # Start from 1 to avoid creating __init__.py at the root level (parts[:0])
-                for i in range(1, len(module_path_parts) + 1):
-                    init_path = Path(*parts[:i], "__init__.py")
-                    if not virtual_modules[init_path].file_path:
-                         virtual_modules[init_path].file_path = init_path.as_posix()
+~~~~~text
+feat: implement plugin discovery and dynamic introspection
+
+This commit completes Task 1.4 of the roadmap, enabling stitcher-python to
+handle dynamic plugin architectures.
+
+Key changes:
+- config: Implemented recursive scanning of pyproject.toml files to discover
+  'stitcher.plugins' entry points.
+- scanner: Added a dynamic inspector using the 'inspect' module to extract
+  signatures and docstrings from live Python objects.
+- application: Refactored StitcherApp to orchestrate a dual-source workflow:
+  1. Static scanning of source files via AST.
+  2. Dynamic introspection of registered plugins.
+- application: Implemented virtual module tree building to materialize .pyi
+  namespaces for plugins that don't have corresponding source files.
+- io: Enhanced StubGenerator/App to ensure intermediate directories and 
+  __init__.pyi files are created for nested plugin namespaces.
+
+The system now produces high-fidelity .pyi stubs for both static and 
+dynamic code, fulfilling the core vision of the project.
 ~~~~~
+
+### 下一步建议
+
+恭喜！我们已经圆满完成了第一阶段的所有核心开发任务。
+
+现在，我们准备进入 **第二阶段：文档解耦与工作流完善**。这一阶段的重点是让 `stitcher` 能够从外部 YAML 文件中获取文档，从而实现代码与文档的彻底解耦。
+
+我建议的第一个任务是：
+*   **任务 2.1: 实现文档 I/O 模块 (stitcher-io)**: 定义 `.stitcher.yaml` 的格式，并编写能将 `ModuleDef` 导出为 YAML 以及从 YAML 回填 `ModuleDef` 的逻辑。
+
+如果你准备好了，我们可以开始任务 2.1 的设计和 TDD 流程。
