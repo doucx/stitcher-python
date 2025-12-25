@@ -16,10 +16,49 @@ class IRBuildingVisitor(cst.CSTVisitor):
         # Module level containers
         self.functions: List[FunctionDef] = []
         self.classes: List[ClassDef] = []
+        self.attributes: List[Attribute] = []
         
         # Scope management: A stack of currently active ClassDefs being built.
         # If stack is empty, we are at module level.
         self._class_stack: List[ClassDef] = []
+        self._dummy_module = cst.Module([]) # Helper for code generation
+
+    def _add_attribute(self, attr: Attribute):
+        if self._class_stack:
+            self._class_stack[-1].attributes.append(attr)
+        else:
+            self.attributes.append(attr)
+
+    def visit_AnnAssign(self, node: cst.AnnAssign) -> Optional[bool]:
+        # Handle: x: int = 1
+        if not isinstance(node.target, cst.Name):
+            return False
+            
+        name = node.target.value
+        annotation = self._dummy_module.code_for_node(node.annotation.annotation).strip()
+        
+        value = None
+        if node.value:
+            value = self._dummy_module.code_for_node(node.value).strip()
+            
+        self._add_attribute(Attribute(name=name, annotation=annotation, value=value))
+        return False
+
+    def visit_Assign(self, node: cst.Assign) -> Optional[bool]:
+        # Handle: x = 1
+        # Only handle simple assignment to a single name for now
+        if len(node.targets) != 1:
+            return False
+            
+        target = node.targets[0].target
+        if not isinstance(target, cst.Name):
+            return False
+            
+        name = target.value
+        value = self._dummy_module.code_for_node(node.value).strip()
+        
+        self._add_attribute(Attribute(name=name, annotation=None, value=value))
+        return False
 
     def visit_ClassDef(self, node: cst.ClassDef) -> Optional[bool]:
         # 1. Extract Name
@@ -80,7 +119,7 @@ class IRBuildingVisitor(cst.CSTVisitor):
         # 3. Extract Return Annotation
         return_annotation = None
         if node.returns:
-            return_annotation = cst.Module([]).code_for_node(node.returns.annotation).strip()
+            return_annotation = self._dummy_module.code_for_node(node.returns.annotation).strip()
 
         # 4. Extract Arguments
         args = self._parse_parameters(node.params)
@@ -88,13 +127,31 @@ class IRBuildingVisitor(cst.CSTVisitor):
         # 5. Extract Async
         is_async = node.asynchronous is not None
 
-        # 6. Build Object
+        # 6. Extract Decorators and Special Flags
+        decorators = []
+        is_static = False
+        is_class = False
+
+        for dec in node.decorators:
+            dec_code = self._dummy_module.code_for_node(dec.decorator).strip()
+            decorators.append(dec_code)
+            
+            # Simple check for staticmethod/classmethod
+            if dec_code == "staticmethod":
+                is_static = True
+            elif dec_code == "classmethod":
+                is_class = True
+
+        # 7. Build Object
         func_def = FunctionDef(
             name=func_name,
             args=args,
             return_annotation=return_annotation,
             docstring=docstring,
             is_async=is_async,
+            decorators=decorators,
+            is_static=is_static,
+            is_class=is_class,
         )
 
         # 7. Add to appropriate scope
@@ -187,5 +244,5 @@ def parse_source_code(source_code: str, file_path: str = "") -> ModuleDef:
         docstring=cst_module.get_docstring() if isinstance(cst_module.get_docstring(), str) else None,
         functions=visitor.functions,
         classes=visitor.classes,
-        # attributes to be added
+        attributes=visitor.attributes,
     )
