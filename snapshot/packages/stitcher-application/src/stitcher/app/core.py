@@ -17,8 +17,29 @@ class StitcherApp:
         """
         Loads config, discovers files, and generates stubs.
         """
-        # TODO: Implement config loading and file discovery
-        return []
+        config = load_config_from_path(self.root_path)
+        
+        if not config.scan_paths:
+            # Handle case where config is empty or not found.
+            # We could default to scanning the root path, or do nothing.
+            # Let's do nothing for now, to be explicit.
+            return []
+            
+        files_to_scan = []
+        for scan_path_str in config.scan_paths:
+            scan_path = self.root_path / scan_path_str
+            if scan_path.is_dir():
+                # Recursively find all .py files in the directory
+                files_to_scan.extend(scan_path.rglob("*.py"))
+            elif scan_path.is_file():
+                # If it's a single file, add it
+                files_to_scan.append(scan_path)
+        
+        # Deduplicate in case of overlapping paths
+        unique_files = sorted(list(set(files_to_scan)))
+        
+        # Delegate the actual generation to the already tested method
+        return self.run_generate(files=unique_files)
 
     def run_generate(self, files: List[Path]) -> List[Path]:
         """

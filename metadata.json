@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix(build): 配置 Pytest 以忽略 fixtures 目录", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766671490.1572053, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat(app,config): 实现基于配置的项目扫描 (Green Phase)", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766671646.158093, "duration_ms": 0}}
