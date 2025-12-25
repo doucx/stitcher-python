@@ -1,52 +1,57 @@
-好的，我们正式启动 `stitcher-io` 的 TDD 循环。
+好的，测试失败，我们已进入 **GREEN** 阶段。
 
-**RED 阶段**：我们将为 `.pyi` 文件生成器（`StubGenerator`）编写第一个测试。这个测试的核心是定义一个“黄金标准”——对于一个给定的、手动构造的 `ModuleDef` IR 对象，我们期望生成什么样的 `.pyi` 文件内容。
+现在，我们将实现 `StubGenerator` 的核心逻辑。这涉及到遍历 `ModuleDef` IR 对象的各个部分，并根据 `.pyi` 文件的语法规则，将它们格式化为字符串。我们将创建一系列辅助方法来处理不同的 IR 节点（如函数、类、属性），以保持代码的清晰和模块化。
 
-## [WIP] test(io): 添加 StubGenerator 单元测试 (Red Phase)
+## [WIP] feat(io): 实现 StubGenerator 逻辑 (Green Phase)
 
 ### 用户需求
-采用 TDD 模式开始 `stitcher-io` 的开发。首先创建一个测试用例，该用例通过断言一个手动创建的 `ModuleDef` 对象能被 `StubGenerator` 转换为一个精确的、格式正确的 `.pyi` 字符串，来定义 `StubGenerator` 的行为契约。
+为了通过 `test_generate_simple_pyi` 测试，需要在 `stitcher-io` 中实现 `StubGenerator.generate` 方法的完整逻辑。该方法必须能够将一个 `ModuleDef` 对象正确地转换为符合 `.pyi` 语法规范的字符串。
 
 ### 评论
-这是一个完美的单元测试场景。通过手动构造 `ModuleDef`，我们**将 `stitcher-io` 的测试与 `stitcher-scanner` 的实现完全解耦**。无论 Scanner 未来如何变化，只要它产出的 IR 符合 `spec`，我们的 Generator 测试就依然有效。
-
-我们将使用 `textwrap.dedent` 来清晰地定义多行的期望输出，避免因缩进问题导致测试脆弱。
+**实现策略**：
+我们将采用“分而治之”的策略，为每一种 IR 节点（`FunctionDef`, `ClassDef`, `Attribute`, `Argument`）编写一个专门的生成器辅助方法。
+*   **Indentation**: 所有辅助方法都会接收一个 `indent_level` 参数，以正确处理类内部的缩进。
+*   **Function Body**: 我们将遵循 `.pyi` 的惯例：
+    *   如果函数/方法有文档字符串，则函数体为 `:\n    """docstring"""\n    ...`
+    *   如果函数/方法没有文档字符串，则函数体为 `: ...`，以保持简洁。
+*   **Attributes**: 在 `.pyi` 文件中，我们只声明变量的类型（`NAME: type`），而不包括其值。
 
 ### 目标
-1.  在 `packages/stitcher-io/tests/` 目录下创建测试文件 `test_stub_generator.py`。
-2.  在该文件中，手动构建一个包含模块文档、属性、函数和类的 `ModuleDef` 实例。
-3.  定义一个与该 `ModuleDef` 实例对应的、格式完美的 `.pyi` 字符串。
-4.  调用（尚未实现的）`StubGenerator.generate()` 并断言其输出与预期完全一致。
+1.  完整实现 `packages/stitcher-io/src/stitcher/io/stub_generator.py`。
+2.  创建 `_generate_function`, `_generate_class`, `_generate_attribute` 等辅助方法。
+3.  确保代码能够处理 `async`、装饰器、参数默认值、基类等所有测试用例中涉及的元素。
+4.  运行测试，确保变绿。
 
 ### 基本原理
-此测试驱动了 `StubGenerator` 的 API 设计 (`generate(module_def: ModuleDef) -> str`) 和其核心逻辑的实现。测试用例本身就是一份清晰的需求文档，详细说明了 IR 到 `.pyi` 字符串的转换规则。
+这个过程本质上是一个简单的“代码生成器”或“编译器后端”。它将结构化的中间表示（IR）转换为特定目标语言（`.pyi` 语法）的文本表示。
 
 ### 标签
-#intent/tooling #flow/ready #priority/high
-#comp/tests #comp/io #scope/core #ai/instruct
-#task/domain/testing #task/object/stub-generator-tests #task/action/create-case
+#intent/build #flow/ready #priority/high
+#comp/io #concept/generator #scope/core #ai/instruct
+#task/domain/implementation #task/object/stub-generator #task/action/implement
 #task/state/continue #task/status/active
 
 ---
 
 ### Script
 
-#### Acts 1: 创建测试目录和占位符实现
-我们首先创建测试目录和 `stub_generator.py` 文件，以便 `import` 能够找到目标模块。
-
-~~~~~act
-run_command
-~~~~~
-~~~~~
-mkdir -p packages/stitcher-io/tests
-~~~~~
+#### Acts 1: 实现 StubGenerator
+我们将完整地重写 `stub_generator.py` 文件。
 
 ~~~~~act
 write_file
 packages/stitcher-io/src/stitcher/io/stub_generator.py
 ~~~~~
 ~~~~~python
-from stitcher.spec import ModuleDef
+from typing import List
+from stitcher.spec import (
+    ModuleDef,
+    FunctionDef,
+    ClassDef,
+    Attribute,
+    Argument,
+    ArgumentKind,
+)
 
 
 class StubGenerator:
@@ -54,124 +59,119 @@ class StubGenerator:
         """
         Generates the content of a .pyi file from a ModuleDef IR.
         """
-        # TODO: Implement generation logic
-        return ""
-~~~~~
+        parts = []
 
-~~~~~act
-write_file
-packages/stitcher-io/src/stitcher/io/__init__.py
-~~~~~
-~~~~~python
-__path__ = __import__("pkgutil").extend_path(__path__, __name__)
+        if module.docstring:
+            parts.append(f'"""{module.docstring}"""')
 
-from .stub_generator import StubGenerator
-
-__all__ = ["StubGenerator"]
-~~~~~
-
-#### Acts 2: 编写 Generator 的测试用例 (RED)
-这是核心部分，我们在这里精确定义了生成器的目标。
-
-~~~~~act
-write_file
-packages/stitcher-io/tests/test_stub_generator.py
-~~~~~
-~~~~~python
-import pytest
-from textwrap import dedent
-from stitcher.spec import (
-    Argument,
-    ArgumentKind,
-    Attribute,
-    ClassDef,
-    FunctionDef,
-    ModuleDef,
-)
-from stitcher.io import StubGenerator
-
-
-def test_generate_simple_pyi():
-    # 1. Arrange: Manually construct a comprehensive ModuleDef IR object.
-    module_def = ModuleDef(
-        file_path="my_module.py",
-        docstring="This is a test module.",
-        attributes=[
-            Attribute(name="VERSION", annotation="str", value='"0.1.0"')
-        ],
-        functions=[
-            FunctionDef(
-                name="my_function",
-                args=[
-                    Argument(name="arg1", kind=ArgumentKind.POSITIONAL_OR_KEYWORD, annotation="int"),
-                    Argument(name="arg2", kind=ArgumentKind.POSITIONAL_OR_KEYWORD, annotation="str", default="'default'"),
-                ],
-                return_annotation="bool",
-                docstring="A test function.",
-                is_async=True,
-                decorators=["@my_decorator"],
-            )
-        ],
-        classes=[
-            ClassDef(
-                name="MyClass",
-                bases=["Base"],
-                docstring="A test class.",
-                attributes=[
-                    Attribute(name="CLASS_VAR", annotation="Optional[int]", value="None")
-                ],
-                methods=[
-                    FunctionDef(
-                        name="__init__",
-                        args=[
-                            Argument(name="self", kind=ArgumentKind.POSITIONAL_OR_KEYWORD),
-                            Argument(name="val", kind=ArgumentKind.POSITIONAL_OR_KEYWORD, annotation="float"),
-                        ],
-                        return_annotation="None",
-                    ),
-                    FunctionDef(
-                        name="do_work",
-                        args=[
-                            Argument(name="self", kind=ArgumentKind.POSITIONAL_OR_KEYWORD),
-                        ],
-                        return_annotation="str",
-                        docstring="Does some work.",
-                    )
-                ]
-            )
-        ]
-    )
-
-    # 2. Arrange: Define the expected golden .pyi output string.
-    expected_pyi = dedent("""
-        \"\"\"This is a test module.\"\"\"
+        if module.attributes:
+            if parts:
+                parts.append("")  # Add a blank line
+            for attr in module.attributes:
+                parts.append(self._generate_attribute(attr))
         
-        VERSION: str
+        if module.functions:
+            for func in module.functions:
+                if parts:
+                    parts.append("\n")
+                parts.append(self._generate_function(func))
+
+        if module.classes:
+            for cls in module.classes:
+                if parts:
+                    parts.append("\n")
+                parts.append(self._generate_class(cls))
+
+        return "\n".join(parts)
+
+    def _generate_attribute(self, attr: Attribute, indent_level: int = 0) -> str:
+        indent = "    " * indent_level
+        if attr.annotation:
+            return f"{indent}{attr.name}: {attr.annotation}"
+        return f"{indent}{attr.name}: ..."
+
+    def _generate_arguments(self, args: List[Argument]) -> str:
+        parts = []
+        for arg in args:
+            part = arg.name
+            if arg.annotation:
+                part += f": {arg.annotation}"
+            if arg.default:
+                part += f" = {arg.default}"
+            parts.append(part)
+        return ", ".join(parts)
+
+    def _generate_function(self, func: FunctionDef, indent_level: int = 0) -> str:
+        indent = "    " * indent_level
+        lines = []
+
+        # Decorators
+        for dec in func.decorators:
+            lines.append(f"{indent}{dec}")
         
-        @my_decorator
-        async def my_function(arg1: int, arg2: str = 'default') -> bool:
-            \"\"\"A test function.\"\"\"
-            ...
+        # Signature
+        signature = f"{indent}"
+        if func.is_async:
+            signature += "async "
+        signature += f"def {func.name}({self._generate_arguments(func.args)})"
+        if func.return_annotation:
+            signature += f" -> {func.return_annotation}"
+        
+        # Body
+        if func.docstring:
+            signature += ":"
+            lines.append(signature)
+            docstring_indent = "    " * (indent_level + 1)
+            lines.append(f'{docstring_indent}"""{func.docstring}"""')
+            lines.append(f"{docstring_indent}...")
+        else:
+            signature += ": ..."
+            lines.append(signature)
 
-        class MyClass(Base):
-            \"\"\"A test class.\"\"\"
-            CLASS_VAR: Optional[int]
-            
-            def __init__(self, val: float) -> None: ...
-            
-            def do_work(self) -> str:
-                \"\"\"Does some work.\"\"\"
-                ...
-    """).strip()
+        return "\n".join(lines)
 
-    # 3. Act
-    generator = StubGenerator()
-    generated_code = generator.generate(module_def).strip()
+    def _generate_class(self, cls: ClassDef, indent_level: int = 0) -> str:
+        indent = "    " * indent_level
+        lines = []
 
-    # 4. Assert
-    assert generated_code == expected_pyi
+        # Class header
+        bases = f"({', '.join(cls.bases)})" if cls.bases else ""
+        lines.append(f"{indent}class {cls.name}{bases}:")
+
+        child_indent_level = indent_level + 1
+        child_indent = "    " * child_indent_level
+        
+        # Docstring
+        if cls.docstring:
+            lines.append(f'{child_indent}"""{cls.docstring}"""')
+
+        # Attributes and methods
+        body_parts = []
+        if cls.attributes:
+            for attr in cls.attributes:
+                body_parts.append(self._generate_attribute(attr, child_indent_level))
+
+        if cls.methods:
+            for method in cls.methods:
+                if body_parts:
+                     # Add a blank line between attributes and first method, or between methods
+                     body_parts.append("")
+                body_parts.append(self._generate_function(method, child_indent_level))
+        
+        if not body_parts:
+            lines.append(f"{child_indent}...")
+        else:
+            lines.extend(body_parts)
+
+        return "\n".join(lines)
 ~~~~~
 
 ### 下一步建议
-运行 `pytest`。测试将因 `generate()` 返回空字符串而失败。
-接下来，我们将进入 **GREEN** 阶段：在 `StubGenerator` 中实现 IR 到字符串的转换逻辑，这会涉及大量的字符串拼接和格式化。
+运行 `pytest`。如果通过，我们的 `stitcher-io` 模块的核心功能就已经完成。
+
+接下来，我们将进入**任务 1.3: `stitcher generate` 命令 (MVP 版本)** 的实现。这意味着我们需要在 `stitcher-application` 层创建一个编排器，它会：
+1.  调用 `stitcher-scanner` 来解析文件。
+2.  将得到的 `ModuleDef` 传递给 `stitcher-io` 的 `StubGenerator`。
+3.  （下一步）将生成的字符串写入文件系统。
+
+我们将继续使用 TDD，为 `stitcher-application` 编写一个集成测试。
