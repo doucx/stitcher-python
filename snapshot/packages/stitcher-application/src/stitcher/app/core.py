@@ -51,7 +51,8 @@ class StitcherApp:
                 func_path = Path(*module_path_parts, f"{func_file_name}.py")
                 
                 # Ensure all intermediate __init__.py modules exist
-                for i in range(len(module_path_parts) + 1):
+                # Start from 1 to avoid creating __init__.py at the root level (parts[:0])
+                for i in range(1, len(module_path_parts) + 1):
                     init_path = Path(*parts[:i], "__init__.py")
                     if not virtual_modules[init_path].file_path:
                          virtual_modules[init_path].file_path = init_path.as_posix()
