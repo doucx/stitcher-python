@@ -37,16 +37,21 @@ class StitcherApp:
 
         for name, entry_point in plugins.items():
             try:
-                func_def = parse_plugin_entry(name, entry_point)
+                # The inspector now returns a FunctionDef with the *real* function name
+                func_def = parse_plugin_entry(entry_point)
                 
-                # Convert dot-separated name to a file path
+                # The logical name (key) determines the file path
                 parts = name.split(".")
                 
-                # The function itself goes into a file named after the last part
-                func_path = Path(*parts).with_suffix(".py")
+                # The function's definition goes into a .pyi file named after the last part
+                # e.g., "dynamic.utils" -> dynamic/utils.pyi
+                module_path_parts = parts[:-1]
+                func_file_name = parts[-1]
+                
+                func_path = Path(*module_path_parts, f"{func_file_name}.py")
                 
                 # Ensure all intermediate __init__.py modules exist
-                for i in range(len(parts)):
+                for i in range(len(module_path_parts) + 1):
                     init_path = Path(*parts[:i], "__init__.py")
                     if not virtual_modules[init_path].file_path:
                          virtual_modules[init_path].file_path = init_path.as_posix()
@@ -54,6 +59,9 @@ class StitcherApp:
                 # Add the function to its module
                 if not virtual_modules[func_path].file_path:
                     virtual_modules[func_path].file_path = func_path.as_posix()
+                
+                # Now we add the FunctionDef with the correct name ('dynamic_util')
+                # to the module determined by the key ('dynamic/utils.pyi')
                 virtual_modules[func_path].functions.append(func_def)
 
             except InspectionError as e:

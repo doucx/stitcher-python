@@ -36,13 +36,12 @@ def _get_annotation_str(annotation: Any) -> str:
     return str(annotation)
 
 
-def parse_plugin_entry(name: str, entry_point_str: str) -> FunctionDef:
+def parse_plugin_entry(entry_point_str: str) -> FunctionDef:
     """
     Dynamically imports and inspects a callable from an entry point string
     and converts it into a Stitcher FunctionDef IR object.
 
     Args:
-        name: The logical name of the plugin (from the entry point key).
         entry_point_str: The import string (e.g., "my_pkg.main:my_func").
 
     Returns:
@@ -84,9 +83,10 @@ def parse_plugin_entry(name: str, entry_point_str: str) -> FunctionDef:
 
     # Build FunctionDef
     return_annotation = _get_annotation_str(signature.return_annotation)
+    func_name = target_callable.__name__
 
     return FunctionDef(
-        name=name,
+        name=func_name,
         args=args,
         docstring=docstring,
         return_annotation=return_annotation or None,

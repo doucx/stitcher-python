@@ -43,11 +43,11 @@ def test_parse_plugin_entry_point(temp_module: str):
     into our FunctionDef IR.
     """
     # Act
-    func_def = parse_plugin_entry("sample.plugin", temp_module)
+    func_def = parse_plugin_entry(temp_module)
 
     # Assert
     assert isinstance(func_def, FunctionDef)
-    assert func_def.name == "sample.plugin" # Should use the name from the entry point key
+    assert func_def.name == "sample_plugin_func" # Should use the function's __name__
     assert func_def.docstring and "This is a sample plugin function" in func_def.docstring
     assert func_def.return_annotation == "str"
     assert not func_def.is_async
