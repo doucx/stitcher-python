@@ -1,38 +1,3 @@
-好的，为了巩固我们刚刚修复的逻辑，并防止未来对“私有成员文档”或“警告降级”策略的意外回归，我将创建一个专门的集成测试文件 `tests/integration/test_check_policy.py`。
-
-该测试文件将涵盖以下三个关键场景：
-1.  **私有成员合法性 (Allowed Extra)**: 验证代码中存在的私有成员如果在 YAML 中有文档，**不应**被视为多余（Extra），也**不应**产生警告。
-2.  **幽灵文档检测 (True Extra)**: 验证只有当 YAML 中的 Key 在代码中完全不存在（无论是公有还是私有）时，才报 Extra 错误。
-3.  **警告降级 (Warning Policy)**: 验证公开 API 缺失文档时，仅产生 Warning，且命令最终返回成功状态（非阻断）。
-
-## [WIP] test: 添加 check 策略回归测试
-
-### 用户需求
-创建一个测试集，专门用于验证 `stitcher check` 的宽松策略（私有成员允许文档化）和降级策略（缺失文档仅警告）是否按预期工作，并防止未来回归。
-
-### 评论
-将策略性测试与基础功能测试分离是一个好的实践。`test_check_command.py` 关注“能否检测到”，而新的 `test_check_policy.py` 关注“检测到后如何定性（Error vs Warning）”。
-
-### 目标
-创建 `tests/integration/test_check_policy.py`，包含针对上述三种策略场景的测试用例。
-
-### 基本原理
-利用 `stitcher-test-utils` 的 `WorkspaceFactory` 动态构建包含私有/公有成员的 Python 文件和对应的 YAML 文档，然后使用 `SpyBus` 拦截并断言消息的级别（Level）和内容（Params）。
-
-### 标签
-#intent/tooling #flow/ready #priority/medium #comp/tests #scope/core #ai/instruct #task/domain/testing #task/object/regression-suite #task/action/create #task/state/begin
-
----
-
-### Script
-
-#### Acts 1: 创建策略回归测试文件
-
-~~~~~act
-write_file
-tests/integration/test_check_policy.py
-~~~~~
-~~~~~python
 from stitcher.app import StitcherApp
 from stitcher.needle import L
 from stitcher.test_utils import SpyBus, WorkspaceFactory
@@ -156,7 +121,3 @@ def test_public_missing_triggers_warning_only(tmp_path, monkeypatch):
 
     spy_bus.assert_id_called(L.check.issue.missing, level="warning")
     spy_bus.assert_id_called(L.check.run.success_with_warnings, level="success")
-~~~~~
-
-### 下一步建议
-运行 `pytest tests/integration/test_check_policy.py` 以验证新测试通过。如果通过，我们将这些更改提交到代码库。
