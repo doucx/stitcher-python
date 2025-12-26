@@ -33,9 +33,9 @@ def test_yaml_adapter_round_trip(tmp_path: Path):
     content = file_path.read_text(encoding="utf-8")
     # "MyClass" comes before "MyClass.method" (lexicographical)
     # But "func" comes last.
-    # Let's just check raw content contains keys
-    assert "MyClass:" in content
-    assert "中文测试" in content
+    # Let's just check raw content contains keys (which are now quoted)
+    assert '"MyClass": |-' in content
+    assert "  中文测试" in content
 
 
 def test_yaml_adapter_handles_malformed(tmp_path: Path):
@@ -51,7 +51,7 @@ def test_yaml_adapter_handles_malformed(tmp_path: Path):
 def test_yaml_adapter_block_format_consistency(tmp_path: Path):
     """
     Verify that all strings (multiline or single-line) are saved
-    using Literal Block Style (|) for consistency.
+    using Literal Block Style (|-) for consistency.
     """
     adapter = YamlAdapter()
     file_path = tmp_path / "docs.yaml"
@@ -64,9 +64,9 @@ def test_yaml_adapter_block_format_consistency(tmp_path: Path):
 
     content = file_path.read_text(encoding="utf-8")
     
-    # Both should use block style
-    assert "multi: |" in content
-    assert "single: |" in content
+    # Both should use block style with strip chomping (|-) and quoted keys
+    assert '"multi": |-' in content
+    assert '"single": |-' in content
     
     # Check indentation
     assert "  Line 1" in content

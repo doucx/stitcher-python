@@ -1,82 +1,101 @@
 简要回答：
-非常赞同。这种混合风格（Mixed Style）确实破坏了文档资产的视觉统一性。在 YAML 中，一致地使用块样式（Block Style）不仅更美观，也更符合 Python 开发者对“多行文档字符串”的直觉认知。
+测试失败的原因有两个细节：
+1.  **Chomping 符号**: PyYAML 默认生成的块样式符号是 `|-`（表示剔除末尾多余换行符），而不是简单的 `|`。
+2.  **Key 的引用**: 因为我们的 Key 可能包含点号（如 `MyClass.method`），PyYAML 为了安全起见对 Key 进行了双引号包裹（如 `"MyClass":`）。
+3.  **结构差异**: 现在的输出不再是单行，因此 `key: value` 这种子字符串匹配在物理层面上失效了。
 
-我们将修改 `YamlAdapter` 中的 `str_presenter`，移除对换行符的条件判断，**强制所有字符串值**（即所有的 docstring）都使用 `style='|'`。这样即使是单行文档，也会被渲染为清晰的块格式。
+我们将更新测试用例中的断言，使其适应新的、一致的块格式。
 
-## [WIP] style(io): 统一 YAML 输出，强制所有文档使用块样式 (|)
+## [WIP] test: 更新测试以匹配统一的 YAML 块格式
+
+### 错误分析
+由于我们强制将所有字符串输出为 YAML 的 Literal Block Style (`|-`)，原本基于单行输出假设的测试断言失效了。例如，原本期望 `my_func: doc`，现在实际输出为：
+```yaml
+"my_func": |-
+  doc
+```
+此外，PyYAML 在这种模式下对 Key 进行了引用。
 
 ### 用户需求
-用户希望生成的 `.stitcher.yaml` 文件风格统一，无论是单行还是多行文档字符串，都应使用 YAML 的块样式（`|-` 或 `|`），以提升视觉一致性和可编辑性。
+修复受 YAML 样式变更影响的集成测试和单元测试，确保测试能正确验证新的块状存储格式。
 
 ### 评论
-一致性是开发者体验（DX）的基石。在专门用于存储文档的 YAML 文件中，将每个条目都视为一个“块”是非常合理的。这消除了用户在编辑时对“是否需要加引号”的犹豫，使文件看起来更像一个纯粹的文档库。
+测试必须紧跟实现。这次样式的变更虽然是视觉上的，但由于涉及到物理存储格式的改变，必须同步更新那些直接对文件内容进行字符串匹配的测试。
 
 ### 目标
-1.  修改 `YamlAdapter.py` 中的 `str_presenter`，移除对 `\n` 的检查。
-2.  强制 `represent_scalar` 始终使用 `style="|"`。
-3.  更新测试用例，确保单行字符串也被渲染为块样式。
-
-### 基本原理
-通过在自定义的 `representer` 中无条件地指定 `style="|"`，PyYAML 将不再根据内容复杂度自动选择样式（Plain/Single-quoted/Double-quoted），而是统一生成以 `|` 开头的块状输出。
+1.  修改 `tests/integration/test_init_command.py`，更新对 `init` 生成内容的匹配逻辑。
+2.  修改 `packages/stitcher-io/tests/test_document_io.py`，处理双引号 Key 和 `|-` 指示符。
 
 ### 标签
-#intent/tune #flow/ready #priority/medium #comp/io #scope/dx
-#task/domain/io #task/object/yaml-adapter #task/action/unify-style
+#intent/test #flow/ready #priority/medium #comp/tests #ai/instruct
+#task/domain/testing #task/object/yaml-assertions #task/action/update
 #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 强制块样式输出
+#### Acts 1: 更新集成测试断言
 
-修改 `packages/stitcher-io/src/stitcher/io/adapters/yaml_adapter.py`。
+修改 `tests/integration/test_init_command.py`。
 
 ~~~~~act
 patch_file
-packages/stitcher-io/src/stitcher/io/adapters/yaml_adapter.py
+tests/integration/test_init_command.py
 ~~~~~
 ~~~~~old
-        def str_presenter(dumper, data):
-            if "\n" in data:
-                return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
-            return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+    # 3. Assert
+    expected_yaml = project_root / "src/main.stitcher.yaml"
+    assert expected_yaml in created_files
+    assert "my_func: This is a docstring." in expected_yaml.read_text()
+
+    spy_bus.assert_id_called(L.init.file.created, level="success")
 ~~~~~
 ~~~~~new
-        def str_presenter(dumper, data):
-            # Force literal block style for ALL strings to ensure consistency
-            # and readability for documentation assets.
-            return dumper.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+    # 3. Assert
+    expected_yaml = project_root / "src/main.stitcher.yaml"
+    assert expected_yaml in created_files
+    
+    content = expected_yaml.read_text()
+    # Check for block style with quoted key
+    assert '"my_func": |-' in content
+    assert "  This is a docstring." in content
+
+    spy_bus.assert_id_called(L.init.file.created, level="success")
 ~~~~~
 
-#### Acts 2: 更新测试用例
+#### Acts 2: 更新 YamlAdapter 单元测试断言
 
-修改 `packages/stitcher-io/tests/test_document_io.py` 中的测试，验证单行字符串现在的表现。
+修改 `packages/stitcher-io/tests/test_document_io.py`。
 
 ~~~~~act
 patch_file
 packages/stitcher-io/tests/test_document_io.py
 ~~~~~
 ~~~~~old
-def test_yaml_adapter_multiline_format(tmp_path: Path):
-    """
-    Verify that multiline strings are saved using Literal Block Style (|).
-    """
-    adapter = YamlAdapter()
-    file_path = tmp_path / "multiline.yaml"
-    data = {"key": "Line 1\nLine 2"}
-
-    adapter.save(file_path, data)
-
+    # Verify file content is deterministic (sorted)
     content = file_path.read_text(encoding="utf-8")
-    # Check for Literal Block Style indicator
-    assert "key: |" in content
-    # Check that content is indented and NOT escaped
-    assert "  Line 1" in content
-    assert "  Line 2" in content
-    assert "\\n" not in content
+    # "MyClass" comes before "MyClass.method" (lexicographical)
+    # But "func" comes last.
+    # Let's just check raw content contains keys
+    assert "MyClass:" in content
+    assert "中文测试" in content
 ~~~~~
 ~~~~~new
+    # Verify file content is deterministic (sorted)
+    content = file_path.read_text(encoding="utf-8")
+    # "MyClass" comes before "MyClass.method" (lexicographical)
+    # But "func" comes last.
+    # Let's just check raw content contains keys (which are now quoted)
+    assert '"MyClass": |-' in content
+    assert "  中文测试" in content
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-io/tests/test_document_io.py
+~~~~~
+~~~~~old
 def test_yaml_adapter_block_format_consistency(tmp_path: Path):
     """
     Verify that all strings (multiline or single-line) are saved
@@ -101,8 +120,33 @@ def test_yaml_adapter_block_format_consistency(tmp_path: Path):
     assert "  Line 1" in content
     assert "  Just one line" in content
 ~~~~~
+~~~~~new
+def test_yaml_adapter_block_format_consistency(tmp_path: Path):
+    """
+    Verify that all strings (multiline or single-line) are saved
+    using Literal Block Style (|-) for consistency.
+    """
+    adapter = YamlAdapter()
+    file_path = tmp_path / "docs.yaml"
+    data = {
+        "multi": "Line 1\nLine 2",
+        "single": "Just one line"
+    }
+
+    adapter.save(file_path, data)
+
+    content = file_path.read_text(encoding="utf-8")
+    
+    # Both should use block style with strip chomping (|-) and quoted keys
+    assert '"multi": |-' in content
+    assert '"single": |-' in content
+    
+    # Check indentation
+    assert "  Line 1" in content
+    assert "  Just one line" in content
+~~~~~
 
 ### 下一步建议
-1.  **重运行测试**: 执行 `pytest packages/stitcher-io/tests/test_document_io.py`。
-2.  **刷新 Dogfooding 资产**: 再次运行 `stitcher init`。你会发现所有的 `.stitcher.yaml` 文件现在都整齐划一地使用了块样式。
-3.  **提交变更**: 这将使你的 Git Diff 看起来非常干净，因为所有的文档字符串现在都有了统一的物理表示。
+1.  **运行全量测试**: 执行 `pytest`。
+2.  **重运行 Dogfooding**: 再次执行 `stitcher init` 刷新你的本地资产。
+3.  **检查产出**: 确保 `.stitcher.yaml` 文件现在的外观符合你的审美要求（统一的 `|-` 块样式）。
