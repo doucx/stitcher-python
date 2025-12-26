@@ -1,325 +1,140 @@
-## [WIP] feat: Refactor locales to SST and finalize Needle runtime
+You've caught the bug perfectly. My apologies, the last refactoring plan correctly updated the runtime logic but failed to update the corresponding test, creating a mismatch. The test is now testing the old reality against the new code.
+
+Your analysis is spot on. The test failed because:
+1.  I refactored the `Needle` runtime to look for locales in a path like `<root_path>/locales/<lang>/`.
+2.  The test `test_needle_loading_and_fallback` is still creating a mock directory at `<root_path>/stitcher/needle/<lang>/`.
+3.  Consequently, the `Needle` instance running in the test scans an empty directory, finds no keys, and correctly falls back to identity (`'cli.hello'`), causing the assertion to fail.
+
+The fix is to update the test to build the correct mock file structure that the new runtime expects.
+
+## [WIP] fix: Align Needle runtime test with new SST structure
+
+### 错误分析
+测试 `test_needle_loading_and_fallback` 失败的根本原因是，它所构建的模拟文件系统结构已经过时。在之前的重构中，`Needle` 运行时的资源加载路径被修改为 `.../locales/<lang>/`，以适应在 `stitcher-common` 中的新位置。然而，测试用例仍然在 `.../stitcher/needle/<lang>/` 路径下创建模拟文件。这导致运行时在测试期间扫描了一个空目录，未能加载任何消息，因此所有 `get()` 调用都触发了“身份回退”机制，返回了键本身。
 
 ### 用户需求
-遵循 SST (物理分片语义分类法) 规范，重构 `locales` 目录结构。同时，将所有资源加载逻辑固化在 `stitcher-needle` 运行时中，并使 `MessageBus` 成为 `needle` 的一个纯粹客户端，从而完成核心架构的解耦。
+修复失败的单元测试，使其能够正确验证 `Needle` 运行时的加载和三级降级逻辑。
 
 ### 评论
-这是对 `stitcher-needle` 架构的最终定型。通过将加载逻辑完全下沉到 `needle` 并简化 `MessageBus`，我们实现了设计初衷：一个负责解析，一个负责分发。采用 FQN (全限定名) 作为 JSON 文件中的键，极大地增强了系统的鲁棒性和未来工具链的可扩展性。
+这是一个典型的重构后遗症，也是测试驱动开发价值的体现。测试的失败准确地指出了实现与规范之间的脱节。通过修复测试，我们不仅能让CI通过，更能确保我们的测试套件与最新的架构设计保持一致，成为可靠的质量保障。
 
 ### 目标
-1.  **简化 `Loader`**: 移除 FQN 展平逻辑，使其仅负责加载和合并 JSON 文件。
-2.  **重构 `MessageBus`**: 移除 `MessageStore`，使其不再处理文件 I/O，而是直接调用 `needle.get()` 来解析消息。
-3.  **重构 `Renderer` 协议**: `Renderer` 的职责是“呈现”，它不应该关心消息的 ID 或格式化。它现在将只接收最终的、已解析的字符串。
-4.  **迁移 `locales` 文件**: 删除旧文件，并根据 SST 规范创建新的、使用 FQN 键的 JSON 文件。
-5.  **更新测试**: 确保集成测试反映新的架构。
+1.  修改 `packages/stitcher-needle/tests/test_runtime.py`。
+2.  更新测试中的 mock 文件系统布局，使其从 `stitcher/needle/` 结构变为 `locales/` 结构。
+3.  调整测试中的 JSON 文件名和内容，以匹配上一步中定义的、基于 FQN 的新 SST 规范。
 
 ### 基本原理
-此重构遵循单一职责原则。`Needle` 封装了所有关于“语义”的知识（如何加载、如何降级），`MessageBus` 只负责消息的“路由”，而 `Renderer` 只负责最终的“呈现”。这是一个清晰、分层、可测试的架构。
+我们将直接修改测试代码，使其与 `Needle` 运行时的当前实现保持同步。修复必须在测试端，因为运行时的代码是符合新架构的正确实现。这次修复将使测试用例重新成为 `Needle` 功能的有效验证工具。
 
 ### 标签
-#intent/refine #flow/ready #priority/high #comp/common #comp/runtime #scope/core #ai/instruct #task/domain/runtime #task/object/sst-migration #task/action/implementation #task/state/continue
+#intent/fix #flow/ready #priority/high #comp/runtime #comp/tests #scope/core #ai/instruct #task/domain/runtime #task/object/sst-migration #task/action/implementation #task/state/continue
 
 ---
 ### Script
 
-#### Acts 1: 简化 `Loader` 以支持 FQN 键
+#### Acts 1: 更新 `test_runtime.py` 以匹配新架构
 
-我们重写 `Loader`，移除所有路径前缀和展平逻辑。它的新工作是简单地合并所有找到的 JSON 文件中的顶级键。
-
-~~~~~act
-write_file
-packages/stitcher-needle/src/stitcher/needle/loader.py
-~~~~~
-~~~~~python
-import os
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-from .interfaces import FileHandler
-from .handlers import JsonHandler
-
-
-class Loader:
-    def __init__(self, handlers: Optional[List[FileHandler]] = None):
-        # Default to JsonHandler if none provided
-        self.handlers = handlers or [JsonHandler()]
-
-    def _load_and_merge_file(self, path: Path, registry: Dict[str, str]):
-        for handler in self.handlers:
-            if handler.match(path):
-                try:
-                    content = handler.load(path)
-                    # Keys are now expected to be full FQNs at the top level.
-                    # We simply validate they are strings and update the registry.
-                    for key, value in content.items():
-                        registry[key] = str(value)
-                except Exception:
-                    # Silently ignore malformed files.
-                    pass
-                return # Stop after first matching handler
-
-    def load_directory(self, root_path: Path) -> Dict[str, str]:
-        """
-        Scans a directory for supported config files and merges their top-level
-        keys into a single flat registry.
-        """
-        registry: Dict[str, str] = {}
-
-        if not root_path.is_dir():
-            return registry
-
-        for dirpath, _, filenames in os.walk(root_path):
-            for filename in filenames:
-                file_path = Path(dirpath) / filename
-                self._load_and_merge_file(file_path, registry)
-
-        return registry
-~~~~~
-
-#### Acts 2: 重构 `MessageBus` 和 `Renderer`
-
-`MessageBus` 不再需要 `MessageStore`，而是直接使用全局的 `needle` 实例。`Renderer` 协议也相应简化。
-
-~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/messaging/protocols.py
-~~~~~
-~~~~~python
-from typing import Any, Protocol
-
-class Renderer(Protocol):
-    """
-    Protocol for message renderers. A renderer's only job is to
-    present a final, formatted string to the user.
-    """
-
-    def render(self, message: str, level: str) -> None:
-        """
-        Renders the message.
-
-        Args:
-            message: The fully resolved string to be displayed.
-            level: The log level ("info", "warning", "error", "success").
-        """
-        ...
-~~~~~
-
-~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/messaging/bus.py
-~~~~~
-~~~~~python
-from typing import Any, Optional, Union
-
-from stitcher.needle import SemanticPointer, needle
-from .protocols import Renderer
-
-
-class MessageBus:
-    def __init__(self):
-        self._renderer: Optional[Renderer] = None
-
-    def set_renderer(self, renderer: Renderer):
-        self._renderer = renderer
-
-    def _render(self, level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
-        if not self._renderer:
-            return
-        
-        # Resolve the pointer to a string template using the Needle runtime
-        template = needle.get(msg_id)
-        
-        # Format the final message
-        try:
-            message = template.format(**kwargs)
-        except KeyError:
-            # Fallback for formatting errors
-            message = f"<formatting_error for '{str(msg_id)}'>"
-            
-        self._renderer.render(message, level)
-
-    def info(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
-        self._render("info", msg_id, **kwargs)
-
-    def success(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
-        self._render("success", msg_id, **kwargs)
-        
-    def warning(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
-        self._render("warning", msg_id, **kwargs)
-
-    def error(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
-        self._render("error", msg_id, **kwargs)
-
-# Global singleton instance
-bus = MessageBus()
-~~~~~
-
-#### Acts 3: 更新 `CliRenderer` 以符合新协议
-
-`CliRenderer` 的实现变得更简单，它只负责打印。
+我们将修改测试，使其创建 `locales/` 目录结构，并使用 FQN 作为 JSON 文件的键。
 
 ~~~~~act
 patch_file
-packages/stitcher-cli/src/stitcher/cli/rendering.py
+packages/stitcher-needle/tests/test_runtime.py
 ~~~~~
-~~~~~old
-import typer
-from stitcher.common.messaging import MessageStore, protocols
+~~~~~python.old
+def test_needle_loading_and_fallback(tmp_path: Path):
+    # 1. Setup SST structure
+    root = tmp_path
+    needle_dir = root / "stitcher" / "needle"
+    
+    # English (Default)
+    en_dir = needle_dir / "en"
+    en_dir.mkdir(parents=True)
+    
+    # en/cli.json
+    (en_dir / "cli.json").write_text(json.dumps({
+        "hello": "Hello World",
+        "only_en": "I am English"
+    }))
+    
+    # en/auth/login.json
+    (en_dir / "auth").mkdir()
+    (en_dir / "auth" / "login.json").write_text(json.dumps({
+        "fail": "Login Failed"
+    }))
 
-class CliRenderer(protocols.Renderer):
-    """
-    Renders messages to the command line using Typer for colored output.
-    """
-    def __init__(self, store: MessageStore):
-        self._store = store
+    # Chinese (Target)
+    zh_dir = needle_dir / "zh"
+    zh_dir.mkdir(parents=True)
+    
+    # zh/cli.json
+    (zh_dir / "cli.json").write_text(json.dumps({
+        "hello": "你好世界"
+    }))
 
-    def render(self, msg_id: str, level: str, **kwargs):
-        message = self._store.get(msg_id, **kwargs)
-        
-        color = None
-        if level == "success":
+    # 2. Initialize Runtime
+    rt = Needle(root_path=root, default_lang="en")
+
+    # 3. Test: Target Language Hit
+    # L.cli.hello -> "你好世界" (in zh)
+    assert rt.get(L.cli.hello, lang="zh") == "你好世界"
+
+    # 4. Test: Fallback to Default Language
+    # L.cli.only_en -> "I am English" (missing in zh, fallback to en)
+    assert rt.get(L.cli.only_en, lang="zh") == "I am English"
+
+    # 5. Test: Namespace Flattening
+    # L.auth.login.fail -> "Login Failed"
+    assert rt.get(L.auth.login.fail) == "Login Failed"
+
+    # 6. Test: Ultimate Identity Fallback
+    # L.unknown.key -> "unknown.key"
+    assert rt.get(L.unknown.key) == "unknown.key"
 ~~~~~
-~~~~~new
-import typer
-from stitcher.common.messaging import protocols
+~~~~~python.new
+def test_needle_loading_and_fallback(tmp_path: Path):
+    # 1. Setup SST structure according to the NEW specification
+    root = tmp_path
+    locales_dir = root / "locales"
+    
+    # English (Default)
+    en_dir = locales_dir / "en"
+    (en_dir / "cli").mkdir(parents=True)
+    (en_dir / "auth").mkdir()
 
-class CliRenderer(protocols.Renderer):
-    """
-    Renders messages to the command line using Typer for colored output.
-    """
-    def render(self, message: str, level: str):
-        color = None
-        if level == "success":
-~~~~~
+    (en_dir / "cli" / "main.json").write_text(json.dumps({
+        "cli.hello": "Hello World",
+        "cli.only_en": "I am English"
+    }))
+    
+    (en_dir / "auth" / "login.json").write_text(json.dumps({
+        "auth.login.fail": "Login Failed"
+    }))
 
-#### Acts 4: 更新 CLI 的 `bus` 注入
+    # Chinese (Target)
+    zh_dir = locales_dir / "zh"
+    (zh_dir / "cli").mkdir(parents=True)
+    
+    (zh_dir / "cli" / "main.json").write_text(json.dumps({
+        "cli.hello": "你好世界"
+    }))
 
-`bus` 不再需要 `store`，`CliRenderer` 也不再需要 `store`。
+    # 2. Initialize Runtime
+    # The runtime will look for a `locales` dir inside the provided root_path
+    rt = Needle(root_path=root, default_lang="en")
 
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/main.py
-~~~~~
-~~~~~old
-# --- Dependency Injection at the very start ---
-# The CLI is the composition root. It decides *which* renderer to use.
-cli_renderer = CliRenderer(store=bus.store)
-bus.set_renderer(cli_renderer)
-# ---------------------------------------------
-~~~~~
-~~~~~new
-# --- Dependency Injection at the very start ---
-# The CLI is the composition root. It decides *which* renderer to use.
-cli_renderer = CliRenderer()
-bus.set_renderer(cli_renderer)
-# ---------------------------------------------
-~~~~~
+    # 3. Test: Target Language Hit
+    # L.cli.hello should be found in zh's cli/main.json
+    assert rt.get(L.cli.hello, lang="zh") == "你好世界"
 
-#### Acts 5: 迁移 `locales` 物理文件
+    # 4. Test: Fallback to Default Language
+    # L.cli.only_en is missing in zh, should fallback to en
+    assert rt.get(L.cli.only_en, lang="zh") == "I am English"
 
-现在，我们删除旧文件并创建符合新 SST 规范的文件。
+    # 5. Test: FQN loading from subdirectories
+    # L.auth.login.fail should be found in en's auth/login.json
+    assert rt.get(L.auth.login.fail) == "Login Failed"
 
-~~~~~act
-delete_file
-packages/stitcher-common/src/stitcher/common/locales/en/cli.json
-~~~~~
-
-~~~~~act
-run_command
-~~~~~
-~~~~~
-mkdir -p packages/stitcher-common/src/stitcher/common/locales/en/generate
-mkdir -p packages/stitcher-common/src/stitcher/common/locales/en/error
-mkdir -p packages/stitcher-common/src/stitcher/common/locales/en/cli
-mkdir -p packages/stitcher-common/src/stitcher/common/locales/en/warning
-~~~~~
-
-~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/locales/en/generate/main.json
-~~~~~
-~~~~~json
-{
-    "generate.file.success": "✅ Generated stub: {path}",
-    "generate.run.complete": "✨ Generation complete. {count} files created."
-}
-~~~~~
-
-~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/locales/en/cli/command.json
-~~~~~
-~~~~~json
-{
-    "cli.command.not_implemented": "ℹ️  Command '{command}' is not yet implemented."
-}
-~~~~~
-
-~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/locales/en/error/main.json
-~~~~~
-~~~~~json
-{
-    "error.config.not_found": "⚠️  No [tool.stitcher] config found in pyproject.toml. Nothing to do.",
-    "error.generic": "❌ An unexpected error occurred: {error}",
-    "error.plugin.inspection": "❌ Error inspecting plugin: {error}"
-}
-~~~~~
-
-~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/locales/en/warning/main.json
-~~~~~
-~~~~~json
-{
-    "warning.no_files_or_plugins_found": "🤔 No source files or plugins were found to process."
-}
-~~~~~
-
-#### Acts 6: 更新 `Needle` 运行时以指向 `common`
-
-`needle` 的默认根路径应该指向 `stitcher-common` 内部，而不是项目根目录。
-
-~~~~~act
-patch_file
-packages/stitcher-needle/src/stitcher/needle/runtime.py
-~~~~~
-~~~~~old
-    def _find_project_root(self) -> Path:
-        """
-        Simple heuristic to find where 'stitcher' directory might be.
-        Defaults to current working directory.
-        """
-        return Path.cwd()
-
-    def _ensure_lang_loaded(self, lang: str):
-        if lang in self._loaded_langs:
-            return
-
-        # SST path: project_root/stitcher/needle/<lang>/
-        needle_dir = self.root_path / "stitcher" / "needle" / lang
-        
-        # Load and cache
-        self._registry[lang] = self._loader.load_directory(needle_dir)
-~~~~~
-~~~~~new
-    def _find_project_root(self) -> Path:
-        """
-        The canonical source for locales is inside the stitcher-common package.
-        """
-        # Assumes this file is at .../stitcher/needle/runtime.py
-        # We want .../stitcher/common/
-        return Path(__file__).parent.parent.parent / "common"
-
-    def _ensure_lang_loaded(self, lang: str):
-        if lang in self._loaded_langs:
-            return
-
-        # SST path: stitcher-common/src/stitcher/common/locales/<lang>/
-        locales_dir = self.root_path / "locales" / lang
-        
-        # Load and cache
-        self._registry[lang] = self._loader.load_directory(locales_dir)
+    # 6. Test: Ultimate Identity Fallback
+    # L.unknown.key is not in any file
+    assert rt.get(L.unknown.key) == "unknown.key"
 ~~~~~
