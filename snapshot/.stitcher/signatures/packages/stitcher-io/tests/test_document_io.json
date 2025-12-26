@@ -1,6 +1,0 @@
-{
-  "test_yaml_adapter_handles_malformed": "40e7cd74bafc4f9fcdf7b500913f1af7eb8d605c9b2bf321b5f90be2120836f3",
-  "test_yaml_adapter_load_non_existent": "f1302dea3ff01495524c7edfddaadba2285961b0f8b40f03be7e006ec3369f3b",
-  "test_yaml_adapter_multiline_format": "f9c7c274772c839d6a15223a3104c8930ec84aeaae64173c1cfdb07b147189f1",
-  "test_yaml_adapter_round_trip": "019528091fb9a0fd31d9e121acd16dba493a87d9ca88da6fc0d6717486d7ab2a"
-}

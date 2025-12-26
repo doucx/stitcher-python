@@ -1,9 +1,0 @@
-{
-  "test_inject_docstrings_basic": "abef7afa1701b0c8f7bf798a0844fbc784361cc96d3ed5e5dfc13a46eb9d3262",
-  "test_inject_docstrings_replacement": "94ad6cfcf7ab1adc48cf5b63c8d96491b2cdbee0e5cf19acf95925d6bb162f1c",
-  "test_inject_multiline_handling": "6ab080c9ae589c82a033e7a48438fa061e37bbad5171a145e86156bbafcfdda7",
-  "test_inject_nested_fqn": "f461b5a4d435ecb53903645bd943e1f252cadf4bc190f86a0406672788a810d7",
-  "test_strip_class_and_module_docs": "bfe7d327f12c67f9f61ab140c336d557dfd9c8874a4a5b0df20a7c63580f300b",
-  "test_strip_docstrings_basic": "a0fdd1c88ebec669ff0d2c28f7d6b324f1d5a568af77b10a2e66fd1004949c63",
-  "test_strip_docstrings_replaces_with_pass": "dec015daa68a9bfd2c1b4eda9e942794842369a7047d10136431939c005708fe"
-}

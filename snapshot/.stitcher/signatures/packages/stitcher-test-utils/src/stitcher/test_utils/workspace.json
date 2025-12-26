@@ -1,8 +1,0 @@
-{
-  "WorkspaceFactory.__init__": "fe3d49a0f7b67ba97e4eb0d393846b4b1cc2e74794689bd9a2f35bb1ec1040a5",
-  "WorkspaceFactory.build": "a9df94cb7b5ea7954574279f0bd49648fc1c4c971164a3f9b4d556c547c8b9a3",
-  "WorkspaceFactory.with_config": "0399876ea64dad46221c92138fb837f68574b19eb93a8cdfc9dda25a11832996",
-  "WorkspaceFactory.with_docs": "813d135f64e14a2ae5d09178c55028bf824bc6a49f916054a02ec520ab4e33e9",
-  "WorkspaceFactory.with_entry_points": "0681cf99aae241aa6b1ee7064a8976157556cb2ea4359535faaae24d66642c85",
-  "WorkspaceFactory.with_source": "cfa1d12b4762468622519dbcd57ce4d6aebdfcf21fbf0733b0f55a75ec43b324"
-}

@@ -1,8 +1,0 @@
-{
-  "MockAdapter.__init__": "9bab2b1dd22fea04e58176b09f65ef4f673738c47abf25fca7e0c62af472206f",
-  "MockAdapter.load": "9fbd03872702316efc798f5bf6d34607614e56a7aaa99c19f2c6ca4a12a8e907",
-  "MockAdapter.save": "769d127939351512505a356baecee1c26c36c19c496b12d1e104b6b4f2656d77",
-  "sample_module_ir": "c5b2a703b80b9a986d82c9a54268e9bcbbf9172a2f6fc9e0baa70ba09fdd5331",
-  "test_flatten_module_docs": "a9a32c48c14cb96dbfdc08ec52dd25faaf26bba5e589c5a553d40e168f9289bc",
-  "test_save_docs_for_module": "70d948d13a8e1c872a3ca3fa5a8d3acd639a4ae2605220206fc85fe8eebc038e"
-}

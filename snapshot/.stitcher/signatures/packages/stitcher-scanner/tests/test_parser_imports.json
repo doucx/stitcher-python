@@ -1,7 +1,0 @@
-{
-  "test_auto_inject_typing_imports": "6f94f16c7d561d7d8e616ed5cd35f40ba115080d5dc3df01a57db5391db2f0ff",
-  "test_collect_nested_imports_in_type_checking": "d38fd819db8a2b7eb184ab81788ec530f6017a62d99b97484feb7d37413bb634",
-  "test_collect_top_level_imports": "0786e2bdba6ab28f930bad12601b037c488621ecdcbdfc105655a5392f008a3f",
-  "test_detect_typing_in_attributes_and_returns": "300260a8ad21401ab65b531ddd404c68ba427b770af9ea0a99d57b2ff8964bb3",
-  "test_do_not_duplicate_existing_typing": "7f992b0bd8fd37fcf1de9f65a94c8439b8a3310b1e19ef650d828b1c62d8b00c"
-}
