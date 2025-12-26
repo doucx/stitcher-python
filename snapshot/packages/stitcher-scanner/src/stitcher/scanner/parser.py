@@ -1,6 +1,7 @@
 from typing import List, Optional, Union
 
 import re
+import inspect
 import libcst as cst
 from typing import Set
 from stitcher.spec import (
@@ -96,7 +97,9 @@ class IRBuildingVisitor(cst.CSTVisitor):
 
         # 2. Extract Docstring
         docstring = node.get_docstring()
-        if isinstance(docstring, bool):
+        if isinstance(docstring, str):
+            docstring = inspect.cleandoc(docstring)
+        else:
             docstring = None
 
         # 3. Extract Bases
@@ -139,7 +142,9 @@ class IRBuildingVisitor(cst.CSTVisitor):
 
         # 2. Extract Docstring
         docstring = node.get_docstring()
-        if isinstance(docstring, bool):
+        if isinstance(docstring, str):
+            docstring = inspect.cleandoc(docstring)
+        else:
             docstring = None
 
         # 3. Extract Return Annotation

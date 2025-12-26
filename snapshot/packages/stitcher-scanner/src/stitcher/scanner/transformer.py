@@ -117,14 +117,16 @@ class InjectorTransformer(cst.CSTTransformer):
         body: Union[cst.BaseSuite, cst.SimpleStatementSuite],
         doc_content: str,
     ) -> Union[cst.BaseSuite, cst.SimpleStatementSuite]:
-        # HACK: Assume a standard 4-space indent for docstring bodies.
-        # A more robust solution might involve introspecting the CST node's
-        # indentation metadata, but that's significantly more complex.
-        # This heuristic covers the vast majority of standard Python code.
+        # Determine the correct indentation string for this block.
+        # If it's an IndentedBlock, it has an explicit indent attribute.
+        # Default to 4 spaces if it's a one-liner or empty.
         indent_str = " " * 4
+        if isinstance(body, cst.IndentedBlock) and body.indent is not None:
+            indent_str = body.indent.value
+
         lines = doc_content.split("\n")
         if len(lines) > 1:
-            # Re-indent all lines after the first one
+            # Re-indent all lines after the first one to match the block's level.
             indented_lines = [lines[0]] + [
                 f"{indent_str}{line}" for line in lines[1:]
             ]
