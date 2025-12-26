@@ -3,7 +3,6 @@ import typer
 
 from stitcher.app import StitcherApp
 from stitcher.common import bus
-from stitcher.needle import L
 from .rendering import CliRenderer
 
 app = typer.Typer(
