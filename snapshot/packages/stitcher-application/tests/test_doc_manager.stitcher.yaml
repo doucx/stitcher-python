@@ -1,3 +1,11 @@
-sample_module_ir: "def func():\n    '''Func doc'''\n\nclass MyClass:\n    '''Class\
-  \ doc'''\n    attr: int\n    '''Attr doc'''\n\n    def method(self):\n        '''Method\
-  \ doc'''"
+sample_module_ir: |-
+  def func():
+      '''Func doc'''
+
+  class MyClass:
+      '''Class doc'''
+      attr: int
+      '''Attr doc'''
+
+      def method(self):
+          '''Method doc'''
