@@ -75,9 +75,8 @@ class StubGenerator:
         annotation = attr.annotation if attr.annotation else "Any"
         line = f"{indent}{attr.name}: {annotation}"
 
-        # If we wanted to include value:
-        # if attr.value:
-        #     line += f" = {attr.value}"
+        if attr.value:
+            line += f" = {attr.value}"
 
         return line
 
@@ -170,6 +169,10 @@ class StubGenerator:
     def _generate_class(self, cls: ClassDef, level: int) -> str:
         indent = self._indent(level)
         lines = []
+
+        # Decorators
+        for dec in cls.decorators:
+            lines.append(f"{indent}@{dec}")
 
         # Class Def
         bases_str = ""
