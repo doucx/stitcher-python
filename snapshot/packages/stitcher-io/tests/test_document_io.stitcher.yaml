@@ -1,2 +1,0 @@
-test_yaml_adapter_multiline_format: Verify that multiline strings are saved using
-  Literal Block Style (|).
