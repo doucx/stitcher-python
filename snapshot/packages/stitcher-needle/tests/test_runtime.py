@@ -2,32 +2,30 @@ import json
 from pathlib import Path
 from stitcher.needle import Needle, L
 
+
 def test_needle_loading_and_fallback(tmp_path: Path):
     # 1. Setup the FINAL SST structure inside the mock project root
     project_root = tmp_path
     needle_dir = project_root / ".stitcher" / "needle"
-    
+
     # English (Default)
     en_dir = needle_dir / "en"
     (en_dir / "cli").mkdir(parents=True)
     (en_dir / "auth").mkdir()
 
-    (en_dir / "cli" / "main.json").write_text(json.dumps({
-        "cli.hello": "Hello World",
-        "cli.only_en": "I am English"
-    }))
-    
-    (en_dir / "auth" / "login.json").write_text(json.dumps({
-        "auth.login.fail": "Login Failed"
-    }))
+    (en_dir / "cli" / "main.json").write_text(
+        json.dumps({"cli.hello": "Hello World", "cli.only_en": "I am English"})
+    )
+
+    (en_dir / "auth" / "login.json").write_text(
+        json.dumps({"auth.login.fail": "Login Failed"})
+    )
 
     # Chinese (Target)
     zh_dir = needle_dir / "zh"
     (zh_dir / "cli").mkdir(parents=True)
-    
-    (zh_dir / "cli" / "main.json").write_text(json.dumps({
-        "cli.hello": "你好世界"
-    }))
+
+    (zh_dir / "cli" / "main.json").write_text(json.dumps({"cli.hello": "你好世界"}))
 
     # 2. Initialize Runtime
     # The runtime should now automatically find the `stitcher` dir within the root_path

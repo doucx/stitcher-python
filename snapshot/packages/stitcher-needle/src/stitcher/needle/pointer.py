@@ -1,5 +1,6 @@
 from typing import Any
 
+
 class SemanticPointer:
     """
     A recursive proxy object that represents a semantic path in the Stitcher universe.

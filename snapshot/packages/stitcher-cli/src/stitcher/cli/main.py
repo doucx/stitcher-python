@@ -18,6 +18,7 @@ cli_renderer = CliRenderer()
 bus.set_renderer(cli_renderer)
 # ---------------------------------------------
 
+
 @app.command()
 def generate():
     """Generate .pyi stubs based on pyproject.toml config."""
@@ -25,15 +26,18 @@ def generate():
     app_instance = StitcherApp(root_path=project_root)
     app_instance.run_from_config()
 
+
 @app.command()
 def init():
     """Initialize Stitcher in the current project."""
     bus.info(L.cli.command.not_implemented, command="init")
 
+
 @app.command()
 def check():
     """Verify consistency between code and docs."""
     bus.info(L.cli.command.not_implemented, command="check")
+
 
 if __name__ == "__main__":
     app()

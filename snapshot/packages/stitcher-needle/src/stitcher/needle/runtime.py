@@ -41,19 +41,17 @@ class Needle:
 
         # Final SST path: <project_root>/.stitcher/needle/<lang>/
         needle_dir = self.root_path / ".stitcher" / "needle" / lang
-        
+
         # Load and cache
         self._registry[lang] = self._loader.load_directory(needle_dir)
         self._loaded_langs.add(lang)
 
     def get(
-        self, 
-        pointer: Union[SemanticPointer, str], 
-        lang: Optional[str] = None
+        self, pointer: Union[SemanticPointer, str], lang: Optional[str] = None
     ) -> str:
         """
         Resolves a semantic pointer to a string value with graceful fallback.
-        
+
         Lookup Order:
         1. Target Language
         2. Default Language (en)
@@ -77,6 +75,7 @@ class Needle:
 
         # 3. Fallback to Identity
         return key
+
 
 # Global Runtime Instance
 needle = Needle()

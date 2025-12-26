@@ -1,4 +1,3 @@
-import pytest
 from textwrap import dedent
 from stitcher.spec import (
     Argument,
@@ -16,15 +15,22 @@ def test_generate_simple_pyi():
     module_def = ModuleDef(
         file_path="my_module.py",
         docstring="This is a test module.",
-        attributes=[
-            Attribute(name="VERSION", annotation="str", value='"0.1.0"')
-        ],
+        attributes=[Attribute(name="VERSION", annotation="str", value='"0.1.0"')],
         functions=[
             FunctionDef(
                 name="my_function",
                 args=[
-                    Argument(name="arg1", kind=ArgumentKind.POSITIONAL_OR_KEYWORD, annotation="int"),
-                    Argument(name="arg2", kind=ArgumentKind.POSITIONAL_OR_KEYWORD, annotation="str", default="'default'"),
+                    Argument(
+                        name="arg1",
+                        kind=ArgumentKind.POSITIONAL_OR_KEYWORD,
+                        annotation="int",
+                    ),
+                    Argument(
+                        name="arg2",
+                        kind=ArgumentKind.POSITIONAL_OR_KEYWORD,
+                        annotation="str",
+                        default="'default'",
+                    ),
                 ],
                 return_annotation="bool",
                 docstring="A test function.",
@@ -38,28 +44,38 @@ def test_generate_simple_pyi():
                 bases=["Base"],
                 docstring="A test class.",
                 attributes=[
-                    Attribute(name="CLASS_VAR", annotation="Optional[int]", value="None")
+                    Attribute(
+                        name="CLASS_VAR", annotation="Optional[int]", value="None"
+                    )
                 ],
                 methods=[
                     FunctionDef(
                         name="__init__",
                         args=[
-                            Argument(name="self", kind=ArgumentKind.POSITIONAL_OR_KEYWORD),
-                            Argument(name="val", kind=ArgumentKind.POSITIONAL_OR_KEYWORD, annotation="float"),
+                            Argument(
+                                name="self", kind=ArgumentKind.POSITIONAL_OR_KEYWORD
+                            ),
+                            Argument(
+                                name="val",
+                                kind=ArgumentKind.POSITIONAL_OR_KEYWORD,
+                                annotation="float",
+                            ),
                         ],
                         return_annotation="None",
                     ),
                     FunctionDef(
                         name="do_work",
                         args=[
-                            Argument(name="self", kind=ArgumentKind.POSITIONAL_OR_KEYWORD),
+                            Argument(
+                                name="self", kind=ArgumentKind.POSITIONAL_OR_KEYWORD
+                            ),
                         ],
                         return_annotation="str",
                         docstring="Does some work.",
-                    )
-                ]
+                    ),
+                ],
             )
-        ]
+        ],
     )
 
     # 2. Arrange: Define the expected golden .pyi output string.

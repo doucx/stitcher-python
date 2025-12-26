@@ -1,7 +1,6 @@
 import os
-import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from .interfaces import FileHandler
 from .handlers import JsonHandler
@@ -24,7 +23,7 @@ class Loader:
                 except Exception:
                     # Silently ignore malformed files.
                     pass
-                return # Stop after first matching handler
+                return  # Stop after first matching handler
 
     def load_directory(self, root_path: Path) -> Dict[str, str]:
         """
