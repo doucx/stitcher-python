@@ -1,4 +1,5 @@
-from typing import Any, Protocol
+from typing import Protocol
+
 
 class Renderer(Protocol):
     """

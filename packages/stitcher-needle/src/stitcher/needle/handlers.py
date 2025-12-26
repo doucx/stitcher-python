@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 from typing import Any, Dict
-from .interfaces import FileHandler
 
 
 class JsonHandler:

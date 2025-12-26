@@ -17,11 +17,11 @@ class IRBuildingVisitor(cst.CSTVisitor):
         self.functions: List[FunctionDef] = []
         self.classes: List[ClassDef] = []
         self.attributes: List[Attribute] = []
-        
+
         # Scope management: A stack of currently active ClassDefs being built.
         # If stack is empty, we are at module level.
         self._class_stack: List[ClassDef] = []
-        self._dummy_module = cst.Module([]) # Helper for code generation
+        self._dummy_module = cst.Module([])  # Helper for code generation
 
     def _add_attribute(self, attr: Attribute):
         if self._class_stack:
@@ -33,14 +33,16 @@ class IRBuildingVisitor(cst.CSTVisitor):
         # Handle: x: int = 1
         if not isinstance(node.target, cst.Name):
             return False
-            
+
         name = node.target.value
-        annotation = self._dummy_module.code_for_node(node.annotation.annotation).strip()
-        
+        annotation = self._dummy_module.code_for_node(
+            node.annotation.annotation
+        ).strip()
+
         value = None
         if node.value:
             value = self._dummy_module.code_for_node(node.value).strip()
-            
+
         self._add_attribute(Attribute(name=name, annotation=annotation, value=value))
         return False
 
@@ -49,14 +51,14 @@ class IRBuildingVisitor(cst.CSTVisitor):
         # Only handle simple assignment to a single name for now
         if len(node.targets) != 1:
             return False
-            
+
         target = node.targets[0].target
         if not isinstance(target, cst.Name):
             return False
-            
+
         name = target.value
         value = self._dummy_module.code_for_node(node.value).strip()
-        
+
         self._add_attribute(Attribute(name=name, annotation=None, value=value))
         return False
 
@@ -79,11 +81,7 @@ class IRBuildingVisitor(cst.CSTVisitor):
 
         # 4. Create ClassDef object and push to stack
         cls_def = ClassDef(
-            name=class_name,
-            bases=bases,
-            docstring=docstring,
-            methods=[],
-            attributes=[]
+            name=class_name, bases=bases, docstring=docstring, methods=[], attributes=[]
         )
         self._class_stack.append(cls_def)
 
@@ -93,16 +91,16 @@ class IRBuildingVisitor(cst.CSTVisitor):
     def leave_ClassDef(self, node: cst.ClassDef) -> None:
         # Pop the finished class from stack
         finished_cls = self._class_stack.pop()
-        
+
         # If we are inside another class (nested class), add it there?
         # For now, let's only support top-level classes or flatten them.
         # But to satisfy the requirement "methods belong to class", stack logic handles methods correctly.
         # We need to decide where to put this class.
-        
+
         if self._class_stack:
-            # It's a nested class. For MVP, we might ignore nested classes in IR 
+            # It's a nested class. For MVP, we might ignore nested classes in IR
             # or treat them specially. Let's just ignore for now or log warning.
-            pass 
+            pass
         else:
             # Top-level class
             self.classes.append(finished_cls)
@@ -119,7 +117,9 @@ class IRBuildingVisitor(cst.CSTVisitor):
         # 3. Extract Return Annotation
         return_annotation = None
         if node.returns:
-            return_annotation = self._dummy_module.code_for_node(node.returns.annotation).strip()
+            return_annotation = self._dummy_module.code_for_node(
+                node.returns.annotation
+            ).strip()
 
         # 4. Extract Arguments
         args = self._parse_parameters(node.params)
@@ -135,7 +135,7 @@ class IRBuildingVisitor(cst.CSTVisitor):
         for dec in node.decorators:
             dec_code = self._dummy_module.code_for_node(dec.decorator).strip()
             decorators.append(dec_code)
-            
+
             # Simple check for staticmethod/classmethod
             if dec_code == "staticmethod":
                 is_static = True
@@ -171,36 +171,36 @@ class IRBuildingVisitor(cst.CSTVisitor):
         dummy_module = cst.Module([])
 
         def extract_arg(
-            param: Union[cst.Param, cst.ParamStar], 
-            kind: ArgumentKind
+            param: Union[cst.Param, cst.ParamStar], kind: ArgumentKind
         ) -> Argument:
             # cst.Param has 'name' (Name), 'annotation' (Annotation), 'default' (Expr)
             # cst.ParamStar only has name if it's *args (not just *)
-            
+
             if isinstance(param, cst.ParamStar):
                 # Handle *args (bare * has no name)
                 name = param.name.value if isinstance(param.name, cst.Name) else ""
                 annotation = None
                 if isinstance(param.annotation, cst.Annotation):
-                    annotation = dummy_module.code_for_node(param.annotation.annotation).strip()
+                    annotation = dummy_module.code_for_node(
+                        param.annotation.annotation
+                    ).strip()
                 return Argument(name=name, kind=kind, annotation=annotation)
 
             # Normal cst.Param
             name = param.name.value
             annotation = None
             if param.annotation:
-                annotation = dummy_module.code_for_node(param.annotation.annotation).strip()
-            
+                annotation = dummy_module.code_for_node(
+                    param.annotation.annotation
+                ).strip()
+
             default_val = None
             if param.default:
                 # Get the source code of the default value expression
                 default_val = dummy_module.code_for_node(param.default).strip()
 
             return Argument(
-                name=name,
-                kind=kind,
-                annotation=annotation,
-                default=default_val
+                name=name, kind=kind, annotation=annotation, default=default_val
             )
 
         # 1. Positional Only (Python 3.8+ /)
@@ -241,7 +241,9 @@ def parse_source_code(source_code: str, file_path: str = "") -> ModuleDef:
 
     return ModuleDef(
         file_path=file_path,
-        docstring=cst_module.get_docstring() if isinstance(cst_module.get_docstring(), str) else None,
+        docstring=cst_module.get_docstring()
+        if isinstance(cst_module.get_docstring(), str)
+        else None,
         functions=visitor.functions,
         classes=visitor.classes,
         attributes=visitor.attributes,

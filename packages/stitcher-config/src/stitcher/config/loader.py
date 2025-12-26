@@ -33,7 +33,7 @@ def _find_plugins(workspace_root: Path) -> Dict[str, str]:
         try:
             with open(toml_file, "rb") as f:
                 data = tomllib.load(f)
-            
+
             entry_points = data.get("project", {}).get("entry-points", {})
             stitcher_plugins = entry_points.get("stitcher.plugins", {})
             if stitcher_plugins:
@@ -47,7 +47,7 @@ def _find_plugins(workspace_root: Path) -> Dict[str, str]:
 def load_config_from_path(search_path: Path) -> StitcherConfig:
     """Finds and loads stitcher config from pyproject.toml, and discovers plugins."""
     plugins = _find_plugins(search_path)
-    
+
     try:
         config_path = _find_pyproject_toml(search_path)
         with open(config_path, "rb") as f:
@@ -57,9 +57,7 @@ def load_config_from_path(search_path: Path) -> StitcherConfig:
         # If no root config file, still return discovered plugins with default scan_paths
         return StitcherConfig(plugins=plugins)
 
-    
     # Create config with data from file, falling back to defaults.
     return StitcherConfig(
-        scan_paths=stitcher_data.get("scan_paths", []),
-        plugins=plugins
+        scan_paths=stitcher_data.get("scan_paths", []), plugins=plugins
     )

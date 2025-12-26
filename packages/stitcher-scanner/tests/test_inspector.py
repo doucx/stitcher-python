@@ -5,6 +5,7 @@ from textwrap import dedent
 from stitcher.spec import ArgumentKind, FunctionDef
 from stitcher.scanner.inspector import parse_plugin_entry
 
+
 @pytest.fixture
 def temp_module(tmp_path: Path):
     """Creates a temporary, importable module for testing."""
@@ -24,12 +25,12 @@ def temp_module(tmp_path: Path):
         \"\"\"
         return f"Hello {name}, {count}, {is_admin}"
     """)
-    
+
     pkg_dir = tmp_path / "temp_pkg"
     pkg_dir.mkdir()
     (pkg_dir / "__init__.py").touch()
     (pkg_dir / "main.py").write_text(module_content, encoding="utf-8")
-    
+
     # Add to path to make it importable
     sys.path.insert(0, str(tmp_path))
     yield "temp_pkg.main:sample_plugin_func"
@@ -47,8 +48,10 @@ def test_parse_plugin_entry_point(temp_module: str):
 
     # Assert
     assert isinstance(func_def, FunctionDef)
-    assert func_def.name == "sample_plugin_func" # Should use the function's __name__
-    assert func_def.docstring and "This is a sample plugin function" in func_def.docstring
+    assert func_def.name == "sample_plugin_func"  # Should use the function's __name__
+    assert (
+        func_def.docstring and "This is a sample plugin function" in func_def.docstring
+    )
     assert func_def.return_annotation == "str"
     assert not func_def.is_async
 
@@ -62,7 +65,7 @@ def test_parse_plugin_entry_point(temp_module: str):
 
     assert args["count"].kind == ArgumentKind.POSITIONAL_OR_KEYWORD
     assert args["count"].annotation == "int"
-    assert args["count"].default == "1" # Defaults are string representations
+    assert args["count"].default == "1"  # Defaults are string representations
 
     assert args["is_admin"].kind == ArgumentKind.KEYWORD_ONLY
     assert args["is_admin"].annotation == "bool"

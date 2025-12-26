@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List
 from stitcher.spec import (
     Argument,
     ArgumentKind,
@@ -56,8 +56,8 @@ class StubGenerator:
         # Simplified handling: always use triple quotes
         # In a robust implementation, we might handle escaping quotes inside docstring
         if "\n" in doc:
-             # multiline
-             return f'{indent}"""\n{indent}{doc}\n{indent}"""'
+            # multiline
+            return f'{indent}"""\n{indent}{doc}\n{indent}"""'
         return f'{indent}"""{doc}"""'
 
     def _generate_attribute(self, attr: Attribute, level: int) -> str:
@@ -66,31 +66,33 @@ class StubGenerator:
         # If value is present (constant), we might output: name: type = value
         # But PEP 484 recommends name: type = ... for constants or just name: type
         # Let's stick to name: type for now as per test expectation.
-        
+
         annotation = attr.annotation if attr.annotation else "Any"
         line = f"{indent}{attr.name}: {annotation}"
-        
+
         # If we wanted to include value:
         # if attr.value:
         #     line += f" = {attr.value}"
-            
+
         return line
 
     def _generate_args(self, args: List[Argument]) -> str:
         # This is tricky because of POSITIONAL_ONLY (/) and KEYWORD_ONLY (*) markers.
         # We need to detect transitions between kinds.
-        
+
         # Simplified approach for MVP:
         # Just join them. Correctly handling / and * requires looking ahead/behind or state machine.
         # Let's do a slightly better job:
-        
+
         parts = []
-        state = ArgumentKind.POSITIONAL_OR_KEYWORD # Default start state logic (simplified)
-        
+        state = (
+            ArgumentKind.POSITIONAL_OR_KEYWORD
+        )  # Default start state logic (simplified)
+
         # Check if we have pos-only args
         has_pos_only = any(a.kind == ArgumentKind.POSITIONAL_ONLY for a in args)
         pos_only_emitted = False
-        
+
         has_kw_only = any(a.kind == ArgumentKind.KEYWORD_ONLY for a in args)
         kw_only_marker_emitted = False
 
@@ -100,12 +102,14 @@ class StubGenerator:
                 if arg.kind != ArgumentKind.POSITIONAL_ONLY:
                     parts.append("/")
                     pos_only_emitted = True
-            
+
             # Handle KEYWORD_ONLY start marker
             if arg.kind == ArgumentKind.KEYWORD_ONLY and not kw_only_marker_emitted:
                 # If the previous arg was VAR_POSITIONAL (*args), we don't need a bare *
                 # Otherwise, we do.
-                prev_was_var_pos = (i > 0 and args[i-1].kind == ArgumentKind.VAR_POSITIONAL)
+                prev_was_var_pos = (
+                    i > 0 and args[i - 1].kind == ArgumentKind.VAR_POSITIONAL
+                )
                 if not prev_was_var_pos:
                     parts.append("*")
                 kw_only_marker_emitted = True
@@ -116,13 +120,13 @@ class StubGenerator:
                 arg_str = f"*{arg.name}"
             elif arg.kind == ArgumentKind.VAR_KEYWORD:
                 arg_str = f"**{arg.name}"
-            
+
             if arg.annotation:
                 arg_str += f": {arg.annotation}"
-            
+
             if arg.default:
                 arg_str += f" = {arg.default}"
-                
+
             parts.append(arg_str)
 
         # Edge case: If all args were pos-only, we need to append / at the end
@@ -138,17 +142,17 @@ class StubGenerator:
         # Decorators
         for dec in func.decorators:
             # dec is raw code like "staticmethod", we need to prepend @
-            # But wait, LibCST might or might not include @? 
+            # But wait, LibCST might or might not include @?
             # In our scanner we did: code_for_node(dec.decorator). So it is just the name/call.
             lines.append(f"{indent}@{dec}")
 
         # Async
         prefix = "async " if func.is_async else ""
-        
+
         # Def
         args_str = self._generate_args(func.args)
         ret_str = f" -> {func.return_annotation}" if func.return_annotation else ""
-        
+
         def_line = f"{indent}{prefix}def {func.name}({args_str}){ret_str}:"
 
         # Body
@@ -159,7 +163,7 @@ class StubGenerator:
         else:
             # For functions without docstrings, use a single line format.
             lines.append(f"{def_line} ...")
-            
+
         return "\n".join(lines)
 
     def _generate_class(self, cls: ClassDef, level: int) -> str:
@@ -170,12 +174,12 @@ class StubGenerator:
         bases_str = ""
         if cls.bases:
             bases_str = f"({', '.join(cls.bases)})"
-        
+
         lines.append(f"{indent}class {cls.name}{bases_str}:")
-        
+
         # Body
         has_content = False
-        
+
         # Docstring
         if cls.docstring:
             lines.append(self._format_docstring(cls.docstring, level + 1))
@@ -185,15 +189,15 @@ class StubGenerator:
         for attr in cls.attributes:
             lines.append(self._generate_attribute(attr, level + 1))
             has_content = True
-        
+
         if has_content and cls.methods:
-             lines.append("") # Spacer between attrs and methods
+            lines.append("")  # Spacer between attrs and methods
 
         # Methods
         for i, method in enumerate(cls.methods):
             lines.append(self._generate_function(method, level + 1))
             if i < len(cls.methods) - 1:
-                lines.append("") # Spacer between methods
+                lines.append("")  # Spacer between methods
             has_content = True
 
         if not has_content:
