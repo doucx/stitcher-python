@@ -1,162 +1,71 @@
-好的，为了巩固我们刚刚修复的逻辑，并防止未来对“私有成员文档”或“警告降级”策略的意外回归，我将创建一个专门的集成测试文件 `tests/integration/test_check_policy.py`。
+1.  **`stitcher generate` 的使命：高保真还原**
+    *   它的核心原则是 **“忠实于源码”**。它的任务是创建一个与 `.py` 文件接口**完全等价**的 `.pyi` 描述文件。
+    *   在源码 (`.py`) 中，`_private_method` 是一个真实存在的、可被调用的成员（至少在模块或类内部）。
+    *   因此，为了让静态分析工具（如 Pyright）能够正确理解模块的**完整接口**（包括内部接口），`generate` 命令必须在 `.pyi` 文件中也生成 `_private_method` 的定义。
+    *   如果 `generate` 删除了私有成员，那么当你在同一个包的其他地方调用这个私有成员时，类型检查器就会报错，说“`_private_method` 不存在”，这显然是错误的。
 
-该测试文件将涵盖以下三个关键场景：
-1.  **私有成员合法性 (Allowed Extra)**: 验证代码中存在的私有成员如果在 YAML 中有文档，**不应**被视为多余（Extra），也**不应**产生警告。
-2.  **幽灵文档检测 (True Extra)**: 验证只有当 YAML 中的 Key 在代码中完全不存在（无论是公有还是私有）时，才报 Extra 错误。
-3.  **警告降级 (Warning Policy)**: 验证公开 API 缺失文档时，仅产生 Warning，且命令最终返回成功状态（非阻断）。
+2.  **`stitcher check` 的使命：执行文档策略**
+    *   它的核心原则是 **“执行项目规范”**。它不关心生成什么，只关心“我们团队是否要求为这个东西写文档”。
+    *   我们刚刚做的修改，正是定义了这样一个策略：“对于公开 API (`public_api`)，我们**要求**有文档（否则警告）；对于私有 API (`_private_api`)，我们**允许**有文档，但**不强制要求**。”
 
-## [WIP] test: 添加 check 策略回归测试
+---
+
+既然所有测试，包括新加的策略回归测试，都已通过，我们可以将这一系列关于 `check` 命令的改进作为一个完整的逻辑单元提交。
+
+## [COMMIT] fix(core): Refine check policy to allow private docs and downgrade missing docs
 
 ### 用户需求
-创建一个测试集，专门用于验证 `stitcher check` 的宽松策略（私有成员允许文档化）和降级策略（缺失文档仅警告）是否按预期工作，并防止未来回归。
+`stitcher check` 命令需要变得更加实用：
+1.  不应因 YAML 文件中包含合法的私有成员文档而报错。
+2.  不应因公开 API 缺少文档而阻断 CI 流程。
 
 ### 评论
-将策略性测试与基础功能测试分离是一个好的实践。`test_check_command.py` 关注“能否检测到”，而新的 `test_check_policy.py` 关注“检测到后如何定性（Error vs Warning）”。
+这是一次关键的可用性改进。通过将 `check` 命令的行为从“强制全覆盖”调整为“保证正确性，鼓励覆盖率”，我们极大地降低了在现有项目中引入 `stitcher` 的门槛，使其成为一个辅助工具而非开发负担。
 
 ### 目标
-创建 `tests/integration/test_check_policy.py`，包含针对上述三种策略场景的测试用例。
+1.  提交对 `DocumentManager` 中 Key 提取逻辑的重构。
+2.  提交对 `StitcherApp` 中 `run_check` 判定逻辑的修改。
+3.  提交对消息资源文件的更新。
+4.  提交对受影响的测试用例的修正。
+5.  提交新增的策略回归测试套件。
 
 ### 基本原理
-利用 `stitcher-test-utils` 的 `WorkspaceFactory` 动态构建包含私有/公有成员的 Python 文件和对应的 YAML 文档，然后使用 `SpyBus` 拦截并断言消息的级别（Level）和内容（Params）。
+通过实现“分层 Key 提取”（区分 Public 和 All Keys），我们能够精确地判定 `MISSING`（公开的但没有文档）和 `EXTRA`（文档指向完全不存在的代码）。同时，通过在应用层将 `MISSING` 路由到 `bus.warning`，我们实现了策略上的降级，使其不再影响命令的最终退出状态码。
 
 ### 标签
-#intent/tooling #flow/ready #priority/medium #comp/tests #scope/core #ai/instruct #task/domain/testing #task/object/regression-suite #task/action/create #task/state/begin
+#intent/fix #flow/ready #priority/high #comp/engine #comp/tests #scope/core #ai/instruct #task/domain/linter #task/object/check-logic #task/action/refine #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 创建策略回归测试文件
+#### Acts 1: 提交所有相关的代码和测试修改
 
 ~~~~~act
-write_file
+git_add
+packages/stitcher-application/src/stitcher/app/core.py
+packages/stitcher-application/src/stitcher/app/services/doc_manager.py
+packages/stitcher-common/src/stitcher/common/assets/needle/en/check/main.json
+packages/stitcher-io/tests/test_stub_generator.py
+tests/integration/test_check_command.py
 tests/integration/test_check_policy.py
 ~~~~~
-~~~~~python
-from stitcher.app import StitcherApp
-from stitcher.needle import L
-from stitcher.test_utils import SpyBus, WorkspaceFactory
 
+~~~~~act
+git_commit
+~~~~~
+~~~~~text
+fix(core): Refine check policy to allow private docs and downgrade missing docs
 
-def test_private_members_allowed_in_yaml(tmp_path, monkeypatch):
-    """
-    Policy Test: Private members present in YAML should NOT trigger EXTRA error
-    if they exist in the code. They are 'allowed extras'.
-    """
-    # 1. Arrange: Code with private members and corresponding docs
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source(
-            "src/core.py",
-            """
-            class Internal:
-                def _hidden(self): pass
-            def _helper(): pass
-            """,
-        )
-        .with_docs(
-            "src/core.stitcher.yaml",
-            {
-                "Internal": "Public class doc",  # Public, checked normally
-                "Internal._hidden": "Private method doc",  # Private, allowed
-                "_helper": "Private func doc",  # Private, allowed
-            },
-        )
-        .build()
-    )
+This commit overhauls the `stitcher check` command's behavior to make it more pragmatic for real-world projects, especially during initial adoption (dogfooding).
 
-    app = StitcherApp(root_path=project_root)
-    spy_bus = SpyBus()
-
-    # 2. Act
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_check()
-
-    # 3. Assert
-    # Should be perfectly clean (True) because private docs are allowed
-    assert success is True
-
-    # Ensure NO errors or warnings about extras/missing
-    messages = spy_bus.get_messages()
-    errors = [m for m in messages if m["level"] == "error"]
-    warnings = [m for m in messages if m["level"] == "warning"]
-
-    assert not errors, f"Found unexpected errors: {errors}"
-    assert not warnings, f"Found unexpected warnings: {warnings}"
-
-    spy_bus.assert_id_called(L.check.run.success, level="success")
-
-
-def test_ghost_keys_trigger_extra_error(tmp_path, monkeypatch):
-    """
-    Policy Test: Keys in YAML that do not exist in code (even privately)
-    MUST trigger EXTRA error.
-    """
-    # 1. Arrange: Docs pointing to non-existent code
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/ghost.py", "def real(): pass")
-        .with_docs(
-            "src/ghost.stitcher.yaml",
-            {
-                "real": "Exists",
-                "ghost_func": "Does not exist",
-                "_ghost_private": "Does not exist either",
-            },
-        )
-        .build()
-    )
-
-    app = StitcherApp(root_path=project_root)
-    spy_bus = SpyBus()
-
-    # 2. Act
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_check()
-
-    # 3. Assert
-    assert success is False
-
-    # We expect EXTRA errors for both ghost keys
-    spy_bus.assert_id_called(L.check.issue.extra, level="error")
-
-    # Verify specific keys
-    extra_msgs = [
-        m for m in spy_bus.get_messages() if m["id"] == str(L.check.issue.extra)
-    ]
-    keys = sorted([m["params"]["key"] for m in extra_msgs])
-    assert keys == ["_ghost_private", "ghost_func"]
-
-
-def test_public_missing_triggers_warning_only(tmp_path, monkeypatch):
-    """
-    Policy Test: Missing docs for public API should be WARNING, not ERROR.
-    Exit code should be success (True).
-    """
-    # 1. Arrange: Public code without docs
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/lib.py", "def public_api(): pass")
-        # No docs created
-        .build()
-    )
-
-    app = StitcherApp(root_path=project_root)
-    spy_bus = SpyBus()
-
-    # 2. Act
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_check()
-
-    # 3. Assert
-    assert success is True  # Not blocking
-
-    spy_bus.assert_id_called(L.check.issue.missing, level="warning")
-    spy_bus.assert_id_called(L.check.run.success_with_warnings, level="success")
+Key Changes:
+1.  **Private Member Docs Allowed**: The checker no longer flags docstrings for private members (e.g., `_my_func`) as 'EXTRA' errors. It now correctly validates that the documented member exists in the code, regardless of its visibility.
+2.  **Missing Docs are Warnings**: The check for missing documentation on public APIs has been downgraded from a failure-inducing ERROR to a non-blocking WARNING. This allows teams to incrementally document their codebase without breaking CI.
+3.  **New Regression Tests**: Added `test_check_policy.py` to specifically lock in these new behaviors and prevent future regressions.
 ~~~~~
 
 ### 下一步建议
-运行 `pytest tests/integration/test_check_policy.py` 以验证新测试通过。如果通过，我们将这些更改提交到代码库。
+Dogfooding 的核心技术障碍已经清除。现在是时候正式开始项目自身的文档化工作了：
+1.  **重新初始化**: 运行 `stitcher init` 来根据新的、更干净的规则生成所有 `.stitcher.yaml` 文件。
+2.  **文档完善**: 逐一查看 `stitcher check` 报告的 `MISSING` 警告，并开始为核心的公共 API（如 `StitcherApp`, `DocumentManager` 等）撰写高质量的文档。
