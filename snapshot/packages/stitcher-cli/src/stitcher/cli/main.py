@@ -13,7 +13,7 @@ app = typer.Typer(
 
 # --- Dependency Injection at the very start ---
 # The CLI is the composition root. It decides *which* renderer to use.
-cli_renderer = CliRenderer(store=bus.store)
+cli_renderer = CliRenderer()
 bus.set_renderer(cli_renderer)
 # ---------------------------------------------
 

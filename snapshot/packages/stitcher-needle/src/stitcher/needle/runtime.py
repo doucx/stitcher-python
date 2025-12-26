@@ -20,20 +20,21 @@ class Needle:
 
     def _find_project_root(self) -> Path:
         """
-        Simple heuristic to find where 'stitcher' directory might be.
-        Defaults to current working directory.
+        The canonical source for locales is inside the stitcher-common package.
         """
-        return Path.cwd()
+        # Assumes this file is at .../stitcher/needle/runtime.py
+        # We want .../stitcher/common/
+        return Path(__file__).parent.parent.parent / "common"
 
     def _ensure_lang_loaded(self, lang: str):
         if lang in self._loaded_langs:
             return
 
-        # SST path: project_root/stitcher/needle/<lang>/
-        needle_dir = self.root_path / "stitcher" / "needle" / lang
+        # SST path: stitcher-common/src/stitcher/common/locales/<lang>/
+        locales_dir = self.root_path / "locales" / lang
         
         # Load and cache
-        self._registry[lang] = self._loader.load_directory(needle_dir)
+        self._registry[lang] = self._loader.load_directory(locales_dir)
         self._loaded_langs.add(lang)
 
     def get(

@@ -1,190 +1,325 @@
-好的，我们来完成应用层的迁移。这标志着 `stitcher-needle` 的核心思想正式在业务代码中落地。
-
-我将生成一个计划，使用 `patch_file` 精确地替换所有硬编码的消息 ID，并添加必要的 `L` 对象导入。
-
-## [WIP] feat: 迁移应用与 CLI 层至 SemanticPointer (L)
+## [WIP] feat: Refactor locales to SST and finalize Needle runtime
 
 ### 用户需求
-根据 `rg` 的输出结果，将 `stitcher-application` 和 `stitcher-cli` 中所有对 `bus` 的调用，从使用硬编码的字符串消息 ID，迁移为使用 `L` 语义指针。
+遵循 SST (物理分片语义分类法) 规范，重构 `locales` 目录结构。同时，将所有资源加载逻辑固化在 `stitcher-needle` 运行时中，并使 `MessageBus` 成为 `needle` 的一个纯粹客户端，从而完成核心架构的解耦。
 
 ### 评论
-这是一个里程碑式的重构。虽然代码改动量不大，但它在概念上完成了从“基于字符串的脆弱约定”到“基于对象的类型安全引用”的转变。这将极大地提升开发者体验（DX），并为未来基于 `L` 对象的静态分析和自动补全打下基础。
+这是对 `stitcher-needle` 架构的最终定型。通过将加载逻辑完全下沉到 `needle` 并简化 `MessageBus`，我们实现了设计初衷：一个负责解析，一个负责分发。采用 FQN (全限定名) 作为 JSON 文件中的键，极大地增强了系统的鲁棒性和未来工具链的可扩展性。
 
 ### 目标
-1.  在 `stitcher.cli.main` 中，将 `bus.info("...")` 调用替换为 `bus.info(L....)`。
-2.  在 `stitcher.app.core` 中，将所有 `bus.error`, `bus.success`, `bus.warning` 调用替换为使用 `L` 对象。
-3.  在上述两个文件中添加 `from stitcher.common import L` 的导入语句。
+1.  **简化 `Loader`**: 移除 FQN 展平逻辑，使其仅负责加载和合并 JSON 文件。
+2.  **重构 `MessageBus`**: 移除 `MessageStore`，使其不再处理文件 I/O，而是直接调用 `needle.get()` 来解析消息。
+3.  **重构 `Renderer` 协议**: `Renderer` 的职责是“呈现”，它不应该关心消息的 ID 或格式化。它现在将只接收最终的、已解析的字符串。
+4.  **迁移 `locales` 文件**: 删除旧文件，并根据 SST 规范创建新的、使用 FQN 键的 JSON 文件。
+5.  **更新测试**: 确保集成测试反映新的架构。
 
 ### 基本原理
-我们将使用多个精确的 `patch_file` 操作来执行替换，确保每次修改都具有足够的上下文，避免误操作。为每个文件添加导入是完成迁移的必要步骤，使其能够正确解析 `L` 对象。
+此重构遵循单一职责原则。`Needle` 封装了所有关于“语义”的知识（如何加载、如何降级），`MessageBus` 只负责消息的“路由”，而 `Renderer` 只负责最终的“呈现”。这是一个清晰、分层、可测试的架构。
 
 ### 标签
-#intent/refine #flow/ready #priority/high #comp/cli #comp/application #scope/core #scope/dx #ai/instruct #task/domain/runtime #task/object/needle-kernel #task/action/implementation #task/state/continue
+#intent/refine #flow/ready #priority/high #comp/common #comp/runtime #scope/core #ai/instruct #task/domain/runtime #task/object/sst-migration #task/action/implementation #task/state/continue
 
 ---
 ### Script
 
-#### Acts 1: 更新 `stitcher-cli`
+#### Acts 1: 简化 `Loader` 以支持 FQN 键
 
-首先，我们修改 CLI 入口文件，添加导入并替换消息 ID。
+我们重写 `Loader`，移除所有路径前缀和展平逻辑。它的新工作是简单地合并所有找到的 JSON 文件中的顶级键。
+
+~~~~~act
+write_file
+packages/stitcher-needle/src/stitcher/needle/loader.py
+~~~~~
+~~~~~python
+import os
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from .interfaces import FileHandler
+from .handlers import JsonHandler
+
+
+class Loader:
+    def __init__(self, handlers: Optional[List[FileHandler]] = None):
+        # Default to JsonHandler if none provided
+        self.handlers = handlers or [JsonHandler()]
+
+    def _load_and_merge_file(self, path: Path, registry: Dict[str, str]):
+        for handler in self.handlers:
+            if handler.match(path):
+                try:
+                    content = handler.load(path)
+                    # Keys are now expected to be full FQNs at the top level.
+                    # We simply validate they are strings and update the registry.
+                    for key, value in content.items():
+                        registry[key] = str(value)
+                except Exception:
+                    # Silently ignore malformed files.
+                    pass
+                return # Stop after first matching handler
+
+    def load_directory(self, root_path: Path) -> Dict[str, str]:
+        """
+        Scans a directory for supported config files and merges their top-level
+        keys into a single flat registry.
+        """
+        registry: Dict[str, str] = {}
+
+        if not root_path.is_dir():
+            return registry
+
+        for dirpath, _, filenames in os.walk(root_path):
+            for filename in filenames:
+                file_path = Path(dirpath) / filename
+                self._load_and_merge_file(file_path, registry)
+
+        return registry
+~~~~~
+
+#### Acts 2: 重构 `MessageBus` 和 `Renderer`
+
+`MessageBus` 不再需要 `MessageStore`，而是直接使用全局的 `needle` 实例。`Renderer` 协议也相应简化。
+
+~~~~~act
+write_file
+packages/stitcher-common/src/stitcher/common/messaging/protocols.py
+~~~~~
+~~~~~python
+from typing import Any, Protocol
+
+class Renderer(Protocol):
+    """
+    Protocol for message renderers. A renderer's only job is to
+    present a final, formatted string to the user.
+    """
+
+    def render(self, message: str, level: str) -> None:
+        """
+        Renders the message.
+
+        Args:
+            message: The fully resolved string to be displayed.
+            level: The log level ("info", "warning", "error", "success").
+        """
+        ...
+~~~~~
+
+~~~~~act
+write_file
+packages/stitcher-common/src/stitcher/common/messaging/bus.py
+~~~~~
+~~~~~python
+from typing import Any, Optional, Union
+
+from stitcher.needle import SemanticPointer, needle
+from .protocols import Renderer
+
+
+class MessageBus:
+    def __init__(self):
+        self._renderer: Optional[Renderer] = None
+
+    def set_renderer(self, renderer: Renderer):
+        self._renderer = renderer
+
+    def _render(self, level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
+        if not self._renderer:
+            return
+        
+        # Resolve the pointer to a string template using the Needle runtime
+        template = needle.get(msg_id)
+        
+        # Format the final message
+        try:
+            message = template.format(**kwargs)
+        except KeyError:
+            # Fallback for formatting errors
+            message = f"<formatting_error for '{str(msg_id)}'>"
+            
+        self._renderer.render(message, level)
+
+    def info(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
+        self._render("info", msg_id, **kwargs)
+
+    def success(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
+        self._render("success", msg_id, **kwargs)
+        
+    def warning(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
+        self._render("warning", msg_id, **kwargs)
+
+    def error(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
+        self._render("error", msg_id, **kwargs)
+
+# Global singleton instance
+bus = MessageBus()
+~~~~~
+
+#### Acts 3: 更新 `CliRenderer` 以符合新协议
+
+`CliRenderer` 的实现变得更简单，它只负责打印。
+
+~~~~~act
+patch_file
+packages/stitcher-cli/src/stitcher/cli/rendering.py
+~~~~~
+~~~~~old
+import typer
+from stitcher.common.messaging import MessageStore, protocols
+
+class CliRenderer(protocols.Renderer):
+    """
+    Renders messages to the command line using Typer for colored output.
+    """
+    def __init__(self, store: MessageStore):
+        self._store = store
+
+    def render(self, msg_id: str, level: str, **kwargs):
+        message = self._store.get(msg_id, **kwargs)
+        
+        color = None
+        if level == "success":
+~~~~~
+~~~~~new
+import typer
+from stitcher.common.messaging import protocols
+
+class CliRenderer(protocols.Renderer):
+    """
+    Renders messages to the command line using Typer for colored output.
+    """
+    def render(self, message: str, level: str):
+        color = None
+        if level == "success":
+~~~~~
+
+#### Acts 4: 更新 CLI 的 `bus` 注入
+
+`bus` 不再需要 `store`，`CliRenderer` 也不再需要 `store`。
 
 ~~~~~act
 patch_file
 packages/stitcher-cli/src/stitcher/cli/main.py
 ~~~~~
-~~~~~python.old
-from pathlib import Path
-import typer
-
-from stitcher.app import StitcherApp
-from stitcher.common import bus
-from .rendering import CliRenderer
+~~~~~old
+# --- Dependency Injection at the very start ---
+# The CLI is the composition root. It decides *which* renderer to use.
+cli_renderer = CliRenderer(store=bus.store)
+bus.set_renderer(cli_renderer)
+# ---------------------------------------------
 ~~~~~
-~~~~~python.new
-from pathlib import Path
-import typer
+~~~~~new
+# --- Dependency Injection at the very start ---
+# The CLI is the composition root. It decides *which* renderer to use.
+cli_renderer = CliRenderer()
+bus.set_renderer(cli_renderer)
+# ---------------------------------------------
+~~~~~
 
-from stitcher.app import StitcherApp
-from stitcher.common import L, bus
-from .rendering import CliRenderer
+#### Acts 5: 迁移 `locales` 物理文件
+
+现在，我们删除旧文件并创建符合新 SST 规范的文件。
+
+~~~~~act
+delete_file
+packages/stitcher-common/src/stitcher/common/locales/en/cli.json
 ~~~~~
 
 ~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/main.py
+run_command
 ~~~~~
-~~~~~python.old
-@app.command()
-def init():
-    """Initialize Stitcher in the current project."""
-    bus.info("cli.command.not_implemented", command="init")
-
-@app.command()
-def check():
-    """Verify consistency between code and docs."""
-    bus.info("cli.command.not_implemented", command="check")
 ~~~~~
-~~~~~python.new
-@app.command()
-def init():
-    """Initialize Stitcher in the current project."""
-    bus.info(L.cli.command.not_implemented, command="init")
-
-@app.command()
-def check():
-    """Verify consistency between code and docs."""
-    bus.info(L.cli.command.not_implemented, command="check")
-~~~~~
-
-#### Acts 2: 更新 `stitcher-application`
-
-接着，我们对应用核心逻辑进行相同的迁移操作。
-
-~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
-~~~~~
-~~~~~python.old
-from stitcher.io import StubGenerator
-from stitcher.spec import ModuleDef, FunctionDef
-from stitcher.common import bus
-from stitcher.config import load_config_from_path
-~~~~~
-~~~~~python.new
-from stitcher.io import StubGenerator
-from stitcher.spec import ModuleDef, FunctionDef
-from stitcher.common import L, bus
-from stitcher.config import load_config_from_path
+mkdir -p packages/stitcher-common/src/stitcher/common/locales/en/generate
+mkdir -p packages/stitcher-common/src/stitcher/common/locales/en/error
+mkdir -p packages/stitcher-common/src/stitcher/common/locales/en/cli
+mkdir -p packages/stitcher-common/src/stitcher/common/locales/en/warning
 ~~~~~
 
 ~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
+write_file
+packages/stitcher-common/src/stitcher/common/locales/en/generate/main.json
 ~~~~~
-~~~~~python.old
-                module_def = parse_source_code(content, file_path=relative_path)
-                modules.append(module_def)
-            except Exception as e:
-                bus.error("error.generic", error=e)
-        return modules
-~~~~~
-~~~~~python.new
-                module_def = parse_source_code(content, file_path=relative_path)
-                modules.append(module_def)
-            except Exception as e:
-                bus.error(L.error.generic, error=e)
-        return modules
+~~~~~json
+{
+    "generate.file.success": "✅ Generated stub: {path}",
+    "generate.run.complete": "✨ Generation complete. {count} files created."
+}
 ~~~~~
 
 ~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
+write_file
+packages/stitcher-common/src/stitcher/common/locales/en/cli/command.json
 ~~~~~
-~~~~~python.old
-                virtual_modules[func_path].functions.append(func_def)
-
-            except InspectionError as e:
-                bus.error("error.plugin.inspection", error=e)
-
-        return list(virtual_modules.values())
-~~~~~
-~~~~~python.new
-                virtual_modules[func_path].functions.append(func_def)
-
-            except InspectionError as e:
-                bus.error(L.error.plugin.inspection, error=e)
-
-        return list(virtual_modules.values())
+~~~~~json
+{
+    "cli.command.not_implemented": "ℹ️  Command '{command}' is not yet implemented."
+}
 ~~~~~
 
 ~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
+write_file
+packages/stitcher-common/src/stitcher/common/locales/en/error/main.json
 ~~~~~
-~~~~~python.old
-            output_path.write_text(pyi_content, encoding="utf-8")
-            
-            relative_path = output_path.relative_to(self.root_path)
-            bus.success("generate.file.success", path=relative_path)
-            generated_files.append(output_path)
-        return generated_files
-~~~~~
-~~~~~python.new
-            output_path.write_text(pyi_content, encoding="utf-8")
-            
-            relative_path = output_path.relative_to(self.root_path)
-            bus.success(L.generate.file.success, path=relative_path)
-            generated_files.append(output_path)
-        return generated_files
+~~~~~json
+{
+    "error.config.not_found": "⚠️  No [tool.stitcher] config found in pyproject.toml. Nothing to do.",
+    "error.generic": "❌ An unexpected error occurred: {error}",
+    "error.plugin.inspection": "❌ Error inspecting plugin: {error}"
+}
 ~~~~~
 
 ~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
+write_file
+packages/stitcher-common/src/stitcher/common/locales/en/warning/main.json
 ~~~~~
-~~~~~python.old
-        all_modules = source_modules + plugin_modules
-        if not all_modules:
-            bus.warning("warning.no_files_or_plugins_found")
-            return []
+~~~~~json
+{
+    "warning.no_files_or_plugins_found": "🤔 No source files or plugins were found to process."
+}
+~~~~~
 
-        generated_files = self._generate_stubs(all_modules)
+#### Acts 6: 更新 `Needle` 运行时以指向 `common`
+
+`needle` 的默认根路径应该指向 `stitcher-common` 内部，而不是项目根目录。
+
+~~~~~act
+patch_file
+packages/stitcher-needle/src/stitcher/needle/runtime.py
+~~~~~
+~~~~~old
+    def _find_project_root(self) -> Path:
+        """
+        Simple heuristic to find where 'stitcher' directory might be.
+        Defaults to current working directory.
+        """
+        return Path.cwd()
+
+    def _ensure_lang_loaded(self, lang: str):
+        if lang in self._loaded_langs:
+            return
+
+        # SST path: project_root/stitcher/needle/<lang>/
+        needle_dir = self.root_path / "stitcher" / "needle" / lang
         
-        if generated_files:
-            bus.success("generate.run.complete", count=len(generated_files))
-
-        return generated_files
+        # Load and cache
+        self._registry[lang] = self._loader.load_directory(needle_dir)
 ~~~~~
-~~~~~python.new
-        all_modules = source_modules + plugin_modules
-        if not all_modules:
-            bus.warning(L.warning.no_files_or_plugins_found)
-            return []
+~~~~~new
+    def _find_project_root(self) -> Path:
+        """
+        The canonical source for locales is inside the stitcher-common package.
+        """
+        # Assumes this file is at .../stitcher/needle/runtime.py
+        # We want .../stitcher/common/
+        return Path(__file__).parent.parent.parent / "common"
 
-        generated_files = self._generate_stubs(all_modules)
+    def _ensure_lang_loaded(self, lang: str):
+        if lang in self._loaded_langs:
+            return
+
+        # SST path: stitcher-common/src/stitcher/common/locales/<lang>/
+        locales_dir = self.root_path / "locales" / lang
         
-        if generated_files:
-            bus.success(L.generate.run.complete, count=len(generated_files))
-
-        return generated_files
+        # Load and cache
+        self._registry[lang] = self._loader.load_directory(locales_dir)
 ~~~~~
