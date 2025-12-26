@@ -75,9 +75,8 @@ class StubGenerator:
         annotation = attr.annotation if attr.annotation else "Any"
         line = f"{indent}{attr.name}: {annotation}"
 
-        # If we wanted to include value:
-        # if attr.value:
-        #     line += f" = {attr.value}"
+        if attr.value:
+            line += f" = {attr.value}"
 
         return line
 
