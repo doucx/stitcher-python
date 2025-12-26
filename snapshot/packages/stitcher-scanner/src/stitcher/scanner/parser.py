@@ -20,6 +20,7 @@ class IRBuildingVisitor(cst.CSTVisitor):
         self.classes: List[ClassDef] = []
         self.attributes: List[Attribute] = []
         self.imports: List[str] = []
+        self.dunder_all: Optional[str] = None
 
         # Scope management: A stack of currently active ClassDefs being built.
         # If stack is empty, we are at module level.
@@ -51,13 +52,19 @@ class IRBuildingVisitor(cst.CSTVisitor):
             return False
 
         name = node.target.value
-        annotation = self._dummy_module.code_for_node(
-            node.annotation.annotation
-        ).strip()
-
         value = None
         if node.value:
             value = self._dummy_module.code_for_node(node.value).strip()
+
+        # Special handling for __all__
+        if name == "__all__" and not self._class_stack:
+            if value:
+                self.dunder_all = value
+            return False
+
+        annotation = self._dummy_module.code_for_node(
+            node.annotation.annotation
+        ).strip()
 
         self._add_attribute(Attribute(name=name, annotation=annotation, value=value))
         return False
@@ -74,6 +81,11 @@ class IRBuildingVisitor(cst.CSTVisitor):
 
         name = target.value
         value = self._dummy_module.code_for_node(node.value).strip()
+
+        # Special handling for __all__
+        if name == "__all__" and not self._class_stack:
+            self.dunder_all = value
+            return False
 
         self._add_attribute(Attribute(name=name, annotation=None, value=value))
         return False
@@ -350,6 +362,7 @@ def parse_source_code(source_code: str, file_path: str = "") -> ModuleDef:
         classes=visitor.classes,
         attributes=visitor.attributes,
         imports=visitor.imports,
+        dunder_all=visitor.dunder_all,
     )
 
     _enrich_typing_imports(module_def)
