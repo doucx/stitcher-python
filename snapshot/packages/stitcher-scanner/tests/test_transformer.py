@@ -91,4 +91,7 @@ def test_inject_multiline_handling():
 
     result = inject_docstrings(source, docs)
     # Should use triple quotes and contain newlines with proper indentation (4 spaces)
-    assert '"""Line 1\n    Line 2"""' in result or '"""\n    Line 1\n    Line 2\n    """' in result
+    assert (
+        '"""Line 1\n    Line 2"""' in result
+        or '"""\n    Line 1\n    Line 2\n    """' in result
+    )

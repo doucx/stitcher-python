@@ -134,20 +134,18 @@ class InjectorTransformer(cst.CSTTransformer):
     ) -> Union[cst.BaseSuite, cst.SimpleStatementSuite]:
         # Calculate context-aware indentation
         base_indent = "".join(self.indent_stack)
-        
+
         # Determine the indentation for the body itself
         extra_indent = "    "  # Default fallback
         if isinstance(body, cst.IndentedBlock):
             extra_indent = body.indent if body.indent is not None else "    "
-        
+
         full_indent = base_indent + extra_indent
 
         lines = doc_content.split("\n")
         if len(lines) > 1:
             # Re-indent all lines after the first one using the calculated full_indent
-            indented_lines = [lines[0]] + [
-                f"{full_indent}{line}" for line in lines[1:]
-            ]
+            indented_lines = [lines[0]] + [f"{full_indent}{line}" for line in lines[1:]]
             doc_content = "\n".join(indented_lines)
 
         new_doc_node = self._create_docstring_node(doc_content)
