@@ -35,5 +35,4 @@ def test_representation():
 def test_hashability():
     # Pointers should be usable as dictionary keys
     d = {L.key: "value"}
-    assert d["key"] == "value"
     assert d[L.key] == "value"

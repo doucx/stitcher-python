@@ -110,6 +110,7 @@ def process(
     arg_meta = func.args[1]
     # LibCST might strip whitespace differently, but usually it preserves structure
     # We check if key parts are present
+    assert arg_meta.annotation is not None
     assert "Union" in arg_meta.annotation
     assert "Dict[str, Any]" in arg_meta.annotation
 
