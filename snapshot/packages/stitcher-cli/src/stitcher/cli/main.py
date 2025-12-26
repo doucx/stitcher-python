@@ -69,6 +69,25 @@ def eject():
     app_instance.run_eject()
 
 
+@app.command()
+def hydrate(
+    strip: bool = typer.Option(
+        False, "--strip", help="Remove docstrings from source code after hydration."
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite YAML content if it differs from source code."
+    ),
+):
+    """
+    Extract new docstrings from source code and merge them into .stitcher.yaml.
+    """
+    project_root = Path.cwd()
+    app_instance = StitcherApp(root_path=project_root)
+    success = app_instance.run_hydrate(strip=strip, force=force)
+    if not success:
+        raise typer.Exit(code=1)
+
+
 # Helper needed for typer.confirm, as it prints directly
 # We need to render message to a string first
 def render_to_string_patch(self, msg_id, **kwargs):
