@@ -5,7 +5,8 @@ from collections import defaultdict
 from stitcher.scanner import parse_source_code, parse_plugin_entry, InspectionError
 from stitcher.io import StubGenerator
 from stitcher.spec import ModuleDef, FunctionDef
-from stitcher.common import L, bus
+from stitcher.common import bus
+from stitcher.needle import L
 from stitcher.config import load_config_from_path
 
 

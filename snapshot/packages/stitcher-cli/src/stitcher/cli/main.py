@@ -2,7 +2,8 @@ from pathlib import Path
 import typer
 
 from stitcher.app import StitcherApp
-from stitcher.common import L, bus
+from stitcher.common import bus
+from stitcher.needle import L
 from .rendering import CliRenderer
 
 app = typer.Typer(
