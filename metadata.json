@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix(core): 优化 check 命令的噪音过滤与失败判定策略", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766753064.9264572, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test: 同步测试用例以适配 check 降级逻辑与属性值输出", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766753167.9474711, "duration_ms": 0}}
