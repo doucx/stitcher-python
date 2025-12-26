@@ -58,7 +58,7 @@ def test_app_run_from_config_with_source_files(tmp_path, monkeypatch):
             """,
         )
         # This file should remain untouched/unscanned
-        .with_source("src/app/tests/test_helpers.py", "def test_assist(): pass")
+        .with_source("tests/test_helpers.py", "def test_assist(): pass")
         .build()
     )
 
