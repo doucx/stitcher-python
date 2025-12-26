@@ -1,58 +1,59 @@
-## [WIP] fix(io): 恢复 Stub 中的属性值输出以修复 Dataclass 默认值丢失
+好的，既然验证已经通过，我们现在将这些关键修复作为一个完整的逻辑单元提交。
 
-### 错误分析
-**现象**: `pyrefly check` 报错大量的 `Missing argument ... in function ...__init__`。
-**原因**:
-1.  **进展示意**: 上一步的修复成功让类型检查器识别到了 `@dataclass` 装饰器，因此它开始自动合成 `__init__` 方法。
-2.  **默认值丢失**: 在当前的 `StubGenerator` 实现中，为了简化输出，**人为丢弃了属性的赋值部分**（即 `= value`）。
-3.  **后果**: 对于 `dataclass` 而言，如果字段定义为 `x: List[int] = field(default_factory=list)`，但在 Stub 中被剥离为 `x: List[int]`，类型检查器就会认为 `x` 是一个**没有默认值**的字段。因此，在调用 `__init__` 时，这些参数变成了必填项，导致测试代码（未传递这些参数）报错。
+这组修改解决了 `stitcher` 在自举（Dogfooding）过程中的一个重大阻碍：由于丢失了类装饰器（尤其是 `@dataclass`）和属性默认值，导致生成的类型存根（Stubs）无法被类型检查器正确解析。
+
+## [COMMIT] fix(core): 支持类装饰器与属性赋值以修复数据类存根
 
 ### 用户需求
-修复生成的 `.pyi` 文件，使其包含属性的默认值（特别是 `field(...)`），从而让类型检查器正确识别可选参数。
+确保生成的 `.pyi` 文件能够高保真地还原代码的语义结构，特别是针对 `dataclass` 的类型推断能力。
 
 ### 评论
-这是一个非常典型的“好心办坏事”。原本为了 `.pyi` 的简洁性而移除赋值，却破坏了 `dataclass` 的语义完整性。在 Python 类型系统中，`= ...` 或具体的赋值是判断参数是否可选的唯一依据。
+这是一次重要的架构补完。通过恢复装饰器和属性值的透传，我们确保了 `stitcher` 生成的存根不仅在视觉上相似，而且在语义上对静态分析工具（Pyright/Mypy）是完全透明且准确的。
 
 ### 目标
-修改 `StubGenerator`，使其在生成属性定义时，如果存在 `value`，则将其完整输出。
+1.  提交对 `stitcher-spec` 中 `ClassDef` 模型的扩展。
+2.  提交对 `stitcher-scanner` 中类装饰器提取逻辑的改进。
+3.  提交对 `stitcher-io` 中存根生成逻辑的修复（恢复属性赋值）。
 
 ### 基本原理
-恢复被注释掉的代码逻辑。由于 Scanner 已经完整提取了源码中的赋值表达式（例如 `"field(default_factory=list)"`），且我们保留了所有的 import，直接将这个值写入 `.pyi` 文件既能恢复语义，也是类型安全的。
+在现代 Python 开发中，装饰器（如 `@dataclass`, `@property`）和赋值（定义默认值）承载了大量的类型元数据。将这些信息纳入 IR 并在生成环节还原，是实现“高保真存根”这一核心愿景的必然要求。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/engine #concept/generator #scope/core #task/domain/codemod #task/object/attribute-value #task/action/restore #task/state/continue
+#intent/fix #flow/ready #comp/engine #concept/parser #concept/generator #scope/core #ai/instruct #task/domain/codemod #task/object/decorators #task/action/fix #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 恢复属性值输出
+#### Acts 1: 提交代码修改
 
-修改 `stub_generator.py`，取消对属性值的注释，使其被正确写入。
+我们将把涉及 Spec、Scanner 和 IO 三个包的修改添加并提交。
 
 ~~~~~act
-patch_file
+git_add
+packages/stitcher-spec/src/stitcher/spec/models.py
+packages/stitcher-scanner/src/stitcher/scanner/parser.py
 packages/stitcher-io/src/stitcher/io/stub_generator.py
 ~~~~~
-~~~~~python.old
-        annotation = attr.annotation if attr.annotation else "Any"
-        line = f"{indent}{attr.name}: {annotation}"
 
-        # If we wanted to include value:
-        # if attr.value:
-        #     line += f" = {attr.value}"
-
-        return line
+~~~~~act
+git_commit
 ~~~~~
-~~~~~python.new
-        annotation = attr.annotation if attr.annotation else "Any"
-        line = f"{indent}{attr.name}: {annotation}"
+~~~~~text
+fix(core): support class decorators and attribute values in stubs
 
-        if attr.value:
-            line += f" = {attr.value}"
+This commit fixes a major type-checking failure encountered during dogfooding.
+Previously, generated .pyi files lost @dataclass decorators and default values
+for attributes, which caused Pyright/Mypy to fail on every constructor call
+due to missing __init__ signatures or mandatory arguments.
 
-        return line
+- Spec: Added 'decorators' field to ClassDef model.
+- Scanner: Updated CST visitor to extract decorators for classes.
+- IO: Updated StubGenerator to output @decorators and restore attribute 
+  assignments (e.g., field default factories), ensuring full semantic 
+  fidelity for dataclasses.
 ~~~~~
 
 ### 下一步建议
-执行此计划后，再次运行 `stitcher generate` 重新生成所有存根文件，然后运行 `pyrefly check`。预期所有 `Missing argument` 错误都将消失。
+- **更新项目存根**: 既然修复已提交，建议在项目根目录再次运行 `stitcher generate`。由于现在支持了装饰器和默认值，你将看到项目自身的 IDE 报错彻底消失。
+- **验证 `check` 命令**: 运行 `stitcher check` 确保当前的逻辑修改没有影响代码与文档的同步性。
