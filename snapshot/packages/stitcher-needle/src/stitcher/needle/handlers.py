@@ -4,6 +4,8 @@ from typing import Any, Dict
 
 
 class JsonHandler:
+    """Standard handler for JSON files."""
+
     def match(self, path: Path) -> bool:
         return path.suffix.lower() == ".json"
 

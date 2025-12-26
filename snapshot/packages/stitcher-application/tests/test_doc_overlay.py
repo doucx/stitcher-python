@@ -5,6 +5,9 @@ from stitcher.io import YamlAdapter
 
 
 def test_apply_docs_overlay(tmp_path: Path):
+    """
+    Verifies that external docs overwrite source docs in the IR.
+    """
     # 1. Setup IR with "Source Docs"
     module = ModuleDef(
         file_path="src/main.py",
@@ -31,6 +34,9 @@ def test_apply_docs_overlay(tmp_path: Path):
 
 
 def test_apply_docs_partial_overlay(tmp_path: Path):
+    """
+    Verifies that if a key is missing in YAML, source doc is preserved.
+    """
     module = ModuleDef(
         file_path="src/main.py",
         functions=[

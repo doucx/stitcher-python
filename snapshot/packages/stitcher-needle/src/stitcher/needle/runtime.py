@@ -7,23 +7,22 @@ from .pointer import SemanticPointer
 
 
 class Needle:
+    """
+    The runtime kernel for semantic addressing.
+    """
+
     def __init__(self, root_path: Optional[Path] = None, default_lang: str = "en"):
-        self._explicit_root = root_path
-        self._discovered_root: Optional[Path] = None
+        self.root_path = root_path or self._find_project_root()
         self.default_lang = default_lang
         self._registry: Dict[str, Dict[str, str]] = {}  # lang -> {fqn: value}
         self._loader = Loader()
         self._loaded_langs: set = set()
 
-    @property
-    def root_path(self) -> Path:
-        if self._explicit_root:
-            return self._explicit_root
-        if not self._discovered_root:
-            self._discovered_root = self._find_project_root()
-        return self._discovered_root
-
     def _find_project_root(self, start_dir: Optional[Path] = None) -> Path:
+        """
+        Finds the project root by searching upwards for common markers.
+        Search priority: pyproject.toml -> .git
+        """
         current_dir = (start_dir or Path.cwd()).resolve()
         while current_dir.parent != current_dir:  # Stop at filesystem root
             # Priority 1: pyproject.toml (strongest Python project signal)
@@ -50,6 +49,14 @@ class Needle:
     def get(
         self, pointer: Union[SemanticPointer, str], lang: Optional[str] = None
     ) -> str:
+        """
+        Resolves a semantic pointer to a string value with graceful fallback.
+
+        Lookup Order:
+        1. Target Language
+        2. Default Language (en)
+        3. Identity (the key itself)
+        """
         key = str(pointer)
         target_lang = lang or os.getenv("STITCHER_LANG", self.default_lang)
 

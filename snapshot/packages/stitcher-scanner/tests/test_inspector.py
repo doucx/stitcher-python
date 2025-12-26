@@ -8,6 +8,7 @@ from stitcher.scanner.inspector import parse_plugin_entry
 
 @pytest.fixture
 def temp_module(tmp_path: Path):
+    """Creates a temporary, importable module for testing."""
     module_content = dedent("""
     from typing import Optional
 
@@ -38,6 +39,10 @@ def temp_module(tmp_path: Path):
 
 
 def test_parse_plugin_entry_point(temp_module: str):
+    """
+    Test parsing a live, imported function via its entry point string
+    into our FunctionDef IR.
+    """
     # Act
     func_def = parse_plugin_entry(temp_module)
 

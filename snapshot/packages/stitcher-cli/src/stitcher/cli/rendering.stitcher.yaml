@@ -1,2 +1,0 @@
-"CliRenderer": |-
-  Renders messages to the command line using Typer for colored output.

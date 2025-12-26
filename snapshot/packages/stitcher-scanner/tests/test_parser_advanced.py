@@ -2,6 +2,7 @@ from stitcher.scanner import parse_source_code
 
 
 def test_parse_attributes():
+    """Test parsing of module-level and class-level attributes."""
     source_code = """
 VERSION: str = "1.0.0"
 DEBUG = True
@@ -45,6 +46,7 @@ class Config:
 
 
 def test_parse_decorators():
+    """Test parsing of function and method decorators."""
     source_code = """
 @simple
 @parameterized(val=1)
@@ -61,6 +63,7 @@ def my_func():
 
 
 def test_parse_special_methods():
+    """Test identification of static and class methods."""
     source_code = """
 class MyClass:
     @staticmethod
@@ -87,6 +90,7 @@ class MyClass:
 
 
 def test_parse_complex_types():
+    """Test parsing of complex type annotations."""
     source_code = """
 from typing import List, Union, Optional
 
