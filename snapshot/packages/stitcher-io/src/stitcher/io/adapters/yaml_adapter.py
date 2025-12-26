@@ -13,22 +13,22 @@ class YamlAdapter(DocumentAdapter):
     def load(self, path: Path) -> Dict[str, str]:
         if not path.exists():
             return {}
-        
+
         try:
             with path.open("r", encoding="utf-8") as f:
                 content = yaml.safe_load(f)
-                
+
             if not isinstance(content, dict):
                 # If file exists but is empty or list, return empty dict
                 return {}
-                
+
             # Ensure all values are strings
             return {str(k): str(v) for k, v in content.items() if v is not None}
-            
+
         except yaml.YAMLError:
-            # We might want to log this, but for the adapter contract, 
-            # returning empty or raising are options. 
-            # Given this is IO layer, letting exception bubble or wrapping it 
+            # We might want to log this, but for the adapter contract,
+            # returning empty or raising are options.
+            # Given this is IO layer, letting exception bubble or wrapping it
             # would be better, but let's stick to simple contract for now:
             # If we can't read it, it's effectively empty/corrupt.
             # Rationale: 'stitcher check' will complain about missing docs anyway.
@@ -52,9 +52,9 @@ class YamlAdapter(DocumentAdapter):
             # allow_unicode=True is essential for i18n
             # default_flow_style=False ensures block style (easier to read)
             yaml.safe_dump(
-                sorted_data, 
-                f, 
-                allow_unicode=True, 
+                sorted_data,
+                f,
+                allow_unicode=True,
                 default_flow_style=False,
-                sort_keys=False # We already sorted
+                sort_keys=False,  # We already sorted
             )
