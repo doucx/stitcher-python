@@ -3,6 +3,7 @@ from pathlib import Path
 from textwrap import dedent
 from unittest.mock import MagicMock
 from stitcher.app import StitcherApp
+from stitcher.needle import L
 
 
 @pytest.fixture
@@ -59,9 +60,9 @@ def test_init_extracts_docs_to_yaml(tmp_path, mock_bus):
     
     # Verify bus messages
     mock_bus.success.assert_any_call(
-        "init.file.created", path=expected_yaml.relative_to(project_root)
+        L.init.file.created, path=expected_yaml.relative_to(project_root)
     )
-    mock_bus.success.assert_any_call("init.run.complete", count=1)
+    mock_bus.success.assert_any_call(L.init.run.complete, count=1)
 
 
 def test_init_skips_files_without_docs(tmp_path, mock_bus):
@@ -80,4 +81,4 @@ def test_init_skips_files_without_docs(tmp_path, mock_bus):
     created_files = app.run_init()
     
     assert len(created_files) == 0
-    mock_bus.info.assert_called_with("init.no_docs_found")
+    mock_bus.info.assert_called_with(L.init.no_docs_found)
