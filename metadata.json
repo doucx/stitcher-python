@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] refactor(needle): 基于系统标准 LANG 变量实现通用语言自动检测", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766756137.1369271, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat(common): 为运行时消息提供完整的中文本地化支持", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766756603.4119296, "duration_ms": 0}}
