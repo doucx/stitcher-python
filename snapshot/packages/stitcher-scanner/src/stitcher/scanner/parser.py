@@ -255,7 +255,6 @@ class IRBuildingVisitor(cst.CSTVisitor):
 
 
 def _collect_annotations(module: ModuleDef) -> Set[str]:
-    """Recursively collects all type annotation strings from the module IR."""
     annotations = set()
 
     def add_if_exists(ann: Optional[str]):
@@ -286,7 +285,6 @@ def _collect_annotations(module: ModuleDef) -> Set[str]:
 
 
 def _has_unannotated_attributes(module: ModuleDef) -> bool:
-    """Check if any attribute in the module IR lacks an annotation."""
     if any(attr.annotation is None for attr in module.attributes):
         return True
     for cls in module.classes:
@@ -296,10 +294,6 @@ def _has_unannotated_attributes(module: ModuleDef) -> bool:
 
 
 def _enrich_typing_imports(module: ModuleDef):
-    """
-    Scans used annotations and module structure, then injects necessary
-    'typing' imports.
-    """
     TYPING_SYMBOLS = {
         "List",
         "Dict",
@@ -343,9 +337,6 @@ def _enrich_typing_imports(module: ModuleDef):
 
 
 def parse_source_code(source_code: str, file_path: str = "") -> ModuleDef:
-    """
-    Parses Python source code into Stitcher IR.
-    """
     try:
         cst_module = cst.parse_module(source_code)
     except cst.ParserSyntaxError as e:
