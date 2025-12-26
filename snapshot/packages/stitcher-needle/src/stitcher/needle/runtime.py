@@ -12,11 +12,23 @@ class Needle:
     """
 
     def __init__(self, root_path: Optional[Path] = None, default_lang: str = "en"):
-        self.root_path = root_path or self._find_project_root()
+        # We now support multiple roots. The project root is just the primary one.
+        project_root = root_path or self._find_project_root()
+        self.roots: list[Path] = [project_root] if project_root else []
+
         self.default_lang = default_lang
         self._registry: Dict[str, Dict[str, str]] = {}  # lang -> {fqn: value}
         self._loader = Loader()
         self._loaded_langs: set = set()
+
+    def add_root(self, path: Path):
+        """Registers an additional root directory to search for needle assets."""
+        if path not in self.roots:
+            # We append to let existing (Project) roots take precedence during merge
+            self.roots.append(path)
+            # Clear cache to force reload on next access
+            self._loaded_langs.clear()
+            self._registry.clear()
 
     def _find_project_root(self, start_dir: Optional[Path] = None) -> Path:
         """
@@ -39,11 +51,23 @@ class Needle:
         if lang in self._loaded_langs:
             return
 
-        # Final SST path: <project_root>/.stitcher/needle/<lang>/
-        needle_dir = self.root_path / ".stitcher" / "needle" / lang
+        merged_data: Dict[str, str] = {}
 
-        # Load and cache
-        self._registry[lang] = self._loader.load_directory(needle_dir)
+        # Iterate over all roots in reverse order.
+        # Primary root (e.g. Project Root) should be roots[0] and should overwrite
+        # Secondary roots (e.g. System Assets).
+        for root in reversed(self.roots):
+            # Try strict SST (.stitcher/needle)
+            hidden_needle = root / ".stitcher" / "needle" / lang
+            if hidden_needle.exists():
+                merged_data.update(self._loader.load_directory(hidden_needle))
+
+            # Try unhidden needle (needle/) for package assets
+            visible_needle = root / "needle" / lang
+            if visible_needle.exists():
+                merged_data.update(self._loader.load_directory(visible_needle))
+
+        self._registry[lang] = merged_data
         self._loaded_langs.add(lang)
 
     def get(
