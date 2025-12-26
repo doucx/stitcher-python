@@ -1,60 +1,39 @@
-好的，所有本地化和语言检测相关的代码和资源文件都已准备就绪。我将生成一个 `[COMMIT]` 计划来提交这些变更，从而标志着本地化宏观任务的完成。
+# 📸 Snapshot Capture
 
-## [COMMIT] feat(i18n): Implement generic LANG detection and complete Chinese localization
+检测到工作区发生变更。
 
-### 用户需求
-提交所有与国际化 (i18n) 相关的代码和资源文件变更，包括：
-1.  `stitcher-needle` 中的通用 `LANG` 环境变量检测逻辑。
-2.  `stitcher-cli` 的 UI 消息和配置帮助文本的本地化迁移。
-3.  `stitcher-common` 中所有运行时消息的完整中文翻译。
-
-### 评论
-本次提交是项目迈向成熟的关键一步。通过适配系统标准的 `LANG` 环境变量，Stitcher 实现了零配置的本地化支持，极大地提升了全球用户的体验 (UX)。同时，我们验证了 `stitcher-needle` 多根加载机制的有效性，即多个独立包可以贡献自己的资源到同一个运行时注册表。
-
-### 目标
-将以下三个核心改动作为单一、完整的逻辑单元提交：
-1.  **Needle 运行时增强**: 增加对 `LANG` 变量（如 `zh_CN.UTF-8`）的解析支持。
-2.  **CLI 消息解耦**: 将 `stitcher-cli` 的所有 `typer` 帮助文本替换为语义指针 (`L.cli...`)。
-3.  **中文资源完整性**: 提交 `stitcher-common` 和 `stitcher-cli` 的中文（`zh`）语言资源包。
-
-### 基本原理
-我们通过在 `Needle.get` 中引入优先级解析链（`STITCHER_LANG` > `LANG` > `default`）来提供灵活且通用的语言检测。将 CLI UI 文本和业务逻辑反馈文本分别放入它们各自的包内维护，遵循了关注点分离原则，确保未来维护和扩展时互不干扰。
-
-### 标签
-#intent/build #intent/refine #flow/ready #priority/high
-#comp/cli #comp/needle #comp/common #concept/i18n #scope/ux #scope/dx
-#ai/instruct
-#task/domain/i18n #task/object/language-detection #task/action/standardization
-#task/state/end
-
----
-
-### Script
-
-#### Acts 1: 添加所有修改和新增的文件到暂存区
-
-~~~~~act
-git_add
-~~~~~
-
-#### Acts 2: 执行 Git 提交
-
-~~~~~act
-git_commit
-~~~~~
-~~~~~text
-feat(i18n): Implement generic LANG detection and complete Chinese localization
-
-This commit finalizes the core localization framework, enabling the Stitcher CLI
-and runtime messages to respond to the user's system language settings.
-
-Key changes:
-1.  **Needle Runtime**: Implemented `_resolve_lang` in `stitcher-needle` to prioritize `STITCHER_LANG` over, and then parse, the standard Unix `LANG` variable (e.g., `zh_CN.UTF-8` -> `zh`).
-2.  **CLI Localization**: Migrated all hardcoded `typer` help messages in `stitcher-cli` to use semantic pointers (`L.cli...`) and registered its own asset root.
-3.  **Chinese Assets**: Provided complete Chinese (`zh`) localization for both `stitcher-cli` (UI/Commands) and `stitcher-common` (Runtime messages/Errors).
-
-This ensures a robust, standard-compliant, and fully localized user experience.
-~~~~~
-
-### 下一步建议
-**宏观任务已完成。** 建议开始下一个宏观任务，例如按照路线图继续推进 **第三阶段：健壮性与高级功能** 中的性能优化，引入缓存机制（`任务 3.2: 缓存机制 (性能优化)`）。
+### 📝 变更文件摘要:
+```
+.../stitcher-application/src/stitcher/app/core.py  | 20 --------------
+ .../src/stitcher/app/core.stitcher.yaml            | 24 ++++++++++++++++
+ .../src/stitcher/app/services/doc_manager.py       | 32 ----------------------
+ .../app/services/doc_manager.stitcher.yaml         | 27 ++++++++++++++++++
+ .../src/stitcher/app/services/signature_manager.py | 24 ----------------
+ .../app/services/signature_manager.stitcher.yaml   | 17 ++++++++++++
+ .../stitcher-application/tests/test_doc_manager.py | 12 --------
+ .../tests/test_doc_manager.stitcher.yaml           | 11 ++++++++
+ .../stitcher-application/tests/test_doc_overlay.py |  6 ----
+ .../tests/test_doc_overlay.stitcher.yaml           |  4 +++
+ .../tests/test_signature_manager.py                | 10 -------
+ .../tests/test_signature_manager.stitcher.yaml     |  8 ++++++
+ packages/stitcher-cli/src/stitcher/cli/main.py     |  8 ------
+ .../src/stitcher/cli/main.stitcher.yaml            | 12 ++++++++
+ .../stitcher-cli/src/stitcher/cli/rendering.py     |  4 ---
+ .../src/stitcher/cli/rendering.stitcher.yaml       |  2 ++
+ .../src/stitcher/common/messaging/bus.py           |  1 -
+ .../stitcher/common/messaging/bus.stitcher.yaml    |  2 ++
+ .../src/stitcher/common/messaging/protocols.py     | 15 +---------
+ .../common/messaging/protocols.stitcher.yaml       |  9 ++++++
+ .../stitcher-config/src/stitcher/config/loader.py  |  3 --
+ .../src/stitcher/config/loader.stitcher.yaml       |  6 ++++
+ packages/stitcher-config/tests/test_loader.py      |  5 ----
+ .../tests/test_loader.stitcher.yaml                |  5 ++++
+ .../src/stitcher/io/adapters/yaml_adapter.py       |  4 ---
+ .../io/adapters/yaml_adapter.stitcher.yaml         |  2 ++
+ packages/stitcher-io/src/stitcher/io/interfaces.py | 30 ++------------------
+ .../src/stitcher/io/interfaces.stitcher.yaml       | 20 ++++++++++++++
+ .../stitcher-io/src/stitcher/io/stub_generator.py  |  3 --
+ .../src/stitcher/io/stub_generator.stitcher.yaml   |  2 ++
+ ...
+ 66 files changed, 324 insertions(+), 346 deletions(-)
+```
