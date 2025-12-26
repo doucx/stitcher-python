@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix(build): Remove conflicting pythonpath for test-utils", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766723720.4460325, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test: 修复测试工具并重构集成测试", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766723859.4914446, "duration_ms": 0}}
