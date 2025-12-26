@@ -3,10 +3,9 @@ from typing import List, Dict, Any, Optional
 
 from stitcher.common.messaging.bus import MessageBus
 from stitcher.common.messaging.protocols import Renderer
-from stitcher.needle import SemanticPointer, needle
+from stitcher.needle import SemanticPointer
 
 # Store the original bus instance from stitcher.common
-from stitcher.common import bus as original_bus_singleton
 
 
 class SpyRenderer(Renderer):
@@ -27,13 +26,11 @@ class SpyRenderer(Renderer):
 class PatchedMessageBus(MessageBus):
     """An override of MessageBus to intercept calls before rendering."""
 
-    def _render(
-        self, level: str, msg_id: SemanticPointer, **kwargs: Any
-    ) -> None:
+    def _render(self, level: str, msg_id: SemanticPointer, **kwargs: Any) -> None:
         # Instead of rendering to string, we record the semantic call
         if isinstance(self._renderer, SpyRenderer):
             self._renderer.record(level, msg_id, kwargs)
-        
+
         # We can still call the original render to a string if we want to test that too
         super()._render(level, msg_id, **kwargs)
 
@@ -68,6 +65,6 @@ class SpyBus:
             if msg["id"] == key and (level is None or msg["level"] == level):
                 found = True
                 break
-        
+
         if not found:
             raise AssertionError(f"Message with ID '{key}' was not sent.")

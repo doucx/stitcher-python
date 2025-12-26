@@ -40,9 +40,7 @@ class WorkspaceFactory:
 
     def with_docs(self, path: str, data: Dict[str, Any]) -> "WorkspaceFactory":
         """Adds a .stitcher.yaml documentation file."""
-        self._files_to_create.append(
-            {"path": path, "content": data, "format": "yaml"}
-        )
+        self._files_to_create.append({"path": path, "content": data, "format": "yaml"})
         return self
 
     def build(self) -> Path:

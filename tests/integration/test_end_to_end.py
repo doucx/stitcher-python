@@ -1,5 +1,4 @@
 import sys
-from pathlib import Path
 
 from stitcher.app import StitcherApp
 from stitcher.needle import L
@@ -8,17 +7,14 @@ from stitcher.test_utils import SpyBus, WorkspaceFactory
 
 def test_app_scan_and_generate_single_file(tmp_path, monkeypatch):
     factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_source(
-            "greet.py",
-            """
+    project_root = factory.with_source(
+        "greet.py",
+        """
             def greet(name: str) -> str:
                 \"\"\"Returns a greeting.\"\"\"
                 return f"Hello, {name}!"
             """,
-        )
-        .build()
-    )
+    ).build()
 
     app = StitcherApp(root_path=project_root)
     spy_bus = SpyBus()
