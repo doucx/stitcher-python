@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 移除根目录 __init__.py 以修复命名空间遮蔽", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766731458.9018164, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "Capture: D __init__.py", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766731711.1964757, "duration_ms": 0}}
