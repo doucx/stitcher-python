@@ -1,0 +1,8 @@
+{
+  "MockRenderer.__init__": "9bab2b1dd22fea04e58176b09f65ef4f673738c47abf25fca7e0c62af472206f",
+  "MockRenderer.render": "5ee01c65ceae57a45c16a7c14d696ccdbefeca3e86709a97c1f828eeae4eedec",
+  "test_bus": "d0478f08dc7e8229219ed3307ef75f6546432c3f99a84348e26642b5faf63369",
+  "test_bus_does_not_fail_without_renderer": "907cd66f68ef2d1f47183ca6ecf020f07a81abdfee22a76ca60bbf39efa085a4",
+  "test_bus_forwards_to_renderer": "7047424b277592233067084ed498f96dde62b05ec8df6d4fd6fd6ac596e23529",
+  "test_bus_identity_fallback": "6a5ef4407c1dac0e906584e113b7cc111e0535f913fe2810215ea014c4e8d6a6"
+}

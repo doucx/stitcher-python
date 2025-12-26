@@ -1,0 +1,6 @@
+{
+  "create_func": "68ee09ca42db7832d943a9ec61ae66f71ea2faed3b92b6c88161606b95a681fe",
+  "test_fingerprint_stability": "482448efd0dc5279b5c73969e480e501dc344599579ae874ea8f3dd31d708a7b",
+  "test_manager_check_detects_mismatch": "22b9f7e0763976e4ea9dc6c5788332e06eece1f3763c3f3e119b3b6a644de432",
+  "test_manager_save_and_load": "1435c2635ac182f47799754d9c0a1bb4c5ad73d497fd8a13472284af9248c02e"
+}

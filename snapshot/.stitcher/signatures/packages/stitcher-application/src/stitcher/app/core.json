@@ -1,0 +1,12 @@
+{
+  "StitcherApp.__init__": "fe3d49a0f7b67ba97e4eb0d393846b4b1cc2e74794689bd9a2f35bb1ec1040a5",
+  "StitcherApp._generate_stubs": "ea20cf7889b9473a8f1f8ea1da6ea649d171c831d3d47f0d296a382e9f19069c",
+  "StitcherApp._get_files_from_config": "71314ddb37438294fd9ad7357bb303bfbef768f45205b554a2267e23ae6e9829",
+  "StitcherApp._process_plugins": "6c0ab56d4dd5cb066559e426a443e6542d4485073504e46e2869ef2c8bc73275",
+  "StitcherApp._scan_files": "2c3c2fa02f6d713eb0d6adac2bc21c6dc9526c0c860efad5d0e9783ac655a7da",
+  "StitcherApp.run_check": "4adc05df8049b12ed5469aef5d8887b9bfc3d18eac5ac43c630883e515d6902d",
+  "StitcherApp.run_eject": "326d269e307921bbac3e523c49542f39eed0773d486c83920cc297ad5f3388af",
+  "StitcherApp.run_from_config": "6e3770a9189483804818929e5a4f6a38d686ba399418ce16b2c984a7b23f2fac",
+  "StitcherApp.run_init": "9988dea2f1f20b309764846bd38f982dd4c1811ba89ae9e1d1ab439a480e303f",
+  "StitcherApp.run_strip": "74d36401cc2bddfebf8a7fee03a1af709f05c55ea2e30b5187111b8322fb3bf2"
+}

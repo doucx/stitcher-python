@@ -1,0 +1,8 @@
+InspectionError: Custom exception for errors during plugin inspection.
+_get_annotation_str: Gets a string representation of a type annotation.
+_map_param_kind: Maps inspect's ParameterKind enum to our own.
+parse_plugin_entry: "Dynamically imports and inspects a callable from an entry point\
+  \ string\nand converts it into a Stitcher FunctionDef IR object.\n\nArgs:\n    entry_point_str:\
+  \ The import string (e.g., \"my_pkg.main:my_func\").\n\nReturns:\n    A FunctionDef\
+  \ instance representing the inspected callable.\n\nRaises:\n    InspectionError:\
+  \ If the entry point cannot be loaded or inspected."

@@ -1,0 +1,8 @@
+{
+  "SignatureManager.__init__": "fe3d49a0f7b67ba97e4eb0d393846b4b1cc2e74794689bd9a2f35bb1ec1040a5",
+  "SignatureManager._get_sig_path": "d89618b33da1097394c0dab8b1de2a5b71a445d8a0e61990bbf89607c5461639",
+  "SignatureManager.check_signatures": "3d4cd4da30adc54546b306bc801ae10c26b9a81ddeaf8b6f4327c6f8d5252dbb",
+  "SignatureManager.compute_module_fingerprints": "fed4779bb5c8d471890d7eb78a15ae445eaa4c2e8af50f49573b3a743006c415",
+  "SignatureManager.load_signatures": "d3f417c8c2296510c0154d5863eb4f42c87206c8ba775b108430515a3c435b77",
+  "SignatureManager.save_signatures": "68b135f355ac0c5f7cc2e4b2c064467e88e8bdf2b27172df6c6334065dfaedf0"
+}

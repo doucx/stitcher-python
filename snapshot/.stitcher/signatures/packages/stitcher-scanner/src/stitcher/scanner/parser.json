@@ -1,0 +1,15 @@
+{
+  "IRBuildingVisitor.__init__": "9bab2b1dd22fea04e58176b09f65ef4f673738c47abf25fca7e0c62af472206f",
+  "IRBuildingVisitor._add_attribute": "2ace60f8a2762e8e7a9f0a16b79051b99610b5bb3f7681d5231e8a0c140989a6",
+  "IRBuildingVisitor._parse_parameters": "2415da40a88d45a1444e8fd1f8bfaf557ad5e0ad3b2f2b29235dc418cd9ff2fb",
+  "IRBuildingVisitor.leave_ClassDef": "54e4ed6bacada2229019b149921ea168d9c21cafce182ff9eb480c20a3dfed34",
+  "IRBuildingVisitor.visit_AnnAssign": "3382ee66992ef89c00e498e05c4f3e66c6539dfadf7d3a57c57f0587cc50a270",
+  "IRBuildingVisitor.visit_Assign": "a2bf7f85999855880d171c4dfb37974c0179c44041b9dd7f3869a505f979175b",
+  "IRBuildingVisitor.visit_ClassDef": "a8d85b41a8f83b14052de020444d04ee5c339ce4e565465d97b9a494c1e61cd8",
+  "IRBuildingVisitor.visit_FunctionDef": "228968f6587b436c7b0f5d338ef420bd2a0181aa51a282b48c30ae9d5367b2fc",
+  "IRBuildingVisitor.visit_Import": "2d7553aab8fd612b88dc9a8261b87debab996129ec0c68f7cb3a1c36a6a6ccc2",
+  "IRBuildingVisitor.visit_ImportFrom": "6411074316b481b3fc483e65c19181a4bc33ff0d73c600e6cab13dbac84c74eb",
+  "_collect_annotations": "6a020cc106f92b3d660e77707f34b6eed4be7ea09a678fb7a77c6ddea8989b72",
+  "_enrich_typing_imports": "188b1cfbb2fd8126b0eef17a30839ca23bb6973e7009e6898d7e71b518cee85c",
+  "parse_source_code": "f547c3c7c91f8852c7ac61adbe1987f4ee364e9b0e935f3d0e4dc302fb6dbcda"
+}

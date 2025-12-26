@@ -1,0 +1,19 @@
+{
+  "InjectorTransformer.__init__": "d95178dcd7c924a0c59f0eb67ed91c0b1cd1c9ad174d93f0be8f393c68834170",
+  "InjectorTransformer._create_docstring_node": "180d042488426abafce82aab20541778422f735f7f7182b1527394fbfa7f7133",
+  "InjectorTransformer._get_current_fqn": "49dc145eb32b9e3fd4aaf5db5f2fa9bd3f228a17e448fe2ff863991df9f556b4",
+  "InjectorTransformer._inject_into_body": "7f39612c5c462166136e01984756f16c47cd5f8c08091e5edf6fd2dc77e0883f",
+  "InjectorTransformer._is_docstring": "a2197e4a52ec2848d6510ead79b9454f83e1ecb9efcdf43fb2873279078168f6",
+  "InjectorTransformer.leave_ClassDef": "297efc4f2da7af7882df09c73e788905c88932c5779a64a44837f172e8d5c820",
+  "InjectorTransformer.leave_FunctionDef": "40a5b0d6ca37e7465a76a96b747bca828046421b2df83a2a15c83c2220676d69",
+  "InjectorTransformer.leave_Module": "74c64b1af2aad03303692fc2d896873e79fba80e5fc41b4f046c44acae0e504e",
+  "InjectorTransformer.visit_ClassDef": "a8d85b41a8f83b14052de020444d04ee5c339ce4e565465d97b9a494c1e61cd8",
+  "InjectorTransformer.visit_FunctionDef": "228968f6587b436c7b0f5d338ef420bd2a0181aa51a282b48c30ae9d5367b2fc",
+  "StripperTransformer._is_docstring": "a2197e4a52ec2848d6510ead79b9454f83e1ecb9efcdf43fb2873279078168f6",
+  "StripperTransformer._process_body": "6d0cc03f058d77311e8c24ab1621458f60160bab6660864f7441a5b002c4105b",
+  "StripperTransformer.leave_ClassDef": "297efc4f2da7af7882df09c73e788905c88932c5779a64a44837f172e8d5c820",
+  "StripperTransformer.leave_FunctionDef": "40a5b0d6ca37e7465a76a96b747bca828046421b2df83a2a15c83c2220676d69",
+  "StripperTransformer.leave_Module": "74c64b1af2aad03303692fc2d896873e79fba80e5fc41b4f046c44acae0e504e",
+  "inject_docstrings": "612603f2aeaa56fda779309e316bd525eea334148f47d8491ec67cc6503189dc",
+  "strip_docstrings": "43521486c2fcd7cd90f753813ac26d720f1a4815f0b2b09c5b7e918e31ea6029"
+}

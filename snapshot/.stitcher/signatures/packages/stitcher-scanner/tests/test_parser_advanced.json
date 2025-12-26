@@ -1,0 +1,6 @@
+{
+  "test_parse_attributes": "c59657bbca3f89439f6a3de8b15f7a5f7f7e2a2ced6f3d3fa10b9b9255631cc5",
+  "test_parse_complex_types": "763c562c649959cbc33e20d10ab9d4635f92336f5a61da93d722d20765a0e3c3",
+  "test_parse_decorators": "76ae3303b237c12badddf3577b0f550d941a624c6015fa7b636168c38d1f2c4c",
+  "test_parse_special_methods": "0b407252a4ebbae23730dc0e98f17af1e80805b5f2f77391b88ec892c48d9ab0"
+}

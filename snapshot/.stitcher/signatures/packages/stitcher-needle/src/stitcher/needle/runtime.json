@@ -1,0 +1,6 @@
+{
+  "Needle.__init__": "8a6d89bba5374ab1d03c01dda7254d4ae6e1d73ff0037e45166abd30dabe68d9",
+  "Needle._ensure_lang_loaded": "f60db812e9342766a33e44b92cf36e4f94fa597a9e8dba5cbd669a8ee2078fbe",
+  "Needle._find_project_root": "3354cc03419b52985fb7c9074a7297c7dc1251e007660c37ba35ac9f4ce3f157",
+  "Needle.get": "92d5e0015b7409ea1cd7a0e0200b52d7d608700bb6e5bad6216e334dbe5598ad"
+}
