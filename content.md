@@ -1,187 +1,130 @@
-简要回答
-之前的测试失败揭示了两个潜在问题：一是测试用例中的多行字符串缩进可能导致 Scanner 解析失败，导致没有保存初始指纹；二是 `run_from_config` (Generate) 在更新指纹时可能存在隐患。
+这里有一个修复 `doc_manager.py` 中 `__doc__` 键处理逻辑的计划。
 
-我将采取以下措施：
-1.  **增强测试稳健性**: 修改集成测试，使用更安全的字符串格式，并显式断言 `run_init` 和 `run_from_config` 是否成功扫描并处理了文件（通过检查 Bus 消息）。
-2.  **重构 `SignatureManager`**: 增加一些防御性逻辑，确保目录存在。
-3.  **重新应用 `models.py`**: 确保指纹计算逻辑被正确注入。
+## [WIP] fix: 修复 `check` 命令因缺失模块文档字符串而误报的问题
 
-## [WIP] fix: 修复指纹机制的集成测试与实现细节
+### 错误分析
+测试 `test_generate_updates_signatures` 失败的原因是 `StitcherApp.run_check()` 返回了 `False`，这表明它在检查过程中发现了“不一致”。
+
+深入分析 `doc_manager.py` 的逻辑发现：
+1.  **现有逻辑**: `_extract_all_keys` 方法无条件地将 `__doc__` 添加到 `code_keys` 集合中（即认为所有模块*必须*有文档字符串）。
+2.  **测试场景**: 测试用例中动态创建的 `src/main.py` 没有模块级文档字符串（Module Docstring），且生成的 YAML 文件中也没有 `__doc__` 键。
+3.  **冲突**: `check` 命令对比发现 `code_keys` 包含 `__doc__` 但 YAML 中没有，因此报告 `MISSING: __doc__`，导致检查失败。
+4.  **矛盾**: `init` 命令（依赖 `flatten_module_docs`）仅在源码存在文档字符串时才生成 YAML 条目。这意味着 `init` 刚刚初始化完一个没有文档字符串的模块，紧接着运行 `check` 就会失败。这是不合理的行为。
 
 ### 用户需求
-确保签名指纹机制在各种边界条件下都能稳定工作，并且测试用例能够真实反映代码变更。
+用户需要 `check` 命令能够正确通过 `tests/integration/test_check_signatures.py` 中的测试，确保存根生成 (`generate`) 后签名基线被正确更新，且不会因为模块缺少文档字符串而报错。
 
 ### 评论
-测试失败是极好的反馈。它不仅暴露了测试代码的脆弱性（对缩进的假设），也暗示了我们需要在核心流程中增加更多的验证步骤（例如确保 Scan 真的产生了 ModuleDef）。
+这是一个典型的“隐式假设”导致的 Bug。我们不能假设所有模块都有文档字符串，也不能强制要求 YAML 中必须包含它（除非源码中就有）。同时，我们也要允许用户在 YAML 中为源码中没有文档字符串的模块添加文档（即“幽灵文档”），而不能将其标记为 Extra。
 
 ### 目标
-1.  重新 patch `models.py` 以确保 `compute_fingerprint` 存在。
-2.  优化 `SignatureManager` 的写入逻辑。
-3.  重写 `tests/integration/test_check_signatures.py`，加入对中间步骤成功的断言。
+修改 `doc_manager.py` 的逻辑：
+1.  仅当源码确实存在文档字符串时，才将 `__doc__` 视为 Code 中的有效键。
+2.  在计算 Extra 键时，始终忽略（允许）YAML 中存在的 `__doc__`，即使 Code 中不存在。
+
+### 基本原理
+通过放宽 `__doc__` 的存在性检查，我们消除了 `init` 和 `check` 之间的逻辑不一致。
+-   **Missing 检查**: 只有当 Code 有文档但 YAML 没文档时，才报 Missing。
+-   **Extra 检查**: 即使 Code 没文档，YAML 有文档也不报 Extra（允许纯外部文档化）。
 
 ### 标签
 #intent/fix #flow/ready #priority/high
-#comp/tests #comp/application
-#task/domain/quality #task/object/signature-verification #task/action/debug
+#comp/application #concept/docs #scope/core
+#ai/instruct
+#task/domain/dev-tools #task/object/check-command #task/action/bug-fix
+#task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 2: 增强 `SignatureManager` 的健壮性
+#### Acts 1: 修正 `doc_manager.py` 的键提取与比对逻辑
 
-确保在写入前父目录绝对存在。
+我们将修改 `_extract_all_keys` 以有条件地添加 `__doc__`，并在 `check_module` 中从 `extra` 集合中排除 `__doc__`。
 
 ~~~~~act
 patch_file
-packages/stitcher-application/src/stitcher/app/services/signature_manager.py
+packages/stitcher-application/src/stitcher/app/services/doc_manager.py
 ~~~~~
 ~~~~~python.old
-    def save_signatures(self, module: ModuleDef) -> None:
+    def check_module(self, module: ModuleDef) -> Dict[str, set]:
         """
-        Computes and saves the current signatures of the module to disk.
+        Compares module structure against external docs.
+        Returns a dict of issues: {'missing': set(...), 'extra': set(...)}
         """
-        fingerprints = self.compute_module_fingerprints(module)
-        if not fingerprints:
-            return
+        # 1. Get keys from Code (Source of Truth for Existence)
+        # We use flatten_module_docs to get all addressable keys in the code.
+        # Note: flatten_module_docs currently extracts keys ONLY if docstring exists?
+        # Let's check implementation.
+        # Wait, flatten_module_docs extracts keys for functions/classes regardless of docstring?
+        # Looking at _extract_from_function:
+        #   if func.docstring: docs[full_name] = func.docstring
+        # This is a problem for 'check'. We want to know if the symbol EXISTS,
+        # not just if it has a docstring in code.
+        # We need a method that extracts ALL keys.
 
-        sig_path = self._get_sig_path(module)
-        sig_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with sig_path.open("w", encoding="utf-8") as f:
-            json.dump(fingerprints, f, indent=2, sort_keys=True)
+        code_keys = self._extract_all_keys(module)
+
+        # 2. Get keys from YAML
+        yaml_docs = self.load_docs_for_module(module)
+        doc_keys = set(yaml_docs.keys())
+
+        # 3. Diff
+        missing = code_keys - doc_keys
+        extra = doc_keys - code_keys
+
+        return {"missing": missing, "extra": extra}
+
+    def _extract_all_keys(self, module: ModuleDef) -> set:
+        """Extracts all addressable FQNs from the module IR."""
+        keys = set()
+
+        # Module itself
+        # We always expect a module to optionally have a docstring.
+        # Should we force __doc__ key? Maybe not strict for now.
+        # keys.add("__doc__")
+
+        # But if the user put __doc__ in YAML, and we don't put it in keys, it shows as Extra.
+        # So we should consider __doc__ as a valid key for any module.
+        keys.add("__doc__")
+
+        for func in module.functions:
 ~~~~~
 ~~~~~python.new
-    def save_signatures(self, module: ModuleDef) -> None:
+    def check_module(self, module: ModuleDef) -> Dict[str, set]:
         """
-        Computes and saves the current signatures of the module to disk.
+        Compares module structure against external docs.
+        Returns a dict of issues: {'missing': set(...), 'extra': set(...)}
         """
-        fingerprints = self.compute_module_fingerprints(module)
-        if not fingerprints:
-            # If no fingerprints (e.g. empty file), we might want to clean up any old file
-            # But for now, just returning is safer.
-            return
+        # 1. Get keys from Code (Source of Truth for Existence)
+        code_keys = self._extract_all_keys(module)
 
-        sig_path = self._get_sig_path(module)
-        # Ensure the directory exists (redundant check but safe)
-        if not sig_path.parent.exists():
-            sig_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with sig_path.open("w", encoding="utf-8") as f:
-            json.dump(fingerprints, f, indent=2, sort_keys=True)
+        # 2. Get keys from YAML
+        yaml_docs = self.load_docs_for_module(module)
+        doc_keys = set(yaml_docs.keys())
+
+        # 3. Diff
+        missing = code_keys - doc_keys
+        extra = doc_keys - code_keys
+
+        # Allow __doc__ to be present in YAML even if not explicitly demanded by code analysis
+        # This supports the case where a user documents a module in YAML that has no docstring in code.
+        extra.discard("__doc__")
+
+        return {"missing": missing, "extra": extra}
+
+    def _extract_all_keys(self, module: ModuleDef) -> set:
+        """Extracts all addressable FQNs from the module IR."""
+        keys = set()
+
+        # Module itself
+        # Only expect __doc__ if the source code actually has a docstring.
+        if module.docstring:
+            keys.add("__doc__")
+
+        for func in module.functions:
 ~~~~~
 
-#### Acts 3: 重写集成测试
+### 下一步建议
 
-使用 `dedent` 清理多行字符串，并在每个步骤后检查是否产生了 `error` 消息，以快速定位扫描失败的问题。
-
-~~~~~act
-write_file
-tests/integration/test_check_signatures.py
-~~~~~
-~~~~~python
-from textwrap import dedent
-from stitcher.app import StitcherApp
-from stitcher.needle import L
-from stitcher.test_utils import SpyBus, WorkspaceFactory
-
-
-def _assert_no_errors(spy_bus):
-    errors = [m for m in spy_bus.get_messages() if m["level"] == "error"]
-    assert not errors, f"Unexpected errors: {errors}"
-
-
-def test_check_detects_signature_change(tmp_path, monkeypatch):
-    """
-    End-to-End test verifying that modifying a function signature
-    triggers a check failure/warning.
-    """
-    # 1. Setup Initial Workspace
-    factory = WorkspaceFactory(tmp_path)
-    # Use dedent to ensure clean indentation
-    initial_code = dedent("""
-    def process(value: int) -> int:
-        \"\"\"Process an integer.\"\"\"
-        return value * 2
-    """).strip()
-    
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/processor.py", initial_code)
-        .build()
-    )
-
-    app = StitcherApp(root_path=project_root)
-    
-    # 2. Run Init (Baseline)
-    spy_bus = SpyBus()
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        app.run_init()
-        
-    _assert_no_errors(spy_bus)
-    spy_bus.assert_id_called(L.init.run.complete, level="success")
-    
-    # Verify fingerprint file exists
-    sig_file = project_root / ".stitcher/signatures/src/processor.json"
-    assert sig_file.exists(), "Fingerprint file was not created during Init"
-    
-    # 3. Modify Code
-    modified_code = dedent("""
-    def process(value: str) -> int:
-        \"\"\"Process a string (Changed).\"\"\"
-        return len(value) * 2
-    """).strip()
-    (project_root / "src/processor.py").write_text(modified_code, encoding="utf-8")
-    
-    # 4. Run Check
-    spy_bus = SpyBus()
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_check()
-        
-    # 5. Assertions
-    assert success is False, "Check passed but should have failed due to signature mismatch"
-    spy_bus.assert_id_called(L.check.issue.mismatch, level="error")
-
-
-def test_generate_updates_signatures(tmp_path, monkeypatch):
-    """
-    Verify that running 'generate' updates the signature baseline.
-    """
-    # 1. Setup Workspace
-    factory = WorkspaceFactory(tmp_path)
-    # Simple one-liner to avoid any parsing ambiguity
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/main.py", "def func(a: int): ...")
-        .with_docs("src/main.stitcher.yaml", {"func": "doc"})
-        .build()
-    )
-    
-    app = StitcherApp(root_path=project_root)
-    
-    # 2. Run Init
-    with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
-        app.run_init()
-        
-    # 3. Modify Code
-    (project_root / "src/main.py").write_text("def func(a: str): ...", encoding="utf-8")
-    
-    # 4. Run Generate (Should update signatures)
-    spy_bus = SpyBus()
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        app.run_from_config()
-        
-    _assert_no_errors(spy_bus)
-    spy_bus.assert_id_called(L.generate.run.complete, level="success")
-    
-    # Verify fingerprint file timestamp or content? 
-    # Better to verify via Check.
-    
-    # 5. Run Check (Should now pass)
-    spy_bus = SpyBus()
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_check()
-        
-    assert success is True, "Check failed but should have passed after Generate"
-    spy_bus.assert_id_called(L.check.run.success, level="success")
-~~~~~
+执行此计划后，再次运行测试 `tests/integration/test_check_signatures.py`。它应该能够通过，因为 `check` 不再会因为缺少模块文档字符串而报告错误，从而允许我们专注于验证签名变更的检测逻辑。
