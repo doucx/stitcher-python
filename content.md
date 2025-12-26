@@ -1,43 +1,39 @@
-你的观察力非常敏锐，一针见血。你说得完全正确，**`Any` 没有被导入，这是一个由 `stitcher` 自身逻辑缺陷导致的 bug。**
+You are absolutely right. The test has correctly caught a flaw in my previous implementation. My apologies.
 
-错误分析
+The test failure `assert 'from typing import Any' in []` proves that my logic in `_enrich_typing_imports` was not correctly triggered or was flawed in its execution. The proactive check I added for `Any` did not result in the import being added.
 
-1.  **问题根源**: `StubGenerator` 在生成 `.pyi` 时，如果遇到一个没有类型注解的属性（比如从 `__path__ = ...` 解析出的 `Attribute` 对象），它会**默认**使用 `"Any"`作为其类型提示，生成 `__path__: Any`。
-2.  **逻辑断层**: 然而，负责添加 `import` 语句的 `parser` 模块，并不知道 `StubGenerator` 会做出这个“默认使用 `Any`”的决定。`parser` 的导入分析逻辑只检查代码中**显式**写出的类型注解。因为它在源码中没有看到 `Any`，所以它就没有添加 `from typing import Any`。
-3.  **最终结果**: 我们生成了一个语法不完整的 `.pyi` 文件，导致类型检查器报错。
+Let's fix this properly with a cleaner, more robust implementation. The issue is that the logic became fragmented. A better approach is to first gather **all** required symbols (both proactively for `Any` and reactively from annotations), and then add the necessary imports in a single, final step.
 
-解决方案
+## [WIP] fix: Refactor import enrichment to correctly add `Any`
 
-我们将在 `parser` 中修复这个逻辑断层。我们将赋予它“预知”能力：在解析完一个模块后，如果它发现存在任何没有类型注解的属性，它就会**主动**添加 `from typing import Any`，以确保 `StubGenerator` 后续生成的代码是合法的。
-
-## [WIP] fix: 为无注解属性自动导入 Any 类型
+### 错误分析
+测试用例暴露了 `_enrich_typing_imports` 函数中的一个逻辑缺陷。尽管我的意图是为无注解的属性主动添加 `from typing import Any`，但实现方式未能确保在所有情况下都正确执行。`missing_symbols` 集合的填充和最终的 `append` 循环之间存在问题，导致在只存在无注解属性而无任何显式类型注解的情况下，该逻辑链条中断。
 
 ### 用户需求
-用户发现 `stitcher` 为 `__path__` 等无类型注解的变量生成了 `__path__: Any`，但没有自动导入 `Any`，导致生成的 `.pyi` 文件无效。
+修复 `parser` 模块，使其在遇到无类型注解的属性时，能可靠、正确地将 `from typing import Any` 添加到模块的导入列表中。
 
 ### 评论
-这是一个典型的“左右手互搏”的 bug。修复它的关键是确保解析器（`parser`）和生成器（`generator`）对隐式规则（如默认类型）有共同的认知。这次修复将显著提升生成存根的健壮性。
+这个 bug 的修复是生成有效 `.pyi` 文件的基本前提。这次重构将使导入注入逻辑更加清晰和确定，避免未来出现类似的逻辑碎片化问题。
 
 ### 目标
-1.  修改 `parser.py` 中的 `_enrich_typing_imports` 函数，使其能够检测到模块中存在无注解的属性。
-2.  如果检测到，则自动添加 `from typing import Any`。
-3.  添加一个新的单元测试，专门验证此行为。
+1.  重构 `_enrich_typing_imports` 函数，统一处理所有需要从 `typing` 模块导入的符号。
+2.  确保 `_has_unannotated_attributes` 的检测能正确触发 `Any` 的导入。
+3.  确保测试用例 `test_auto_inject_any_for_unannotated_attribute` 通过。
 
 ### 基本原理
-通过在 `parser.py` 的主函数 `parse_source_code` 中，调用 `_enrich_typing_imports` 之前，检查 `ModuleDef` 中是否存在 `attr.annotation is None` 的情况，来决定是否需要注入 `Any` 的导入。
-
-### 标签
-#intent/fix #flow/ready #priority/high #comp/scanner #comp/io #scope/core
-#task/domain/parser #task/object/type-import #task/action/implement
-#task/state/continue
+我们将简化 `_enrich_typing_imports` 的逻辑：
+1.  创建一个 `required_symbols` 集合。
+2.  **第一步**: 如果模块中存在无注解的属性，直接将 `'Any'` 添加到 `required_symbols`。
+3.  **第二步**: 遍历代码中所有显式的类型注解，将其中包含的 `typing` 符号（如 `'List'`, `'Optional'`）也添加到 `required_symbols`。
+4.  **最后**: 遍历最终的 `required_symbols` 集合，为那些尚未被导入的符号生成并添加 `import` 语句。
 
 ---
 
 ### Script
 
-#### Acts 1: 增强 Parser 的导入逻辑
+#### Acts 1: 重构并修复 `_enrich_typing_imports`
 
-我们修改 `parser.py`，让它能预判到 `Any` 的使用。
+我们用更清晰、更正确的逻辑完全替换 `packages/stitcher-scanner/src/stitcher/scanner/parser.py` 中的 `_enrich_typing_imports` 函数。
 
 ~~~~~act
 patch_file
@@ -48,35 +44,31 @@ def _enrich_typing_imports(module: ModuleDef):
     """
     Scans used annotations and injects missing 'typing' imports.
     """
-~~~~~
-~~~~~new
-def _has_unannotated_attributes(module: ModuleDef) -> bool:
-    """Check if any attribute in the module IR lacks an annotation."""
-    if any(attr.annotation is None for attr in module.attributes):
-        return True
-    for cls in module.classes:
-        if any(attr.annotation is None for attr in cls.attributes):
-            return True
-    return False
+    # Common symbols from 'typing' that are often used without quotes
+    # We deliberately exclude generic 'List'/'Dict' if the user imports
+    # standard collections, but for safety in .pyi (which often supports older Pythons),
+    # adding them from typing is usually safe if missing.
+    TYPING_SYMBOLS = {
+        "List",
+        "Dict",
+        "Tuple",
+        "Set",
+        "Optional",
+        "Union",
+        "Any",
+        "Callable",
+        "Sequence",
+        "Iterable",
+        "Type",
+        "Final",
+        "ClassVar",
+        "Mapping",
+    }
 
+    annotations = _collect_annotations(module)
+    if not annotations:
+        return
 
-def _enrich_typing_imports(module: ModuleDef):
-    """
-    Scans used annotations and injects missing 'typing' imports.
-    """
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-scanner/src/stitcher/scanner/parser.py
-~~~~~
-~~~~~old
-    # A simple combined string of all current imports for quick check
-    existing_imports_text = "\n".join(module.imports)
-
-    missing_symbols = set()
-~~~~~
-~~~~~new
     # A simple combined string of all current imports for quick check
     existing_imports_text = "\n".join(module.imports)
 
@@ -87,40 +79,65 @@ packages/stitcher-scanner/src/stitcher/scanner/parser.py
     if _has_unannotated_attributes(module):
         if not re.search(r"\bAny\b", existing_imports_text):
             missing_symbols.add("Any")
-~~~~~
 
-#### Acts 2: 添加相应的测试用例
+    for ann in annotations:
+        # Check for each symbol
+        for symbol in TYPING_SYMBOLS:
+            # We use regex word boundary to avoid partial matches (e.g. matching 'List' in 'MyList')
+            if re.search(rf"\b{symbol}\b", ann):
+                # Check if it's already imported
+                # This is a heuristic: if "List" appears in imports text, assume it's covered.
+                # It handles "from typing import List" and "import typing" (if user wrote typing.List)
+                # But wait, if user wrote "typing.List", then 'List' matches \bList\b.
+                # If existing imports has "import typing", we shouldn't add "from typing import List"?
+                # Actually, if they wrote "typing.List", the annotation string is "typing.List".
+                # If we just add "from typing import List", it doesn't hurt.
+                # But if they wrote "List" and have NO import, we MUST add it.
 
-在 `packages/stitcher-scanner/tests/test_parser_imports.py` 中添加一个测试，确保这个新逻辑被覆盖。
+                if not re.search(rf"\b{symbol}\b", existing_imports_text):
+                    missing_symbols.add(symbol)
 
-~~~~~act
-patch_file
-packages/stitcher-scanner/tests/test_parser_imports.py
-~~~~~
-~~~~~old
-    assert "from typing import Dict" in combined
-    assert "from typing import Any" in combined
-    assert "from typing import Union" in combined
+    for symbol in sorted(missing_symbols):
+        module.imports.append(f"from typing import {symbol}")
 ~~~~~
 ~~~~~new
-    assert "from typing import Dict" in combined
-    assert "from typing import Any" in combined
-    assert "from typing import Union" in combined
+def _enrich_typing_imports(module: ModuleDef):
+    """
+    Scans used annotations and module structure, then injects necessary
+    'typing' imports.
+    """
+    TYPING_SYMBOLS = {
+        "List", "Dict", "Tuple", "Set", "Optional", "Union", "Any",
+        "Callable", "Sequence", "Iterable", "Type", "Final", "ClassVar", "Mapping",
+    }
 
+    required_symbols = set()
 
-def test_auto_inject_any_for_unannotated_attribute():
-    """If an attribute has no type, generator defaults to 'Any', so we need the import."""
-    source = dedent("""
-    MY_CONSTANT = 123
-    """)
-    module = parse_source_code(source)
+    # 1. Proactively add 'Any' if generator will need it for unannotated attributes.
+    if _has_unannotated_attributes(module):
+        required_symbols.add("Any")
+
+    # 2. Reactively find symbols used in explicit annotations.
+    annotations = _collect_annotations(module)
+    for ann in annotations:
+        for symbol in TYPING_SYMBOLS:
+            if re.search(rf"\b{symbol}\b", ann):
+                required_symbols.add(symbol)
     
-    assert "from typing import Any" in module.imports
+    if not required_symbols:
+        return
+
+    # 3. Add imports for required symbols that are not already imported.
+    existing_imports_text = "\n".join(module.imports)
+    
+    for symbol in sorted(list(required_symbols)):
+        # Heuristic: if the symbol appears as a word in the imports, assume it's covered.
+        if not re.search(rf"\b{symbol}\b", existing_imports_text):
+            module.imports.append(f"from typing import {symbol}")
 ~~~~~
 
 ### 下一步建议
-1.  **运行测试**: 确保新测试和所有现有测试都通过。
-2.  **重新生成**: 再次运行 `stitcher generate`。
-3.  **验证最终产出**: 检查 `packages/stitcher-application/src/stitcher/app/__init__.pyi`，它现在应该包含 `from typing import Any`。同时，IDE 中的所有报错应该都已消失。
-
-Dogfooding 计划终于要大功告成了！
+这次的实现更加直接和清晰。
+1.  **运行测试**: 再次运行 `pytest packages/stitcher-scanner/tests/test_parser_imports.py`。这一次，`test_auto_inject_any_for_unannotated_attribute` 应该会通过。
+2.  **全量回归**: 运行完整的测试套件 `pytest` 确保没有引入回归问题。
+3.  **最终生成**: 确认无误后，再次运行 `stitcher generate`。生成的 `__init__.pyi` 文件现在应该是完全合法的了。

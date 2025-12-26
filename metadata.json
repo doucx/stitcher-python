@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 为无注解属性自动导入 Any 类型", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766732441.7091146, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix: Refactor import enrichment to correctly add `Any`", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766732540.9525275, "duration_ms": 0}}
