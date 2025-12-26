@@ -285,6 +285,16 @@ def _collect_annotations(module: ModuleDef) -> Set[str]:
     return annotations
 
 
+def _has_unannotated_attributes(module: ModuleDef) -> bool:
+    """Check if any attribute in the module IR lacks an annotation."""
+    if any(attr.annotation is None for attr in module.attributes):
+        return True
+    for cls in module.classes:
+        if any(attr.annotation is None for attr in cls.attributes):
+            return True
+    return False
+
+
 def _enrich_typing_imports(module: ModuleDef):
     """
     Scans used annotations and injects missing 'typing' imports.
@@ -318,6 +328,12 @@ def _enrich_typing_imports(module: ModuleDef):
     existing_imports_text = "\n".join(module.imports)
 
     missing_symbols = set()
+
+    # Proactively add 'Any' if we have unannotated attributes,
+    # as the generator will default to using it.
+    if _has_unannotated_attributes(module):
+        if not re.search(r"\bAny\b", existing_imports_text):
+            missing_symbols.add("Any")
 
     for ann in annotations:
         # Check for each symbol
