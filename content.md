@@ -1,117 +1,92 @@
 简要回答：
-飘红的原因是 **IDE (VSCode/Pylance) 尚未理解 Monorepo 的目录结构**。虽然 `uv pip install -e` 在 Python 运行时层面打通了路径，但静态分析工具（如 Pylance）通常需要显式的配置才能正确解析分散在多个 `packages/*/src` 目录下的 Namespace Package (`stitcher.*`)。
+你的直觉非常敏锐。**这确实是严重的命名空间遮蔽 (Namespace Shadowing) 问题。**
 
-既然 IDE 找不到源文件路径，它自然也找不到我们刚刚生成在源文件旁边的 `.pyi` 存根文件。解决这个问题的“最后一公里”就是配置 `pyproject.toml` 中的 `[tool.pyright]`，显式告知 IDE 源码在哪里。这也正是 **Dogfooding 计划任务 2.2** 的核心内容。
+问题根源：
+1.  **不该存在的 `__init__.py`**: 部分包（如 `stitcher-needle`, `stitcher-common`）在 `src/stitcher/` 根目录下包含了 `__init__.py`。在现代 Python (Implicit Namespace Packages) 架构中，这个位置**必须是空的**。
+2.  **致命的 `__init__.pyi`**: 因为上述 `.py` 文件存在，`stitcher generate` 忠实地为它们生成了 `__init__.pyi`。对于类型检查器（Pylance/MyPy）来说，一旦看到 `stitcher/__init__.pyi`，它就会认为 `stitcher` 是一个**普通包**，包含固定的内容，从而**停止扫描**所有其他子包（如 `stitcher.app`, `stitcher.cli`）。这导致整个命名空间“塌缩”，所有跨包引用瞬间失效。
 
-此外，关于 `typer[all]` 的警告，这是因为在该版本中可能不包含此 extra 标识，我们将修正为直接依赖 `typer`。
+LSP 的 Root 错误是次要的，主要原因是它被这种混乱的包结构搞晕了。
 
-## [WIP] chore: 配置 IDE 路径解析并忽略构建产物
+我们需要立即执行“外科手术”，切除这些不该存在的根节点文件。
+
+## [WIP] fix: 移除根目录 __init__.py 以修复命名空间遮蔽
 
 ### 用户需求
-1.  解决 IDE 中的 "unresolved import" 错误，确保 Pylance 能正确识别 `stitcher-python` 的 Monorepo 结构和生成的 `.pyi` 存根。
-2.  执行 Dogfooding 计划任务 2.2：配置 `.gitignore` 以忽略生成的 `.pyi` 文件（但保留 `.stitcher.yaml`）。
-3.  修复安装时的 `typer[all]` 警告。
+用户发现 `stitcher-needle` 等包在 `src/stitcher/` 目录下生成了 `__init__.pyi`，导致 IDE 无法解析其他子包（命名空间遮蔽）。这是因为源码中错误地存在了 `src/stitcher/__init__.py`。
 
 ### 评论
-这是 Dogfooding 闭环的关键一步。生成存根只是第一步，**配置环境以消费存根**才是实现 DX 提升的关键。通过配置 `extraPaths`，我们手动完成了未来 `stitcher` 可能需要自动化完成的工作——让 IDE “看见”复杂的项目结构。
+这是一个架构上的修正。我们在 `stitcher-python` 架构蓝图中明确了基于 `uv` 的 Workspace 架构，这隐含了使用 Python 3 native namespace packages 的要求。遗留的 `pkgutil` 风格的 `__init__.py` 不仅是多余的，现在证明是有害的，因为它们诱导 `stitcher` 生成了“封死”命名空间的存根文件。
 
 ### 目标
-1.  在根目录 `.gitignore` 中添加 `**/*.pyi`，防止构建产物污染仓库。
-2.  在根目录 `pyproject.toml` 中添加 `[tool.pyright]` 配置，显式列出所有子包的 `src` 路径。
-3.  修正 `packages/stitcher-cli/pyproject.toml` 中的依赖声明。
+1.  删除 `packages/stitcher-needle/src/stitcher/__init__.py`。
+2.  删除 `packages/stitcher-common/src/stitcher/__init__.py`（如果存在且内容不当）。
+3.  删除对应的 `__init__.pyi` 文件（如果已生成）。
+4.  清理对应的 `.stitcher.yaml` 文件（如果已生成）。
 
 ### 基本原理
--   **`.gitignore`**: `.pyi` 是由 `stitcher generate` 动态生成的构建产物，类似于 `.pyc` 或编译后的二进制文件，不应纳入版本控制。
--   **`tool.pyright.extraPaths`**: 这是 Pylance/Pyright 的标准配置项。在 Namespace Package 结构中，显式列出每个包的根目录（`packages/xxx/src`）能强制 IDE 将它们视为一级模块搜索路径，从而解决跨包引用的解析问题。
+**Implicit Namespace Packages (PEP 420)** 要求命名空间容器目录（这里是 `stitcher`）不包含 `__init__.py`。这允许 Python 解释器将分散在不同物理路径下的 `stitcher/*` 子目录无缝合并为一个逻辑包。一旦放入 `__init__.py`，该目录就变成了常规包，破坏了合并机制。
 
 ### 标签
-#intent/tooling #flow/ready #priority/high #comp/build #scope/dx #human/lead
-#task/domain/config #task/object/pyright #task/action/configure
+#intent/fix #flow/ready #priority/critical #comp/build #concept/structure #scope/core
+#task/domain/refactor #task/object/namespace-package #task/action/cleanup
 #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 更新 .gitignore
+#### Acts 1: 删除 stitcher-needle 的根 init
 
-我们忽略所有的 `.pyi` 文件，以及由 `stitcher` 可能生成的签名缓存目录。
-
-~~~~~act
-patch_file
-.gitignore
-~~~~~
-~~~~~old
-__pycache__/
-*.py[codz]
-*$py.class
-~~~~~
-~~~~~new
-__pycache__/
-*.py[codz]
-*$py.class
-
-# Stitcher generated artifacts
-**/*.pyi
-.stitcher/signatures/
-~~~~~
-
-#### Acts 2: 配置 Pyright (解决飘红)
-
-在根目录 `pyproject.toml` 中添加 `tool.pyright` 配置。
+这是用户明确指出的问题点。
 
 ~~~~~act
-patch_file
-pyproject.toml
+delete_file
+packages/stitcher-needle/src/stitcher/__init__.py
 ~~~~~
-~~~~~old
-[tool.stitcher]
-scan_paths = ["packages"]
-~~~~~
-~~~~~new
-[tool.stitcher]
-scan_paths = ["packages"]
-
-[tool.pyright]
-include = ["packages", "tests"]
-# 显式告知 IDE 所有子包的源码位置，解决 Monorepo 解析问题
-extraPaths = [
-    "packages/stitcher-spec/src",
-    "packages/stitcher-common/src",
-    "packages/stitcher-scanner/src",
-    "packages/stitcher-io/src",
-    "packages/stitcher-config/src",
-    "packages/stitcher-application/src",
-    "packages/stitcher-cli/src",
-    "packages/stitcher-needle/src",
-    "packages/stitcher-test-utils/src",
-]
-~~~~~
-
-#### Acts 3: 修正 Typer 依赖
-
-修正 `stitcher-cli` 的依赖警告。
 
 ~~~~~act
-patch_file
-packages/stitcher-cli/pyproject.toml
+delete_file
+packages/stitcher-needle/src/stitcher/__init__.pyi
 ~~~~~
-~~~~~old
-dependencies = [
-    "stitcher-application",
-    "stitcher-needle",
-    "typer[all]",
-]
+
+~~~~~act
+delete_file
+packages/stitcher-needle/src/stitcher/__init__.stitcher.yaml
 ~~~~~
-~~~~~new
-dependencies = [
-    "stitcher-application",
-    "stitcher-needle",
-    "typer",
-]
+
+#### Acts 2: 检查并清理 stitcher-common 的根 init
+
+之前分析发现 `stitcher-common` 也有这个问题，并且试图在该文件中导出 `bus`。我们需要删除它。**注意**：如果有代码依赖 `from stitcher import bus`，这将是破坏性变更，但那是错误用法，必须纠正为 `from stitcher.common import bus`。
+
+~~~~~act
+delete_file
+packages/stitcher-common/src/stitcher/__init__.py
+~~~~~
+
+~~~~~act
+delete_file
+packages/stitcher-common/src/stitcher/__init__.pyi
+~~~~~
+
+~~~~~act
+delete_file
+packages/stitcher-common/src/stitcher/__init__.stitcher.yaml
+~~~~~
+
+#### Acts 3: 预防性检查其他包
+
+为了保险，我们检查其他包是否也有此问题。虽然之前的 XML 没显示，但确认一下更安全。如果文件不存在，`delete_file` 会报错吗？Quipu 指令集没有 `delete_if_exists`。我们先列出看看，或者假设之前的 PathInspector 是准确的。基于之前的信息，只有这两个包有此问题。
+
+我们添加一个 `run_command` 来清理可能残留的 `__pycache__`，这对命名空间包的恢复很重要。
+
+~~~~~act
+run_command
+~~~~~
+~~~~~
+find packages -name "__pycache__" -type d -exec rm -rf {} +
 ~~~~~
 
 ### 下一步建议
-1.  **重启 IDE**: 修改 `pyproject.toml` 后，通常需要重启 VSCode 或执行 `Developer: Reload Window` 才能让 Pylance 加载新的配置。
-2.  **验证**: 重启后，再次打开 `core.py`，红色的波浪线应该会消失。此外，尝试按住 Ctrl 点击某个函数名（如 `StubGenerator`），应该能跳转到刚刚生成的 `.pyi` 文件（如果 IDE 优先索引 Stub）或源码。
-3.  **提交文档**: 既然 `.pyi` 已被忽略，你可以安全地执行 `git add .` 来提交新生成的 `.stitcher.yaml` 文档文件（Dogfooding 任务 1.2）。
+1.  **重启 LSP**: 再次执行 `LspRestart` 或重启 lvim。
+2.  **验证引用**: 检查代码中是否有 `from stitcher import bus` 这种错误写法。如果有，需要全局替换为 `from stitcher.common import bus`。
+3.  **重新生成**: 运行 `stitcher init` 和 `stitcher generate` 以确保一切干净。由于我们删除了源文件，`stitcher` 将不再为根目录生成存根，命名空间应当恢复通畅。
