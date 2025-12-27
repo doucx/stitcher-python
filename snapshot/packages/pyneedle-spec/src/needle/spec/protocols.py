@@ -1,4 +1,5 @@
 from typing import Protocol, Dict, Any, Union, Iterable, TypeVar
+from pathlib import Path
 
 # T_co is covariant, meaning SemanticPointerProtocol can return subtypes of itself
 T_Pointer = TypeVar("T_Pointer", bound="SemanticPointerProtocol", covariant=True)
@@ -39,12 +40,30 @@ class PointerSetProtocol(Protocol):
 
 
 class ResourceLoaderProtocol(Protocol):
-    def load(self, lang: str) -> Dict[str, Any]: ...
+    """(Read-Only) Defines the contract for any component that can load resources."""
+
+    def load(self, domain: str) -> Dict[str, Any]: ...
 
 
-class NexusProtocol(Protocol):
+class WritableResourceLoaderProtocol(ResourceLoaderProtocol, Protocol):
+    """(Write-Enabled) Extends the loader contract with write and locate capabilities."""
+
+    def put(
+        self, pointer: SemanticPointerProtocol, value: Any, domain: str
+    ) -> bool: ...
+
+    def locate(
+        self, pointer: SemanticPointerProtocol, domain: str
+    ) -> Union[Path, None]: ...
+
+
+class NexusProtocol(WritableResourceLoaderProtocol, Protocol):
+    """
+    The Nexus is the primary interaction point, itself being a writable loader.
+    """
+
     def get(
-        self, pointer: Union[str, SemanticPointerProtocol], lang: str | None = None
+        self, pointer: Union[str, SemanticPointerProtocol], domain: str | None = None
     ) -> str: ...
 
-    def reload(self, lang: str | None = None) -> None: ...
+    def reload(self, domain: str | None = None) -> None: ...

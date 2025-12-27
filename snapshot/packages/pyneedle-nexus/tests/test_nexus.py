@@ -1,6 +1,8 @@
 import pytest
 from needle.pointer import L
 from needle.nexus import OverlayNexus, MemoryLoader
+from needle.spec import WritableResourceLoaderProtocol
+from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
@@ -8,6 +10,22 @@ def clean_env(monkeypatch):
     monkeypatch.delenv("STITCHER_LANG", raising=False)
     monkeypatch.delenv("NEEDLE_LANG", raising=False)
     monkeypatch.delenv("LANG", raising=False)
+
+
+class MockWritableLoader(WritableResourceLoaderProtocol):
+    def __init__(self, data):
+        self.data = data
+        self.put_calls = []
+
+    def load(self, domain: str):
+        return self.data.get(domain, {})
+
+    def put(self, pointer, value, domain: str):
+        self.put_calls.append({"pointer": str(pointer), "value": value, "domain": domain})
+        return True
+
+    def locate(self, pointer, domain: str):
+        return Path(f"/{domain}/{str(pointer).replace('.', '/')}")
 
 
 @pytest.fixture
@@ -42,56 +60,32 @@ def test_get_loader_priority_overlay(nexus_instance: OverlayNexus):
 
 
 def test_get_language_specificity_and_fallback(nexus_instance: OverlayNexus):
-    # 1. Specific language (zh) is preferred when key exists
-    assert nexus_instance.get("app.title", lang="zh") == "我的应用 (高优先级)"
+    # 1. Specific domain (zh) is preferred when key exists
+    assert nexus_instance.get("app.title", domain="zh") == "我的应用 (高优先级)"
 
-    # 2. Key missing in 'zh', falls back to default 'en'
-    # Note: loader 2 has 'app.welcome' in 'zh', so it should be found there.
-    # The previous test comment was slightly confusing.
-    # ChainMap for 'zh' combines loader1(zh) and loader2(zh).
-    # loader1(zh) has NO 'app.welcome'. loader2(zh) HAS 'app.welcome' ("欢迎！").
-    # So it should resolve to "欢迎！".
-    assert nexus_instance.get(L.app.welcome, lang="zh") == "欢迎！"
+    # 2. Key ('app.welcome') exists in loader2 for 'zh', so it resolves
+    assert nexus_instance.get(L.app.welcome, domain="zh") == "欢迎！"
 
-    # 3. Key missing in both loaders for 'zh', falls back to 'en'
-    # Let's add a key that is ONLY in EN
-    # 'app.title' is in both. 'app.welcome' is in both (one en, one zh).
-    # 'app.version' is in EN (loader2) and ZH (loader2).
-    # We need a key that is truly missing in ZH.
-    # Let's use a dynamic key for testing fallback.
-
-    # Create a temporary nexus for precise fallback testing
+    # 3. Key only exists in 'en', so 'zh' request falls back to default 'en'
     loader_fallback = MemoryLoader({"en": {"only.in.en": "Fallback Value"}, "zh": {}})
     nexus_fallback = OverlayNexus([loader_fallback])
-
-    assert nexus_fallback.get("only.in.en", lang="zh") == "Fallback Value"
+    assert nexus_fallback.get("only.in.en", domain="zh") == "Fallback Value"
 
 
 def test_reload_clears_cache_and_refetches_data():
-    # Test data is isolated to this test function
     initial_data = {"en": {"key": "initial_value"}}
-
-    # Create the loader and nexus
     loader = MemoryLoader(initial_data)
     nexus = OverlayNexus(loaders=[loader])
 
-    # 1. First get, value is 'initial_value' and this is cached
     assert nexus.get("key") == "initial_value"
-
-    # 2. Simulate an external change to the underlying data source
     initial_data["en"]["key"] = "updated_value"
+    assert nexus.get("key") == "initial_value"  # Still cached
 
-    # The cache is still holding the old view
-    assert nexus.get("key") == "initial_value"
-
-    # 3. Reload the cache
     nexus.reload()
-
-    # 4. Get again, should now return the NEW value
     assert nexus.get("key") == "updated_value"
 
 
-def test_language_resolution_priority(monkeypatch):
+def test_domain_resolution_priority(monkeypatch):
     nexus = OverlayNexus(
         loaders=[
             MemoryLoader(
@@ -100,18 +94,16 @@ def test_language_resolution_priority(monkeypatch):
         ]
     )
 
-    # Priority 1: Explicit `lang` argument
-    assert nexus.get("key", lang="de") == "de"
+    # Priority 1: Explicit `domain` argument
+    assert nexus.get("key", domain="de") == "de"
 
     # Priority 2: NEEDLE_LANG env var
     monkeypatch.setenv("NEEDLE_LANG", "fr")
-    # Even if STITCHER_LANG is set, NEEDLE_LANG should win
     monkeypatch.setenv("STITCHER_LANG", "de")
     assert nexus.get("key") == "fr"
 
-    # Priority 3: STITCHER_LANG env var (legacy compatibility)
+    # Priority 3: STITCHER_LANG env var
     monkeypatch.delenv("NEEDLE_LANG")
-    # Now STITCHER_LANG ("de") should take effect
     assert nexus.get("key") == "de"
 
     # Priority 4: System LANG env var
@@ -119,6 +111,27 @@ def test_language_resolution_priority(monkeypatch):
     monkeypatch.setenv("LANG", "fr_FR.UTF-8")
     assert nexus.get("key") == "fr"
 
-    # Priority 5: Default language
+    # Priority 5: Default domain
     monkeypatch.delenv("LANG")
     assert nexus.get("key") == "en"
+
+
+def test_put_and_locate_delegate_to_first_writable_loader():
+    # Arrange
+    writable_loader = MockWritableLoader({"en": {}})
+    read_only_loader = MemoryLoader({"en": {"key": "value"}})
+    nexus = OverlayNexus(loaders=[writable_loader, read_only_loader])
+
+    # Act
+    put_result = nexus.put(L.new.key, "new_value", domain="en")
+    locate_result = nexus.locate(L.some.path, domain="en")
+
+    # Assert
+    assert put_result is True
+    assert len(writable_loader.put_calls) == 1
+    assert writable_loader.put_calls[0] == {
+        "pointer": "new.key",
+        "value": "new_value",
+        "domain": "en",
+    }
+    assert locate_result == Path("/en/some/path")

@@ -11,7 +11,7 @@ from needle.loaders.fs_loader import FileSystemLoader
 def multi_root_workspace(tmp_path: Path) -> dict:
     factory = WorkspaceFactory(tmp_path)
 
-    # 1. Define package assets (low priority)
+    # 1. Define package assets (low priority) - root[1]
     pkg_root = tmp_path / "pkg_assets"
     factory.with_source(
         f"{pkg_root.name}/needle/en/cli/main.json",
@@ -23,7 +23,7 @@ def multi_root_workspace(tmp_path: Path) -> dict:
         """,
     )
 
-    # 2. Define user project assets (high priority)
+    # 2. Define user project assets (high priority) - root[0]
     project_root = tmp_path / "my_project"
     factory.with_source(
         f"{project_root.name}/pyproject.toml", "[project]\nname='my-project'"
@@ -48,9 +48,11 @@ def test_nexus_with_fs_loader_handles_overrides(multi_root_workspace):
     pkg_root = multi_root_workspace["pkg_root"]
     project_root = multi_root_workspace["project_root"]
 
-    # The order of roots matters. The last one in the list wins.
-    # We want project_root to override pkg_root.
-    fs_loader = FileSystemLoader(roots=[pkg_root, project_root])
+    # Order of roots matters: project_root is higher priority.
+    # FileSystemLoader.add_root() prepends to the list.
+    fs_loader = FileSystemLoader(roots=[pkg_root])
+    fs_loader.add_root(project_root)  # project_root is now at index 0
+
     nexus = OverlayNexus(loaders=[fs_loader])
 
     # Act & Assert
