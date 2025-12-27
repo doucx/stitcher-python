@@ -154,20 +154,28 @@ class StitcherApp:
             if config.stub_package:
                 # Stub Package mode
                 logical_path = self._derive_logical_path(module.file_path)
+
+                # PEP 561 adjustment: output to `<namespace>-stubs` dir
+                stub_logical_path = logical_path
+                if logical_path.parts:
+                    namespace = logical_path.parts[0]
+                    rest_of_path = logical_path.parts[1:]
+                    stub_logical_path = Path(f"{namespace}-stubs", *rest_of_path)
+
                 output_path = (
                     self.root_path
                     / config.stub_package
                     / "src"
-                    / logical_path.with_suffix(".pyi")
+                    / stub_logical_path.with_suffix(".pyi")
                 )
 
                 # Create py.typed marker file in top-level package dir
-                if logical_path.parts:
+                if stub_logical_path.parts:
                     top_level_pkg_dir = (
                         self.root_path
                         / config.stub_package
                         / "src"
-                        / logical_path.parts[0]
+                        / stub_logical_path.parts[0]
                     )
                     if top_level_pkg_dir not in created_py_typed:
                         top_level_pkg_dir.mkdir(parents=True, exist_ok=True)

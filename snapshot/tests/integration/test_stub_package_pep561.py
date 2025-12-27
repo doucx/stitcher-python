@@ -10,12 +10,20 @@ from stitcher.app import StitcherApp
 from stitcher.test_utils import WorkspaceFactory
 
 
+def _get_dir_structure(root_path: Path) -> str:
+    """Helper to get a string representation of the directory structure."""
+    lines = []
+    for path in sorted(root_path.rglob("*")):
+        relative_path = path.relative_to(root_path)
+        indent = "  " * (len(relative_path.parts) - 1)
+        lines.append(f"{indent}- {path.name}{'/' if path.is_dir() else ''}")
+    return "\n".join(lines)
+
+
 def test_pep561_structure_compliance(tmp_path: Path):
     """
     Verifies that generated stub packages comply with PEP 561 naming conventions
     for both package name and the source directory inside the package.
-
-    THIS TEST IS EXPECTED TO FAIL until the generation logic is fixed.
     """
     # 1. Arrange
     project_name = "my-project"
@@ -39,8 +47,12 @@ def test_pep561_structure_compliance(tmp_path: Path):
     stub_pkg_path = project_root / stub_dir_name
     stub_toml_path = stub_pkg_path / "pyproject.toml"
 
+    # For debugging:
+    dir_structure = _get_dir_structure(stub_pkg_path)
+    debug_message = f"Generated directory structure:\n{dir_structure}"
+
     # 3.1. Assert pyproject.toml name is correct
-    assert stub_toml_path.is_file()
+    assert stub_toml_path.is_file(), f"pyproject.toml not found.\n{debug_message}"
     with stub_toml_path.open("rb") as f:
         config = tomllib.load(f)
     assert config["project"]["name"] == f"{project_name}-stubs"
@@ -49,8 +61,10 @@ def test_pep561_structure_compliance(tmp_path: Path):
     expected_src_dir = stub_pkg_path / "src" / f"{namespace}-stubs"
     incorrect_src_dir = stub_pkg_path / "src" / namespace
 
-    assert expected_src_dir.is_dir()
-    assert not incorrect_src_dir.exists(), "Incorrectly named src dir found."
+    assert expected_src_dir.is_dir(), f"Expected src dir not found.\n{debug_message}"
+    assert (
+        not incorrect_src_dir.exists()
+    ), f"Incorrectly named src dir found.\n{debug_message}"
 
     # 3.3. Assert Hatch config points to the correct directory
     hatch_packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
