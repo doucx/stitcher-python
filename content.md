@@ -1,28 +1,25 @@
-让我们尝试一个更激进的简化：**完全放弃 Hatchling，改用 Setuptools**。
-为什么？
-1.  这是测试环境，我们只关心“能否安装一个包”。
-2.  `setuptools` 在大多数环境中是预装的或者是默认回退，配置起来极其简单且容错率高。
-3.  我们不需要 `hatchling` 的高级特性。
-4.  这能立即消除“为什么调用了 setuptools”的疑虑——我们就显式地使用它。
+**Bug 就在这里！**
+1.  我调用了 `.with_project_name("my-project-plugin")`，这向 `self._pyproject_data` 添加了数据。
+2.  我也调用了 `.with_source("pyproject.toml", ...)`，这向 `self._files_to_create` 添加了一个条目。
+3.  在 `build()` 中，因为 `_pyproject_data` 不为空，它向 `_files_to_create` **追加**了另一个 `pyproject.toml` 条目（只包含 `name`，**没有 `version`**）。
+4.  在写入文件循环中，由于这两个条目都针对 `pyproject.toml`，后一个条目（自动生成的、不完整的那个）**覆盖**了前一个条目（我手动提供的、完整的那个）。
+5.  结果：磁盘上的 `pyproject.toml` 只包含 `[project] name="..."`，缺少 `version` 和 `build-system`，导致 `setuptools` 报错。
 
-这将使测试更加健壮，不再依赖于构建后端的具体行为。
-
-### [WIP] fix(test): 切换至 Setuptools 以修复测试包构建
+### [WIP] fix(test): 修复测试中的 pyproject.toml 覆盖问题
 
 #### 错误分析
-测试失败是因为 `proj_with_runtime` 包在安装时意外地触发了 `setuptools` 后端，并且由于配置不兼容（`setuptools` 期望 `project.version` 但似乎没读到，或者 `pyproject.toml` 解析失败）导致报错。为了彻底消除构建系统的不确定性，我们将显式地将该测试包切换为使用 `setuptools` 构建，这是一种更通用、更简单的构建方式，足以满足“创建一个可安装包”的测试需求。
+测试失败的根本原因是 `WorkspaceFactory` 的使用方式与实现逻辑冲突。同时使用 `.with_project_name()`（填充内部字典）和 `.with_source("pyproject.toml")`（提供原始文件）会导致生成两个 `pyproject.toml` 写入操作，后者覆盖前者，从而生成了一个不完整、无效的配置文件。
 
 #### 用户需求
-修复 `test_namespace_coexistence` 测试中 `proj_with_runtime` 包的安装错误。
+修复 `test_namespace_coexistence` 测试，确保生成的 `pyproject.toml` 是正确且完整的。
 
 #### 目标
 1.  修改 `tests/integration/test_stub_package_namespace.py`。
-2.  将 `proj_with_runtime` 的 `pyproject.toml` 中的 `[build-system]` 改为使用 `setuptools`。
-3.  移除 `[tool.hatch...]` 配置。
-4.  保留 `src` 布局，`setuptools` 的自动发现通常能很好地处理它（只要有 `__init__.py`）。
+2.  **移除** 对 `factory_runtime.with_project_name("my-project-plugin")` 的调用。既然我们已经通过 `.with_source("pyproject.toml", ...)` 提供了完整的配置，就不需要再使用辅助 API 了。
+3.  这将防止 `WorkspaceFactory` 自动生成那个覆盖性的、不完整的 `pyproject.toml`。
 
 #### 基本原理
-在集成测试中，辅助设施（如模拟的第三方包）应尽可能简单可靠。`setuptools` 是 Python 打包的基石，对于这种简单的“源码目录打包”场景，它的行为是最可预测的。显式指定它能避免 `pip` 在后端选择上的歧义。
+消除配置来源的二义性。如果我们在测试中手动提供了 `pyproject.toml` 的完整内容，就不应该再混合使用构建该文件的辅助方法。这将确保写入磁盘的正是我们定义的内容。
 
 #### 标签
 #intent/fix #flow/ready #priority/high #comp/tests #scope/core #ai/instruct #task/domain/testing #task/object/namespace-test #task/action/bug-fix #task/state/continue
@@ -31,56 +28,33 @@
 
 ### Script
 
-#### Acts 1: 将测试包构建后端切换为 Setuptools
+#### Acts 1: 移除冗余的 with_project_name 调用
 
 ~~~~~act
 patch_file
 tests/integration/test_stub_package_namespace.py
 ~~~~~
 ~~~~~python.old
-        # We need a pyproject.toml to make it an installable package
+    factory_runtime = WorkspaceFactory(tmp_path / "proj_with_runtime")
+    project_root_runtime = (
+        factory_runtime.with_project_name("my-project-plugin")
+        # This project provides the my_project.plugin namespace
         .with_source(
-            "pyproject.toml",
-            """
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[project]
-name = "my-project-plugin"
-version = "0.1.0"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/my_project"]
-            """,
-        )
-        .build()
-    )
+            "src/my_project/plugin.py",
 ~~~~~
 ~~~~~python.new
-        # We need a pyproject.toml to make it an installable package
-        # We use setuptools here as it is the most standard fallback and less prone
-        # to configuration quirks in test environments than hatchling for simple cases.
-        .with_source(
-            "pyproject.toml",
-            """
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "my-project-plugin"
-version = "0.1.0"
-# Setuptools automatically discovers packages in 'src' layout if __init__.py exists.
-            """,
-        )
-        .build()
-    )
+    factory_runtime = WorkspaceFactory(tmp_path / "proj_with_runtime")
+    project_root_runtime = (
+        # We manually provide pyproject.toml below, so we don't need with_project_name
+        # This project provides the my_project.plugin namespace
+        factory_runtime.with_source(
+            "src/my_project/plugin.py",
 ~~~~~
 
 ### 下一步建议
 
-我们已经将构建后端切换为最稳健的 `setuptools`。请再次运行 `pytest`。
+这个修复应该能彻底解决 `pip install` 的问题。既然我们找到了确切的根本原因（文件覆盖），我对这次修复充满信心。
 
--   **如果测试通过**：我们将终于解决这个构建噩梦，并验证了核心的命名空间共存逻辑。
--   **如果测试失败**：我们将根据新的错误信息（如果有）继续战斗。但我对这次修复非常有信心。
+请再次运行 `pytest`。
+-   **如果测试通过**：我们终于可以庆祝 Monorepo 命名空间测试的成功了。
+-   **如果测试失败**：我会非常惊讶，并会仔细检查 `WorkspaceFactory` 是否还有其他副作用。

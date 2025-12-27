@@ -32,9 +32,9 @@ def test_namespace_coexistence(tmp_path: Path, isolated_env: VenvHarness):
     # --- Part 2: Arrange a separate, installable RUNTIME package ---
     factory_runtime = WorkspaceFactory(tmp_path / "proj_with_runtime")
     project_root_runtime = (
-        factory_runtime.with_project_name("my-project-plugin")
+        # We manually provide pyproject.toml below, so we don't need with_project_name
         # This project provides the my_project.plugin namespace
-        .with_source(
+        factory_runtime.with_source(
             "src/my_project/plugin.py",
             """
             def plugin_function():
