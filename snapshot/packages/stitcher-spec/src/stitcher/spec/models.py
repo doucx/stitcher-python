@@ -95,12 +95,12 @@ class ModuleDef:
         """
         Checks if the module contains any content that would warrant a doc file.
         """
-        # A module is documentable if it has a docstring, any public-facing
-        # definitions, or any attributes. __all__ also implies it's a public API surface.
+        # A module is documentable if it has a docstring, public attributes,
+        # functions, or classes. Boilerplate like __all__ or __path__ should be ignored.
+        has_public_attributes = any(
+            not attr.name.startswith("_") for attr in self.attributes
+        )
+
         return bool(
-            self.docstring
-            or self.attributes
-            or self.functions
-            or self.classes
-            or self.dunder_all
+            self.docstring or has_public_attributes or self.functions or self.classes
         )
