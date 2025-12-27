@@ -2,7 +2,7 @@ import pytest
 from stitcher.common.messaging.bus import MessageBus
 from stitcher.common.messaging.protocols import Renderer
 from needle.pointer import L
-from stitcher.test_utils.needle import MockNeedle
+from stitcher.test_utils.nexus import MockNexus
 
 
 class MockRenderer(Renderer):
@@ -15,7 +15,7 @@ class MockRenderer(Renderer):
 
 def test_bus_does_not_fail_without_renderer():
     # Arrange: A bus with a basic mock nexus
-    bus = MessageBus(nexus_instance=MockNeedle({}))
+    bus = MessageBus(nexus_instance=MockNexus({}))
     try:
         # Act
         bus.info("some.id")
@@ -26,9 +26,9 @@ def test_bus_does_not_fail_without_renderer():
 def test_bus_forwards_to_renderer():
     # Arrange
     mock_renderer = MockRenderer()
-    # Directly inject a MockNeedle instance configured for this test
-    mock_needle = MockNeedle({"greeting": "Hello {name}"})
-    bus = MessageBus(nexus_instance=mock_needle)
+    # Directly inject a MockNexus instance configured for this test
+    mock_nexus = MockNexus({"greeting": "Hello {name}"})
+    bus = MessageBus(nexus_instance=mock_nexus)
     bus.set_renderer(mock_renderer)
 
     # Act
@@ -47,9 +47,9 @@ def test_bus_forwards_to_renderer():
 def test_bus_identity_fallback():
     # Arrange
     mock_renderer = MockRenderer()
-    # Inject a MockNeedle with no templates to test fallback
-    mock_needle = MockNeedle({})
-    bus = MessageBus(nexus_instance=mock_needle)
+    # Inject a MockNexus with no templates to test fallback
+    mock_nexus = MockNexus({})
+    bus = MessageBus(nexus_instance=mock_nexus)
     bus.set_renderer(mock_renderer)
 
     # Act

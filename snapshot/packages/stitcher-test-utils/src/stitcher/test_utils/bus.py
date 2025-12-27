@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 from stitcher.common.messaging.bus import MessageBus
 from stitcher.common.messaging.protocols import Renderer
 from needle.pointer import SemanticPointer
+from .nexus import MockNexus
 
 # Store the original bus instance from stitcher.common
 
@@ -34,8 +35,10 @@ class PatchedMessageBus(MessageBus):
 class SpyBus:
     def __init__(self):
         self._spy_renderer = SpyRenderer()
-        # Create a new bus instance that uses our special renderer
-        self._test_bus = PatchedMessageBus()
+        # Create a new bus instance that uses our special renderer.
+        # We inject a MockNexus because SpyBus doesn't care about the actual text templates,
+        # it only records the semantic IDs and params.
+        self._test_bus = PatchedMessageBus(nexus_instance=MockNexus({}))
         self._test_bus.set_renderer(self._spy_renderer)
 
     @contextmanager

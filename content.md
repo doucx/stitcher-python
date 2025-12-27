@@ -1,44 +1,153 @@
-您是对的，我的上一个修复引入了依赖注入，但没有正确地更新测试套件来适应这种新模式，导致了断言失败。测试失败的原因非常明确：
+这是对测试工具链的一次重要清理。我们将消除命名混淆，使测试工具与 `pyneedle` 的 `Nexus` 概念保持一致，并修复因 `MessageBus` 构造函数变更而导致的 `SpyBus` 初始化错误。
 
-1.  **依赖注入的改变**: 在上一个计划中，我修改了 `MessageBus`，使其在构造时接收一个 `nexus_instance`。
-2.  **测试夹具 (Fixture) 的问题**: 我为测试 `test_message_bus.py` 创建了一个 `test_bus` fixture，它使用了一个非常简单的 `MockNexus`，这个 `MockNexus` 的 `.get()` 方法只是原样返回传入的键 (`return str(key)`)。
-3.  **Monkeypatch 失效**: 在失败的测试 `test_bus_forwards_to_renderer` 中，代码 `with mock_needle.patch(monkeypatch):` 仍然在尝试修补全局的 `stitcher.common.stitcher_nexus.get`。然而，测试中使用的 `test_bus` 实例包含的是我创建的那个简单的 `MockNexus`，而不是全局的 `stitcher_nexus`。
-4.  **结果**: 因此，`monkeypatch` 成功地修补了一个对象，但这个对象根本没有被测试代码使用。`test_bus` 仍然在使用那个只会返回键的 `MockNexus`，所以断言 `{'message': 'greeting'} == {'message': 'Hello World'}` 失败了。
-
-我们将修复这个测试，使其完全拥抱依赖注入模式，这样做更清晰、更健壮，并且不再需要 `monkeypatch`。
-
-`MockNeedle` 类的设计本身就可以作为一个完美的、可配置的 `nexus` 模拟对象。我们将直接把它注入到 `MessageBus` 的构造函数中。
-
-## [WIP] fix: 修复测试套件以正确使用依赖注入
+## [WIP] fix: 重构测试工具以匹配 Nexus 语义和依赖注入
 
 ### 错误分析
-`test_message_bus.py` 中的测试用例失败，因为 `test_bus` fixture 创建的 `MessageBus` 实例包含一个简单的、未被 `monkeypatch` 影响的 `MockNexus`。而 `monkeypatch` 正在修改一个全局的、未被测试使用的 `nexus` 实例。这种测试设置和模拟目标之间的脱节导致了断言失败。
+1.  **命名混淆**: `MockNeedle` 类名过时且具有误导性，它实际上模拟的是 `Nexus` 组件。且它缺少 `get` 方法（只有 `_mock_get`），导致 `MessageBus` 调用失败。
+2.  **SpyBus 初始化失败**: `SpyBus` 内部实例化的 `PatchedMessageBus` 继承自 `MessageBus`，但没有在初始化时传入必须的 `nexus_instance` 参数，导致所有依赖 `SpyBus` 的集成测试全部崩溃。
 
 ### 用户需求
-修复 `test_message_bus.py` 中的测试，使其正确模拟 `nexus` 依赖并验证 `MessageBus` 的行为。
+1.  将 `MockNeedle` 重命名为 `MockNexus`，并确保其提供 `nexus.get` 接口。
+2.  修复 `SpyBus` 以适应依赖注入。
+3.  修复所有相关测试错误。
 
 ### 评论
-这是一个很好的机会来改进我们的测试策略。通过从“修补全局状态”转向“在测试时直接注入模拟依赖”，我们使测试代码更具声明性、更少依赖魔法，并且与我们刚刚在应用代码中实现的依赖注入架构保持一致。
+这次重构将彻底理顺测试基础设施。`MockNexus` 将成为一个真正的、符合接口规范的模拟对象，而 `SpyBus` 将通过组合这个模拟对象来正确地实例化被测系统。
 
 ### 目标
-1.  重构 `packages/stitcher-common/tests/test_message_bus.py`。
-2.  移除不再需要的 `test_bus` fixture 和 `MockNexus` 辅助类。
-3.  在每个测试函数内部，显式创建 `MessageBus` 实例，并注入一个为该特定测试配置的 `MockNeedle` 实例。
-4.  移除对 `monkeypatch` 和 `.patch()` 上下文管理器的使用，因为我们现在是直接注入模拟对象。
+1.  重构 `stitcher-test-utils`:
+    *   将 `needle.py` 重命名为 `nexus.py`。
+    *   将 `MockNeedle` 类重命名为 `MockNexus`，并实现标准的 `.get()` 方法。
+2.  修复 `SpyBus`:
+    *   在 `SpyBus` 初始化时，创建一个 `MockNexus` 实例并注入到内部的 `PatchedMessageBus` 中。
+3.  更新所有测试引用:
+    *   更新 `stitcher-common` 的单元测试。
+    *   更新 `stitcher-test-utils` 的导出。
 
 ### 基本原理
-我们将遵循依赖注入的最佳测试实践。每个测试函数将完全控制其被测对象 (`MessageBus`) 的创建及其依赖项 (`MockNeedle`)。这种方式使得每个测试的“Arrange”阶段都非常清晰和自包含。`MockNeedle` 实例将直接扮演 `nexus_instance` 的角色，并被传递给 `MessageBus` 的构造函数，确保 `MessageBus` 在运行时调用的是我们期望的、可控的模拟 `.get()` 方法。
+我们将 `MockNexus` 定义为一个简单的字典包装器，其 `.get()` 方法执行查找或回退到键本身。`SpyBus` 作为测试替身，不需要真实的 `Nexus` 逻辑，只需要一个能让 `MessageBus` 正常运行且不报错的桩 (Stub)。因此，在 `SpyBus` 内部注入一个空的 `MockNexus` 是最干净的解决方案。
 
 ### 标签
-#intent/fix #intent/tooling #flow/ready #priority/critical #comp/tests #scope/dx #ai/instruct #task/domain/testing #task/object/dependency-injection #task/action/refactor #task/state/continue
+#intent/fix #intent/refine #flow/ready #priority/critical #comp/tests #scope/dx #ai/instruct #task/domain/testing #task/object/test-doubles #task/action/rename #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 重构 `test_message_bus.py` 以正确注入模拟依赖
+#### Acts 1: 重命名并重构 Mock 工具 (Needle -> Nexus)
 
-我们将完全重写这个测试文件，使其遵循新的、更清晰的测试模式。
+我们将 `needle.py` 移动并重构为 `nexus.py`，实现 `MockNexus` 类。
+
+~~~~~act
+run_command
+~~~~~
+~~~~~bash
+mv packages/stitcher-test-utils/src/stitcher/test_utils/needle.py packages/stitcher-test-utils/src/stitcher/test_utils/nexus.py
+~~~~~
+
+~~~~~act
+write_file
+packages/stitcher-test-utils/src/stitcher/test_utils/nexus.py
+~~~~~
+~~~~~python
+from contextlib import contextmanager
+from typing import Dict, Any
+
+
+class MockNexus:
+    def __init__(self, templates: Dict[str, str]):
+        self._templates = templates
+
+    def get(self, key: Any, **kwargs: Any) -> str:
+        """Standard Nexus interface implementation."""
+        key_str = str(key)
+        return self._templates.get(key_str, key_str)
+
+    @contextmanager
+    def patch(self, monkeypatch: Any):
+        """
+        Legacy patch method.
+        Prefer constructor injection (Dependency Injection) where possible.
+        This patches the 'stitcher_nexus' used by the global bus if needed.
+        """
+        target_path = "stitcher.common.stitcher_nexus.get"
+        try:
+            monkeypatch.setattr(target_path, self.get)
+            yield
+        finally:
+            pass
+~~~~~
+
+#### Acts 2: 修复 `SpyBus` 初始化逻辑
+
+`SpyBus` 需要为它内部的 `MessageBus` 提供一个 `nexus` 实例。我们将给它一个默认的 `MockNexus`。
+
+~~~~~act
+patch_file
+packages/stitcher-test-utils/src/stitcher/test_utils/bus.py
+~~~~~
+~~~~~python.old
+from stitcher.common.messaging.bus import MessageBus
+from stitcher.common.messaging.protocols import Renderer
+from needle.pointer import SemanticPointer
+
+# Store the original bus instance from stitcher.common
+~~~~~
+~~~~~python.new
+from stitcher.common.messaging.bus import MessageBus
+from stitcher.common.messaging.protocols import Renderer
+from needle.pointer import SemanticPointer
+from .nexus import MockNexus
+
+# Store the original bus instance from stitcher.common
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-test-utils/src/stitcher/test_utils/bus.py
+~~~~~
+~~~~~python.old
+class SpyBus:
+    def __init__(self):
+        self._spy_renderer = SpyRenderer()
+        # Create a new bus instance that uses our special renderer
+        self._test_bus = PatchedMessageBus()
+        self._test_bus.set_renderer(self._spy_renderer)
+~~~~~
+~~~~~python.new
+class SpyBus:
+    def __init__(self):
+        self._spy_renderer = SpyRenderer()
+        # Create a new bus instance that uses our special renderer.
+        # We inject a MockNexus because SpyBus doesn't care about the actual text templates,
+        # it only records the semantic IDs and params.
+        self._test_bus = PatchedMessageBus(nexus_instance=MockNexus({}))
+        self._test_bus.set_renderer(self._spy_renderer)
+~~~~~
+
+#### Acts 3: 更新 `stitcher-test-utils` 的导出
+
+~~~~~act
+patch_file
+packages/stitcher-test-utils/src/stitcher/test_utils/__init__.py
+~~~~~
+~~~~~python.old
+from .bus import SpyBus
+from .needle import MockNeedle
+from .workspace import WorkspaceFactory
+
+__all__ = ["SpyBus", "MockNeedle", "WorkspaceFactory"]
+~~~~~
+~~~~~python.new
+from .bus import SpyBus
+from .nexus import MockNexus
+from .workspace import WorkspaceFactory
+
+__all__ = ["SpyBus", "MockNexus", "WorkspaceFactory"]
+~~~~~
+
+#### Acts 4: 修复 `stitcher-common` 单元测试
+
+更新测试代码以使用新的类名和导入路径。
 
 ~~~~~act
 write_file
@@ -49,7 +158,7 @@ import pytest
 from stitcher.common.messaging.bus import MessageBus
 from stitcher.common.messaging.protocols import Renderer
 from needle.pointer import L
-from stitcher.test_utils.needle import MockNeedle
+from stitcher.test_utils.nexus import MockNexus
 
 
 class MockRenderer(Renderer):
@@ -62,7 +171,7 @@ class MockRenderer(Renderer):
 
 def test_bus_does_not_fail_without_renderer():
     # Arrange: A bus with a basic mock nexus
-    bus = MessageBus(nexus_instance=MockNeedle({}))
+    bus = MessageBus(nexus_instance=MockNexus({}))
     try:
         # Act
         bus.info("some.id")
@@ -73,9 +182,9 @@ def test_bus_does_not_fail_without_renderer():
 def test_bus_forwards_to_renderer():
     # Arrange
     mock_renderer = MockRenderer()
-    # Directly inject a MockNeedle instance configured for this test
-    mock_needle = MockNeedle({"greeting": "Hello {name}"})
-    bus = MessageBus(nexus_instance=mock_needle)
+    # Directly inject a MockNexus instance configured for this test
+    mock_nexus = MockNexus({"greeting": "Hello {name}"})
+    bus = MessageBus(nexus_instance=mock_nexus)
     bus.set_renderer(mock_renderer)
 
     # Act
@@ -94,9 +203,9 @@ def test_bus_forwards_to_renderer():
 def test_bus_identity_fallback():
     # Arrange
     mock_renderer = MockRenderer()
-    # Inject a MockNeedle with no templates to test fallback
-    mock_needle = MockNeedle({})
-    bus = MessageBus(nexus_instance=mock_needle)
+    # Inject a MockNexus with no templates to test fallback
+    mock_nexus = MockNexus({})
+    bus = MessageBus(nexus_instance=mock_nexus)
     bus.set_renderer(mock_renderer)
 
     # Act
@@ -108,4 +217,4 @@ def test_bus_identity_fallback():
 ~~~~~
 
 ### 下一步建议
-这次修改直接解决了测试失败的根源。在应用补丁后，请重新运行测试。如果所有测试都通过，我们就可以自信地认为 `stitcher-needle` 的移除和 `pyneedle` 的集成工作已经圆满完成。届时，我将为您生成一个 `[COMMIT]` 计划来总结并提交所有这些变更。
+这次重构应该解决了所有由于 API 变更、命名混淆和初始化参数缺失导致的测试失败。现在，测试基础设施与新的架构设计是同步的。请运行全部测试。如果全部通过，我将生成提交计划。
