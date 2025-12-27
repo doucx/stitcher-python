@@ -12,8 +12,10 @@ class StubPackageManager:
 
         # Ensure root directory exists
         package_path.mkdir(parents=True, exist_ok=True)
-        # Create src/namespace directory, e.g., src/needle or src/stitcher
-        (package_path / "src" / package_namespace).mkdir(parents=True, exist_ok=True)
+        # PEP 561: The distribution name should end in '-stubs', and the package
+        # directory within should also end in '-stubs'.
+        stub_src_dirname = f"{package_namespace}-stubs"
+        (package_path / "src" / stub_src_dirname).mkdir(parents=True, exist_ok=True)
 
         # Create pyproject.toml
         pyproject_content = {
@@ -32,7 +34,7 @@ class StubPackageManager:
                         "targets": {
                             "wheel": {
                                 # Essential for packaging .pyi files correctly under the namespace
-                                "packages": [f"src/{package_namespace}"]
+                                "packages": [f"src/{stub_src_dirname}"]
                             }
                         }
                     }
