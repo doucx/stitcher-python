@@ -5,7 +5,6 @@ import tomli_w
 class StubPackageManager:
     @staticmethod
     def _get_pep561_logical_path(logical_path: Path) -> Path:
-        """Converts a standard logical path to a PEP 561-compliant one for stubs."""
         if not logical_path.parts:
             return logical_path
 

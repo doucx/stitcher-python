@@ -1,0 +1,45 @@
+"VenvHarness": |-
+  A test utility for creating and managing isolated virtual environments.
+"VenvHarness.__init__": |-
+  Initializes the harness.
+
+  Args:
+      root: The temporary directory where the venv will be created.
+"VenvHarness.create": |-
+  Creates a clean virtual environment.
+"VenvHarness.get_site_packages_layout": |-
+  Returns a string representation of the site-packages directory structure.
+"VenvHarness.get_site_packages_path": |-
+  Returns the absolute path to the site-packages directory.
+"VenvHarness.install": |-
+  Installs packages into the virtual environment using pip.
+
+  Args:
+      *packages: A list of packages to install (can be paths or names).
+
+  Returns:
+      The result of the subprocess call.
+"VenvHarness.pip_list": |-
+  Runs 'pip list' and returns the output.
+"VenvHarness.python_exe": |-
+  Returns the path to the Python executable in the virtual environment.
+"VenvHarness.run_pyright_check": |-
+  Runs pyright on a given project/file within the virtual environment.
+
+  Args:
+      project_path: The path to the Python project/file to type-check.
+      verbose: If True, run pyright with --verbose flag.
+      cwd: The working directory from which to run the command.
+
+  Returns:
+      The result of the subprocess call.
+"VenvHarness.run_python_command": |-
+  Runs an arbitrary python command string.
+"VenvHarness.run_type_check": |-
+  Runs mypy on a given script within the virtual environment.
+
+  Args:
+      script_path: The path to the Python script to type-check.
+
+  Returns:
+      The result of the subprocess call.
