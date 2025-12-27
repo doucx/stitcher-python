@@ -1,216 +1,87 @@
 简要回答：
-绝对可以。为 `Nexus` 这个核心引擎添加单元测试是确保我们整个架构稳定可靠的基石。我将创建一个计划，为 `pyneedle-nexus` 编写一套详尽的测试用例，以验证其层叠、回退和缓存机制。
+分析测试失败原因，主要有两点：
+1.  **`ChainMap` 的引用特性导致缓存测试失败**: `MemoryLoader` 直接返回了内部字典的引用，而 `ChainMap` 只是对这些字典的视图。因此，修改 `MemoryLoader` 的源数据会立即反映在 `ChainMap` 中，导致看起来像“缓存失效”（实际上是缓存的视图动态更新了）。这不符合我们想要测试的“快照加载”语义。
+2.  **环境干扰导致语言解析不确定**: 某些测试失败（如返回中文，或返回莫名其妙的值）表明测试运行环境中的环境变量（如 `LANG` 或 `STITCHER_LANG`）干扰了 `_resolve_lang` 的逻辑，使其没有使用预期的默认语言 `en`。
 
-## [WIP] test: 添加 pyneedle-nexus 单元测试以验证层叠和回退逻辑
+我们将通过以下措施修复：
+1.  修改 `MemoryLoader.load` 以返回数据的**浅拷贝**，模拟真实 I/O 的行为。
+2.  在测试中使用 `monkeypatch` **强制清除相关环境变量**，确保测试环境纯净且确定。
+
+## [WIP] fix: 修复 MemoryLoader 引用问题及测试环境隔离
 
 ### 用户需求
-为 `pyneedle-nexus` 包创建单元测试，特别是针对 `OverlayNexus` 类。测试必须验证其所有核心逻辑：
-1.  基于加载器顺序的优先级（层叠）。
-2.  从目标语言到默认语言的优雅回退。
-3.  未找到任何资源时的身份回退。
-4.  `reload()` 方法的缓存清除功能。
-5.  基于环境变量的语言解析优先级。
+修复 `pyneedle-nexus` 的单元测试失败。
+1.  **MemoryLoader**: 修改 `load` 方法，使其返回内部数据的副本 (`copy()`)，而不是直接引用。
+2.  **Test Nexus**: 在运行测试前，强制清理 `STITCHER_LANG`, `NEEDLE_LANG`, `LANG` 等环境变量，确保语言解析逻辑回退到默认的 `en`。
 
 ### 评论
-这是对我们新架构的第一次真正考验。通过使用 `MemoryLoader` 进行纯内存测试，我们可以完全隔离运行时引擎，确保其逻辑的正确性，而无需任何文件 I/O。这将为后续所有依赖 `Nexus` 的组件提供一个“可信内核”。
+这些修复不仅能让测试通过，还纠正了 `MemoryLoader` 的语义，使其更准确地模拟真实的文件加载器（后者总是返回新的数据对象）。环境隔离则是编写可靠单元测试的标准实践。
 
 ### 目标
-1.  在 `packages/pyneedle-nexus` 中创建 `tests` 目录。
-2.  编写 `test_nexus.py` 文件。
-3.  **验证核心 `get` 逻辑**:
-    *   测试从单个加载器成功获取值。
-    *   测试当多个加载器有相同键时，排在前面的加载器（高优先级）的值被返回。
-    *   测试当键在目标语言中不存在，但在默认语言中存在时，能正确返回默认语言的值。
-    *   测试当键在任何地方都不存在时，能正确返回键本身。
-4.  **验证 `reload` 逻辑**:
-    *   模拟一个场景：首次 `get` 后缓存了值，然后修改底层数据源（`MemoryLoader`），再次 `get` 应该返回旧的缓存值。调用 `reload()` 后，再次 `get` 应该返回新的值。
-5.  **验证语言解析**:
-    *   使用 `pytest.monkeypatch` 来模拟环境变量，验证 `_resolve_lang` 的优先级顺序（`get` 参数 > `NEEDLE_LANG` > `LANG` > 默认值）。
+1.  Patch `packages/pyneedle-nexus/src/needle/nexus/loaders.py`。
+2.  Patch `packages/pyneedle-nexus/tests/test_nexus.py`，添加 `clean_env` fixture 并应用到所有测试。
 
 ### 标签
-#intent/tooling #flow/ready #priority/high
-#comp/tests #scope/core
-#task/domain/runtime #task/object/pyneedle-nexus #task/action/testing
+#intent/fix #flow/ready #priority/high
+#comp/runtime #comp/tests
+#task/domain/runtime #task/object/pyneedle-nexus #task/action/bugfix
 #task/state/continue #task/status/active
 
 ---
 
 ### Script
 
-#### Acts 1: 创建测试目录和文件
-初始化测试所需的文件结构。
+#### Acts 1: 修复 MemoryLoader 返回副本
+这确保了 `ChainMap` 建立在数据快照上，从而使 `reload()` 测试（验证缓存清除）变得有效。
 
 ~~~~~act
-run_command
+patch_file
+packages/pyneedle-nexus/src/needle/nexus/loaders.py
 ~~~~~
-~~~~~bash
-mkdir -p packages/pyneedle-nexus/tests
-touch packages/pyneedle-nexus/tests/test_nexus.py
+~~~~~python.old
+    def load(self, lang: str) -> Dict[str, Any]:
+        """
+        Loads resources for a specific language from memory.
+        """
+        return self._data.get(lang, {})
+~~~~~
+~~~~~python.new
+    def load(self, lang: str) -> Dict[str, Any]:
+        """
+        Loads resources for a specific language from memory.
+        """
+        # Return a copy to simulate I/O snapshotting and prevent
+        # ChainMap from reflecting dynamic changes in source data immediately.
+        return self._data.get(lang, {}).copy()
 ~~~~~
 
-#### Acts 2: 编写 Nexus 单元测试
-填充 `test_nexus.py` 的内容，覆盖所有核心功能。
+#### Acts 2: 增强测试环境隔离
+添加 `clean_env` fixture，并在每个测试中自动使用它，消除环境变量的干扰。
 
 ~~~~~act
-write_file
+patch_file
 packages/pyneedle-nexus/tests/test_nexus.py
 ~~~~~
-~~~~~python
-import pytest
-from needle.spec import SemanticPointerProtocol
-from needle.nexus import OverlayNexus, MemoryLoader
-
-# A simple pointer mock for testing that satisfies the protocol
-class MockPointer(SemanticPointerProtocol):
-    def __init__(self, path):
-        self._path = path
-    def __str__(self):
-        return self._path
-
-L_TEST = type("L_TEST", (), {"__getattr__": lambda _, name: MockPointer(name)})()
+~~~~~python.old
+@pytest.fixture
+def nexus_instance() -> OverlayNexus:
+    """Provides a Nexus instance with two loaders for priority tests."""
+    loader1_data = {
+~~~~~
+~~~~~python.new
+@pytest.fixture(autouse=True)
+def clean_env(monkeypatch):
+    """Ensure a clean environment for all tests to prevent flakiness."""
+    monkeypatch.delenv("STITCHER_LANG", raising=False)
+    monkeypatch.delenv("NEEDLE_LANG", raising=False)
+    monkeypatch.delenv("LANG", raising=False)
 
 
 @pytest.fixture
 def nexus_instance() -> OverlayNexus:
     """Provides a Nexus instance with two loaders for priority tests."""
     loader1_data = {
-        "en": {"app.title": "My App (High Priority)", "app.welcome": "Welcome!"},
-        "zh": {"app.title": "我的应用 (高优先级)"},
-    }
-    loader2_data = {
-        "en": {"app.title": "My App (Low Priority)", "app.version": "1.0"},
-        "zh": {"app.welcome": "欢迎！", "app.version": "1.0"},
-    }
-    
-    # loader1 has higher priority
-    return OverlayNexus(loaders=[MemoryLoader(loader1_data), MemoryLoader(loader2_data)])
-
-
-def test_get_simple_retrieval_and_identity_fallback(nexus_instance: OverlayNexus):
-    """Tests basic value retrieval and the ultimate fallback mechanism."""
-    # From loader 1
-    assert nexus_instance.get(L_TEST.app.welcome) == "Welcome!"
-    # From loader 2
-    assert nexus_instance.get(L_TEST.app.version) == "1.0"
-    # Identity fallback
-    assert nexus_instance.get("non.existent.key") == "non.existent.key"
-
-
-def test_get_loader_priority_overlay(nexus_instance: OverlayNexus):
-    """Tests that the first loader in the list overrides subsequent loaders."""
-    # 'app.title' exists in both, should get the value from loader1
-    assert nexus_instance.get("app.title") == "My App (High Priority)"
-
-
-def test_get_language_specificity_and_fallback(nexus_instance: OverlayNexus):
-    """Tests language selection and fallback to default language."""
-    # 1. Specific language (zh) is preferred when key exists
-    assert nexus_instance.get("app.title", lang="zh") == "我的应用 (高优先级)"
-
-    # 2. Key missing in 'zh', falls back to default 'en'
-    assert nexus_instance.get(L_TEST.app.welcome, lang="zh") == "欢迎！" # from loader 2 in zh
-    
-    # 3. Key missing in 'zh' (loader1), but exists in 'en' (loader1) and 'zh' (loader2)
-    # This is a good test of ChainMap within a single language lookup
-    assert nexus_instance.get(L_TEST.app.welcome, lang="zh") == "欢迎！"
-
-    # 4. Key exists in default 'en' but not in requested 'de'
-    assert nexus_instance.get(L_TEST.app.version, lang="de") == "1.0"
-
-
-def test_reload_clears_cache_and_refetches_data():
-    """Tests that reload() forces a new data fetch."""
-    mutable_data = {"en": {"key": "initial_value"}}
-    loader = MemoryLoader(mutable_data)
-    nexus = OverlayNexus(loaders=[loader])
-
-    # 1. First get, value is cached
-    assert nexus.get("key") == "initial_value"
-
-    # 2. Modify the underlying data source
-    mutable_data["en"]["key"] = "updated_value"
-
-    # 3. Get again, should return the OLD cached value
-    assert nexus.get("key") == "initial_value"
-
-    # 4. Reload the cache
-    nexus.reload()
-
-    # 5. Get again, should now return the NEW value
-    assert nexus.get("key") == "updated_value"
-
-
-def test_language_resolution_priority(monkeypatch):
-    """Tests the hierarchy of language resolution."""
-    nexus = OverlayNexus(loaders=[MemoryLoader({"de": {"key": "de"}, "fr": {"key": "fr"}, "en": {"key": "en"}})])
-
-    # Priority 1: Explicit `lang` argument
-    assert nexus.get("key", lang="de") == "de"
-
-    # Priority 2: NEEDLE_LANG env var
-    monkeypatch.setenv("NEEDLE_LANG", "fr")
-    assert nexus.get("key") == "fr"
-
-    # Priority 3: STITCHER_LANG env var (legacy)
-    monkeypatch.setenv("STITCHER_LANG", "de")
-    assert nexus.get("key") == "de" # STITCHER_LANG overrides NEEDLE_LANG if both present for now - let's adjust this
-    
-    # Let's fix the logic in nexus to prioritize NEEDLE_LANG
-    # For now, let's assume one is set at a time for cleaner tests.
-    monkeypatch.delenv("STITCHER_LANG")
-    monkeypatch.setenv("NEEDLE_LANG", "fr")
-    assert nexus.get("key") == "fr"
-
-    # Priority 4: System LANG env var
-    monkeypatch.delenv("NEEDLE_LANG", raising=False)
-    monkeypatch.setenv("LANG", "de_DE.UTF-8")
-    assert nexus.get("key") == "de"
-
-    # Priority 5: Default language
-    monkeypatch.delenv("LANG", raising=False)
-    assert nexus.get("key") == "en"
-~~~~~
-
-#### Acts 3: 更新根 `pyproject.toml`
-将 `pyneedle-nexus` 的源路径添加到 `pytest` 的 `pythonpath` 中，以便测试可以找到要导入的模块。
-
-~~~~~act
-patch_file
-pyproject.toml
-~~~~~
-~~~~~toml.old
-pythonpath = [
-    "packages/stitcher-spec/src", 
-    "packages/stitcher-common/src", 
-    "packages/stitcher-scanner/src", 
-    "packages/stitcher-io/src", 
-    "packages/stitcher-config/src", 
-    "packages/stitcher-application/src", 
-    "packages/stitcher-cli/src", 
-    "packages/stitcher-needle/src",
-    "packages/pyneedle-spec/src",
-    "packages/pyneedle-pointer/src"
-]
-~~~~~
-~~~~~toml.new
-pythonpath = [
-    "packages/stitcher-spec/src", 
-    "packages/stitcher-common/src", 
-    "packages/stitcher-scanner/src", 
-    "packages/stitcher-io/src", 
-    "packages/stitcher-config/src", 
-    "packages/stitcher-application/src", 
-    "packages/stitcher-cli/src", 
-    "packages/stitcher-needle/src",
-    "packages/pyneedle-spec/src",
-    "packages/pyneedle-pointer/src",
-    "packages/pyneedle-nexus/src"
-]
 ~~~~~
 
 ### 下一步建议
-我们已经完成了 `pyneedle` 核心运行时 (`Nexus`) 的实现和验证。现在我们拥有一个经过全面测试、纯内存、与 I/O 无关的引擎。
-
-最后一步是 **Phase 4: 电池组装 (pyneedle)**。在这个阶段，我们将创建一个顶层的 `pyneedle` 包，它会：
-1.  实现 `FileSystemLoader`，让 `Nexus` 能够从磁盘读取真实的文件。
-2.  将 `Pointer`, `Nexus`, 和 `FileSystemLoader` 组装成一个开箱即用的全局 `needle` 实例。
+测试通过后，我们将继续 **Phase 4: 电池组装 (pyneedle)**，实现 `FileSystemLoader` 并完成整个生态的组装。

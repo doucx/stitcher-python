@@ -12,6 +12,14 @@ class MockPointer(SemanticPointerProtocol):
 L_TEST = type("L_TEST", (), {"__getattr__": lambda _, name: MockPointer(name)})()
 
 
+@pytest.fixture(autouse=True)
+def clean_env(monkeypatch):
+    """Ensure a clean environment for all tests to prevent flakiness."""
+    monkeypatch.delenv("STITCHER_LANG", raising=False)
+    monkeypatch.delenv("NEEDLE_LANG", raising=False)
+    monkeypatch.delenv("LANG", raising=False)
+
+
 @pytest.fixture
 def nexus_instance() -> OverlayNexus:
     """Provides a Nexus instance with two loaders for priority tests."""

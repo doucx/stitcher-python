@@ -24,4 +24,6 @@ class MemoryLoader(ResourceLoaderProtocol):
         """
         Loads resources for a specific language from memory.
         """
-        return self._data.get(lang, {})
+        # Return a copy to simulate I/O snapshotting and prevent
+        # ChainMap from reflecting dynamic changes in source data immediately.
+        return self._data.get(lang, {}).copy()
