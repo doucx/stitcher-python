@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from stitcher.app import StitcherApp
 from stitcher.test_utils import WorkspaceFactory, VenvHarness
@@ -9,14 +10,13 @@ def test_pyright_resolves_types_from_stubs(
     """
     Verifies that Pyright can resolve types from a generated stub package,
     simulating the IDE experience in a realistic environment where both the
-    runtime and stub packages are installed.
+    runtime and stub packages are installed, and Pyright is properly configured.
     """
     # --- ARRANGE ---
 
-    # 1. Define shared source code (no type hints in runtime).
     source_content = "class ProxyModel:\n    def get_id(self):\n        return 1"
 
-    # 2. Create the source project for Stitcher to scan.
+    # 1. Create the source project for Stitcher to scan.
     source_project_root = tmp_path / "source_project"
     WorkspaceFactory(source_project_root).with_project_name(
         "ide-proxy-proj"
@@ -26,7 +26,7 @@ def test_pyright_resolves_types_from_stubs(
         "src/ide_proxy/models.py", source_content
     ).build()
 
-    # 3. Create a correctly configured, installable RUNTIME package using hatchling.
+    # 2. Create a correctly configured, installable RUNTIME package.
     runtime_project_root = tmp_path / "runtime_project"
     WorkspaceFactory(runtime_project_root).with_source(
         "src/ide_proxy/models.py", source_content
@@ -49,44 +49,45 @@ packages = ["src/ide_proxy"]
 
     # --- ACT ---
 
-    # 4. Generate the stub package.
+    # 3. Generate the stub package.
     app = StitcherApp(root_path=source_project_root)
     app.run_from_config()
     stub_pkg_path = source_project_root / "stubs"
 
-    # 5. Install BOTH packages.
+    # 4. Install BOTH packages.
     isolated_env.install(str(runtime_project_root))
     isolated_env.install(str(stub_pkg_path))
 
-    # 6. Run DIAGNOSTICS before the main check.
-    pip_list_output = isolated_env.pip_list()
-    site_packages_layout = isolated_env.get_site_packages_layout()
-    import_result = isolated_env.run_python_command("import ide_proxy.models")
-
-    # 7. Create a client script to be type-checked.
-    client_script = tmp_path / "client.py"
+    # 5. Create a client script and a Pyright config in a dedicated "client_project" dir.
+    client_project_dir = tmp_path / "client_project"
+    client_project_dir.mkdir()
+    client_script = client_project_dir / "main.py"
     client_script.write_text(
         "from ide_proxy.models import ProxyModel\n\n"
         "instance = ProxyModel()\n"
         "reveal_type(instance.get_id())\n"
     )
 
-    # 8. Run the final Pyright check.
-    result = isolated_env.run_pyright_check(client_script)
+    # 6. *** THE CRITICAL FIX ***
+    #    Create a pyrightconfig.json to give Pyright the necessary context.
+    pyright_config_path = client_project_dir / "pyrightconfig.json"
+    pyright_config = {"venvPath": str(isolated_env.venv_dir)}
+    pyright_config_path.write_text(json.dumps(pyright_config))
+
+    # 7. Run Pyright check. We run it on the whole directory now.
+    result = isolated_env.run_pyright_check(client_project_dir)
 
     # --- ASSERT ---
-
-    # 9. Assert with a rich diagnostic message.
+    
+    # 8. Run diagnostics for rich error messages if needed.
+    pip_list_output = isolated_env.pip_list()
+    import_result = isolated_env.run_python_command("import ide_proxy.models")
     diagnostic_info = f"""
     --- DIAGNOSTICS ---
     [PIP LIST]
 {pip_list_output}
-    [SITE-PACKAGES LAYOUT]
-{site_packages_layout}
     [PYTHON IMPORT TEST]
-    Exit Code: {import_result.returncode}
-    Stdout: {import_result.stdout.strip()}
-    Stderr: {import_result.stderr.strip()}
+    Exit Code: {import_result.returncode}, Stderr: {import_result.stderr.strip()}
     ---
     [PYRIGHT OUTPUT]
     STDOUT:
@@ -95,13 +96,7 @@ packages = ["src/ide_proxy"]
 {result.stderr}
     """
 
-    assert (
-        import_result.returncode == 0
-    ), f"Python could not import the runtime module.\n{diagnostic_info}"
-    assert (
-        result.returncode == 0
-    ), f"Pyright failed with errors.\n{diagnostic_info}"
-
+    assert result.returncode == 0, f"Pyright failed with errors.\n{diagnostic_info}"
     assert "0 errors" in result.stdout, f"Pyright reported errors.\n{diagnostic_info}"
     assert (
         'Type of "instance.get_id()" is "int"' in result.stdout
