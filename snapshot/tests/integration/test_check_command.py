@@ -57,18 +57,19 @@ def test_check_detects_matrix_states(tmp_path, monkeypatch):
     # Check for all issue types
     spy_bus.assert_id_called(L.check.issue.missing, level="warning")
     spy_bus.assert_id_called(L.check.issue.redundant, level="warning")
-    
+
     spy_bus.assert_id_called(L.check.issue.pending, level="error")
     spy_bus.assert_id_called(L.check.issue.conflict, level="error")
     spy_bus.assert_id_called(L.check.issue.extra, level="error")
 
     # Verify key association
     messages = spy_bus.get_messages()
-    
+
     def verify_key(msg_id, expected_key):
         msgs = [m for m in messages if m["id"] == str(msg_id)]
-        assert any(m["params"]["key"] == expected_key for m in msgs), \
+        assert any(m["params"]["key"] == expected_key for m in msgs), (
             f"Expected key '{expected_key}' for message '{msg_id}' not found."
+        )
 
     verify_key(L.check.issue.missing, "func_missing")
     verify_key(L.check.issue.pending, "func_pending")
