@@ -13,6 +13,7 @@ else:
 class StitcherConfig:
     scan_paths: List[str] = field(default_factory=list)
     plugins: Dict[str, str] = field(default_factory=dict)
+    stub_path: Optional[str] = None
 
 
 def _find_pyproject_toml(search_path: Path) -> Path:
@@ -56,5 +57,7 @@ def load_config_from_path(search_path: Path) -> StitcherConfig:
 
     # Create config with data from file, falling back to defaults.
     return StitcherConfig(
-        scan_paths=stitcher_data.get("scan_paths", []), plugins=plugins
+        scan_paths=stitcher_data.get("scan_paths", []),
+        plugins=plugins,
+        stub_path=stitcher_data.get("stub_path"),
     )

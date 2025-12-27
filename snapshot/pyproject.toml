@@ -59,9 +59,11 @@ pythonpath = [
 
 [tool.stitcher]
 scan_paths = ["packages"]
+stub_path = "typings"
 
 [tool.pyright]
 include = ["packages", "tests"]
+stubPath = "typings"
 # 显式告知 IDE 所有子包的源码位置，解决 Monorepo 解析问题
 extraPaths = [
     "packages/stitcher-spec/src",
