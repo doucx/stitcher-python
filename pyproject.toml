@@ -100,7 +100,7 @@ extraPaths = [
     "packages/pyneedle/src",
     # Add the new stub packages' source directories
     "packages/stitcher-stubs/src",
-    "packages/pyneedle-stubs/src",
+    "packages/needle-stubs/src",
 ]
 
 [tool.pyrefly]
@@ -120,5 +120,5 @@ extraPaths = [
     "packages/pyneedle/src",
     # Add the new stub packages' source directories
     "packages/stitcher-stubs/src",
-    "packages/pyneedle-stubs/src",
+    "packages/needle-stubs/src",
 ]
