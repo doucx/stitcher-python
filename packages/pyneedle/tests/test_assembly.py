@@ -31,8 +31,7 @@ def multi_root_workspace(tmp_path: Path) -> dict:
     # 2. Define user project assets (high priority)
     project_root = tmp_path / "my_project"
     factory.with_source(
-        f"{project_root.name}/pyproject.toml",
-        "[project]\nname='my-project'"
+        f"{project_root.name}/pyproject.toml", "[project]\nname='my-project'"
     ).with_source(
         f"{project_root.name}/.stitcher/needle/en/overrides.json",
         """
@@ -42,10 +41,10 @@ def multi_root_workspace(tmp_path: Path) -> dict:
         }
         """,
     )
-    
+
     # Build all files
     factory.build()
-    
+
     return {"pkg_root": pkg_root, "project_root": project_root}
 
 
@@ -64,7 +63,7 @@ def test_nexus_with_fs_loader_handles_overrides(multi_root_workspace):
     nexus = OverlayNexus(loaders=[fs_loader])
 
     # Act & Assert
-    
+
     # 1. Value only in default assets (pkg_root)
     assert nexus.get(L.cli.default) == "I am a default"
 

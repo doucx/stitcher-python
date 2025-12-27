@@ -2,7 +2,7 @@ from typing import Any, Union, Iterable, TYPE_CHECKING
 from needle.spec import SemanticPointerProtocol, PointerSetProtocol
 
 if TYPE_CHECKING:
-    from .set import PointerSet
+    pass
 
 
 class SemanticPointer(SemanticPointerProtocol):
@@ -53,18 +53,22 @@ class SemanticPointer(SemanticPointerProtocol):
         suffix = str(other).strip(".")
         if not suffix:
             return self
-        
+
         new_path = f"{self._path}.{suffix}" if self._path else suffix
         return SemanticPointer(new_path)
 
-    def __add__(self, other: Union[str, "SemanticPointerProtocol"]) -> "SemanticPointer":
+    def __add__(
+        self, other: Union[str, "SemanticPointerProtocol"]
+    ) -> "SemanticPointer":
         """
         Operator '+': Concatenate semantics.
         L.error + 404 -> L.error.404
         """
         return self._join(other)
 
-    def __truediv__(self, other: Union[str, "SemanticPointerProtocol"]) -> "SemanticPointer":
+    def __truediv__(
+        self, other: Union[str, "SemanticPointerProtocol"]
+    ) -> "SemanticPointer":
         """
         Operator '/': Path-like composition.
         L.auth / "login" -> L.auth.login
@@ -82,10 +86,10 @@ class SemanticPointer(SemanticPointerProtocol):
         """
         Operator '*': Dimensions expansion / Distribution.
         Creates a PointerSet by applying suffixes to the current pointer.
-        
+
         L.user * {"name", "age"} -> {L.user.name, L.user.age}
         """
         # Lazy import to avoid circular dependency at module level
         from .set import PointerSet
-        
+
         return PointerSet(self / item for item in other)
