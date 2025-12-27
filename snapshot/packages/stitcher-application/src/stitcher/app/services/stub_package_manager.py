@@ -3,14 +3,17 @@ import tomli_w
 
 
 class StubPackageManager:
-    def scaffold(self, package_path: Path, source_project_name: str) -> bool:
+    def scaffold(
+        self, package_path: Path, source_project_name: str, package_namespace: str
+    ) -> bool:
         config_path = package_path / "pyproject.toml"
         if config_path.exists():
             return False
 
         # Ensure root directory exists
         package_path.mkdir(parents=True, exist_ok=True)
-        (package_path / "src").mkdir(exist_ok=True)
+        # Create src/namespace directory, e.g., src/needle or src/stitcher
+        (package_path / "src" / package_namespace).mkdir(parents=True, exist_ok=True)
 
         # Create pyproject.toml
         pyproject_content = {
@@ -22,6 +25,18 @@ class StubPackageManager:
                 "name": f"{source_project_name}-stubs",
                 "version": "0.1.0",  # Placeholder version
                 "description": f"PEP 561 type stubs for {source_project_name}",
+            },
+            "tool": {
+                "hatch": {
+                    "build": {
+                        "targets": {
+                            "wheel": {
+                                # Essential for packaging .pyi files correctly under the namespace
+                                "packages": [f"src/{package_namespace}"]
+                            }
+                        }
+                    }
+                }
             },
         }
         with config_path.open("wb") as f:

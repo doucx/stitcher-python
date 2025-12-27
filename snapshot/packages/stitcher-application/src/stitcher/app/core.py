@@ -97,24 +97,41 @@ class StitcherApp:
         return list(virtual_modules.values())
 
     def _scaffold_stub_package(
-        self, config: StitcherConfig, project_name: Optional[str]
+        self, config: StitcherConfig, stub_base_name: Optional[str]
     ):
-        if not config.stub_package or not project_name:
+        if not config.stub_package or not stub_base_name:
             return
 
         pkg_path = self.root_path / config.stub_package
-        # If explicitly named stub package (via custom logic) we could assume user handles name,
-        # but here we follow the pattern of {project_name}-stubs.
-        # However, in multi-target mode, if config.name is 'stitcher', project name is still 'stitcher-python'.
-        # We might want to use the target name for the stub package name if available?
-        # BUT, the scaffold logic in stub_pkg_manager uses `project_name` to set `name` in pyproject.toml.
-        # For now, we assume user manually configured the stub package pyproject.toml if they need custom names,
-        # OR we rely on the scaffold creating a generic one.
-        # Given we just created the pyproject.toml manually in the previous step (Act 2 of previous plan),
-        # this scaffold step might just skip because file exists. This is fine.
-        stub_pkg_name = f"{project_name}-stubs"
+
+        # Determine the top-level namespace by inspecting scan paths.
+        package_namespace: str = ""
+        for path_str in config.scan_paths:
+            # We assume a structure like "path/to/src/<namespace>"
+            path_parts = Path(path_str).parts
+            if path_parts and path_parts[-1] != "src":
+                # Case: scan_paths = ["src/my_app"] -> namespace is "my_app"
+                package_namespace = path_parts[-1]
+                break
+            elif len(path_parts) >= 2 and path_parts[-2] == "src":
+                # Case: scan_paths = ["packages/pyneedle-spec/src"]
+                # This is common in monorepos. The package namespace is typically the package name
+                # (e.g., 'pyneedle' from 'pyneedle-spec'). Let's use conventions for this monorepo.
+                if "pyneedle" in stub_base_name:
+                    package_namespace = "needle"
+                elif "stitcher" in stub_base_name:
+                    package_namespace = "stitcher"
+                break
+
+        if not package_namespace:
+            # Final fallback
+            package_namespace = stub_base_name.split("-")[0]
+
+        stub_pkg_name = f"{stub_base_name}-stubs"
         bus.info(L.generate.stub_pkg.scaffold, name=stub_pkg_name)
-        created = self.stub_pkg_manager.scaffold(pkg_path, project_name)
+        created = self.stub_pkg_manager.scaffold(
+            pkg_path, stub_base_name, package_namespace
+        )
         if created:
             bus.success(L.generate.stub_pkg.success, name=stub_pkg_name)
         else:
