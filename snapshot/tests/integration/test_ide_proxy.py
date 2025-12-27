@@ -35,22 +35,19 @@ class ProxyModel:
         "src/ide_proxy/__init__.py",
         "__path__ = __import__('pkgutil').extend_path(__path__, __name__)",
     ).with_source(
-        # Minimal pyproject.toml to make it installable
+        # A robust pyproject.toml using hatchling to ensure src-layout is handled
         "pyproject.toml",
         """
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "ide-proxy-proj"
 version = "0.1.0"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/ide_proxy"]
 """,
     ).build()
 
