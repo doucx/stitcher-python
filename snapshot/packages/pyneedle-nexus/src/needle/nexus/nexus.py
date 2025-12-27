@@ -17,11 +17,6 @@ class OverlayNexus(NexusProtocol):
         self._views: Dict[str, ChainMap[str, Any]] = {}
 
     def load(self, domain: str) -> Dict[str, Any]:
-        """
-        Implementation of ResourceLoaderProtocol.
-        Returns the overlay view (ChainMap) as a dictionary-like object.
-        This allows a Nexus to be used as a loader inside another Nexus.
-        """
         return self._get_or_create_view(domain)
 
     def _get_or_create_view(self, domain: str) -> ChainMap[str, Any]:
@@ -96,9 +91,6 @@ class OverlayNexus(NexusProtocol):
         value: Any,
         domain: Optional[str] = None,
     ) -> bool:
-        """
-        Delegates the write operation to the highest priority WritableLoader.
-        """
         target_domain = self._resolve_domain(domain)
         loader = self._get_writable_loader()
         if not loader:
@@ -116,9 +108,6 @@ class OverlayNexus(NexusProtocol):
         pointer: Union[str, SemanticPointerProtocol],
         domain: Optional[str] = None,
     ) -> Optional[Path]:
-        """
-        Delegates location finding to the highest priority WritableLoader.
-        """
         target_domain = self._resolve_domain(domain)
         loader = self._get_writable_loader()
         if not loader:

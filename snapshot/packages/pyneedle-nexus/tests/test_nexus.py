@@ -1,7 +1,6 @@
 import pytest
 from needle.pointer import L
 from needle.nexus import OverlayNexus, MemoryLoader
-from typing import Union
 
 
 @pytest.fixture(autouse=True)
