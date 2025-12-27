@@ -1,51 +1,54 @@
 简要回答：
-没问题，我们将采用代码优先（Code-First）的文档策略，这正是 Stitcher 的用武之地。
+好的，我们将继续执行 Phase 2，实现 `pyneedle-pointer` 包。这是 `L` (Pointer) 和 `Ls` (PointerSet) 的具体实现层，它将赋予系统“语义代数”的能力。
 
-以下是实现 **Phase 1: 制定宪法 (pyneedle-spec)** 的执行计划。
-
-## [WIP] architect: 创建 pyneedle-spec 并定义核心协议
+## [WIP] feat: 实现 pyneedle-pointer 及语义代数核心
 
 ### 用户需求
-创建一个独立的 `pyneedle-spec` 包，作为 Needle 生态的“宪法”。它必须使用 Python 的 `typing.Protocol` 定义 Pointer（指针）、Nexus（中枢）和 Loader（加载器）的核心契约，且不包含任何实现逻辑。文档字符串应直接写在代码中，以便后续通过 Stitcher 提取。
+创建 `pyneedle-pointer` 包，实现 `SemanticPointer` (L) 和 `PointerSet` (Ls)。
+1.  **SemanticPointer (L)**: 必须实现 `pyneedle-spec` 定义的协议，支持点号访问、动态路径拼接 (`+`, `/`) 和集合分发 (`*`)。
+2.  **PointerSet (Ls)**: 必须继承自 Python 原生 `set`，并实现广播机制（对集合内的所有指针批量应用路径运算）。
+3.  **文档**: 所有类和方法必须包含详细的文档字符串，为后续 Stitcher 提取做准备。
 
 ### 评论
-这是一个关键的架构步骤。通过将接口与实现物理分离，我们确保了 `stitcher-needle` (即未来的 `pyneedle`) 的核心逻辑不会耦合到具体的实现细节上，同时也为未来可能的非 Python 实现或替代实现留出了空间。
+将 `PointerSet` 引入核心是一个重大升级。它允许开发者以声明式的方式操作“语义域”（Semantic Domains），例如一次性获取用户权限矩阵的所有 Key。通过运算符重载实现的代数系统（Algebraic System）将使代码极具表现力。
 
 ### 目标
-1.  构建 `packages/pyneedle-spec` 的基本包结构。
-2.  在 `needle.spec` 命名空间下定义核心协议：
-    *   `SemanticPointerProtocol`: 定义 `L` 对象的行为（包括属性访问、字符串转换、哈希、以及新的运算符重载 `+`, `/`）。
-    *   `ResourceLoaderProtocol`: 定义加载器的标准接口。
-    *   `NexusProtocol`: 定义运行时的查询接口。
-3.  配置 `pyproject.toml` 使其成为工作区的一员。
+1.  创建 `packages/pyneedle-pointer` 结构。
+2.  实现 `src/needle/pointer/core.py`：包含 `SemanticPointer` 类。
+3.  实现 `src/needle/pointer/set.py`：包含 `PointerSet` 类。
+4.  在 `src/needle/pointer/__init__.py` 中导出 `L` 单例和相关类。
 
 ### 基本原理
-*   **Protocol 优先**: 使用 `typing.Protocol` 允许我们在不继承基类的情况下进行静态类型检查（Duck Typing），这对于保持 `L` 对象的极度轻量化至关重要。
-*   **命名空间包**: 使用 `src/needle/spec` 结构，确立 `needle` 为顶级命名空间，为后续 `needle.pointer`, `needle.nexus` 的无缝集成做准备。
+*   **循环依赖处理**: `SemanticPointer` 的 `__mul__` 操作会产生 `PointerSet`，而 `PointerSet` 包含 `SemanticPointer`。为了保持模块清晰，我们将它们分文件存放，并在方法内部进行延迟导入（Lazy Import）以解决循环依赖。
+*   **不可变性**: `SemanticPointer` 依然保持“伪不可变”特性，所有操作均返回新实例，确保线程安全和逻辑无副作用。
+*   **继承 Set**: `PointerSet` 直接继承 `set`，使其能无缝接入 Python 的集合生态（如 `union`, `intersection`, `in` 操作），降低学习成本。
 
 ### 标签
-#intent/architect #flow/ready #priority/critical
-#comp/interfaces #concept/spec #scope/core
-#task/domain/runtime #task/object/pyneedle-spec #task/action/initialize
-#task/state/begin #task/status/active
+#intent/build #flow/ready #priority/high
+#comp/runtime #concept/state #scope/core
+#task/domain/runtime #task/object/pyneedle-pointer #task/action/implement
+#task/state/continue #task/status/active
 
 ---
 
 ### Script
 
-#### Acts 1: 初始化包结构与配置
-创建包目录和 `pyproject.toml`。
+#### Acts 1: 初始化包结构
+创建目录结构。
 
 ~~~~~act
 run_command
 ~~~~~
 ~~~~~bash
-mkdir -p packages/pyneedle-spec/src/needle/spec
+mkdir -p packages/pyneedle-pointer/src/needle/pointer
 ~~~~~
+
+#### Acts 2: 配置 pyproject.toml
+定义依赖关系，确保依赖于 `pyneedle-spec`。
 
 ~~~~~act
 write_file
-packages/pyneedle-spec/pyproject.toml
+packages/pyneedle-pointer/pyproject.toml
 ~~~~~
 ~~~~~toml
 [build-system]
@@ -53,186 +56,185 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pyneedle-spec"
+name = "pyneedle-pointer"
 version = "0.1.0"
-description = "Core protocols and specifications for the PyNeedle ecosystem."
+description = "Standard implementation of Semantic Pointers (L) for PyNeedle."
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "pyneedle-spec",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/needle"]
+
+[tool.uv.sources]
+pyneedle-spec = { workspace = true }
 ~~~~~
 
-#### Acts 2: 定义核心协议
-创建 `protocols.py`，包含所有核心接口定义。我们将包含详细的文档字符串。
+#### Acts 3: 实现 SemanticPointer (L)
+这是核心原子。注意 `__mul__` 方法对 `PointerSet` 的延迟导入。
 
 ~~~~~act
 write_file
-packages/pyneedle-spec/src/needle/spec/protocols.py
+packages/pyneedle-pointer/src/needle/pointer/core.py
 ~~~~~
 ~~~~~python
-from typing import Protocol, Dict, Any, Union, Iterable, TypeVar
+from typing import Any, Union, Iterable, TYPE_CHECKING
+from needle.spec import SemanticPointerProtocol, PointerSetProtocol
 
-# T_co is covariant, meaning SemanticPointerProtocol can return subtypes of itself
-T_Pointer = TypeVar("T_Pointer", bound="SemanticPointerProtocol", covariant=True)
+if TYPE_CHECKING:
+    from .set import PointerSet
 
 
-class SemanticPointerProtocol(Protocol[T_Pointer]):
+class SemanticPointer(SemanticPointerProtocol):
     """
-    Defines the contract for a Semantic Pointer (L).
+    Standard implementation of the Semantic Pointer (L).
 
-    A Semantic Pointer is a recursive, immutable reference to a semantic location.
-    It serves as the primary key for addressing resources in the Nexus.
+    It represents a path in the semantic universe.
+    Instances are immutable; operations return new instances.
     """
 
-    def __getattr__(self, name: str) -> T_Pointer:
+    __slots__ = ("_path",)
+
+    def __init__(self, path: str = ""):
+        # Internal storage of the dot-separated path
+        self._path = path
+
+    def __getattr__(self, name: str) -> "SemanticPointer":
         """
-        Creates a new pointer extended by the attribute name.
-        Example: L.auth -> "auth"
+        Syntactic sugar for path extension via dot notation.
+        L.auth.login -> SemanticPointer("auth.login")
         """
-        ...
+        new_path = f"{self._path}.{name}" if self._path else name
+        return SemanticPointer(new_path)
 
     def __str__(self) -> str:
-        """
-        Returns the fully qualified string representation of the pointer.
-        Example: "auth.login.success"
-        """
-        ...
+        return self._path
 
-    def __hash__(self) -> int:
-        """
-        Pointers must be hashable to be used as dictionary keys.
-        """
-        ...
+    def __repr__(self) -> str:
+        return f"<L: '{self._path}'>" if self._path else "<L: (root)>"
 
     def __eq__(self, other: Any) -> bool:
         """
-        Pointers must be comparable with strings and other pointers.
+        Equality check. Supports string comparison for convenience.
+        L.a == "a" is True.
         """
-        ...
+        if isinstance(other, SemanticPointer):
+            return self._path == other._path
+        return str(other) == self._path
 
-    def __add__(self, other: Union[str, "SemanticPointerProtocol"]) -> T_Pointer:
-        """
-        Operator '+': Joins the pointer with a string or another pointer.
-        Example: L.auth + "login" -> L.auth.login
-        """
-        ...
+    def __hash__(self) -> int:
+        return hash(self._path)
 
-    def __truediv__(self, other: Union[str, "SemanticPointerProtocol"]) -> T_Pointer:
+    def _join(self, other: Union[str, "SemanticPointerProtocol"]) -> "SemanticPointer":
         """
-        Operator '/': Joins the pointer with a string or another pointer (path-like syntax).
-        Example: L.auth / "login" -> L.auth.login
+        Internal helper to join current path with a suffix.
+        Handles dot trimming to avoid double dots.
         """
-        ...
+        suffix = str(other).strip(".")
+        if not suffix:
+            return self
+        
+        new_path = f"{self._path}.{suffix}" if self._path else suffix
+        return SemanticPointer(new_path)
+
+    def __add__(self, other: Union[str, "SemanticPointerProtocol"]) -> "SemanticPointer":
+        """
+        Operator '+': Concatenate semantics.
+        L.error + 404 -> L.error.404
+        """
+        return self._join(other)
+
+    def __truediv__(self, other: Union[str, "SemanticPointerProtocol"]) -> "SemanticPointer":
+        """
+        Operator '/': Path-like composition.
+        L.auth / "login" -> L.auth.login
+        """
+        return self._join(other)
 
     def __mul__(self, other: Iterable[str]) -> "PointerSetProtocol":
         """
-        Operator '*': Distributes the pointer over a set of suffixes, creating a PointerSet.
-        Example: L.auth * {"read", "write"} -> {L.auth.read, L.auth.write}
+        Operator '*': Dimensions expansion / Distribution.
+        Creates a PointerSet by applying suffixes to the current pointer.
+        
+        L.user * {"name", "age"} -> {L.user.name, L.user.age}
         """
-        ...
-
-
-class PointerSetProtocol(Protocol):
-    """
-    Defines the contract for a set of Semantic Pointers (Ls).
-
-    It represents a 'Semantic Domain' or 'Surface' rather than a single point.
-    """
-
-    def __iter__(self) -> Iterable[SemanticPointerProtocol]:
-        """
-        Iterating over the set yields individual SemanticPointers.
-        """
-        ...
-
-    def __truediv__(self, other: Union[str, SemanticPointerProtocol]) -> "PointerSetProtocol":
-        """
-        Operator '/': Broadcasts the join operation to all members of the set.
-        Example: {L.a, L.b} / "end" -> {L.a.end, L.b.end}
-        """
-        ...
-
-    def __or__(self, other: "PointerSetProtocol") -> "PointerSetProtocol":
-        """
-        Operator '|': Unions two PointerSets.
-        """
-        ...
-
-
-class ResourceLoaderProtocol(Protocol):
-    """
-    Defines the contract for loading raw resource data.
-    """
-
-    def load(self, lang: str) -> Dict[str, Any]:
-        """
-        Loads resources for a specific language.
-
-        Args:
-            lang: The target language code (e.g., 'en', 'zh').
-
-        Returns:
-            A dictionary mapping Fully Qualified Names (FQNs) to values.
-            e.g., {"auth.login.success": "Welcome!"}
-        """
-        ...
-
-
-class NexusProtocol(Protocol):
-    """
-    Defines the contract for the runtime central hub (Nexus).
-    """
-
-    def get(self, pointer: Union[str, SemanticPointerProtocol], lang: str | None = None) -> str:
-        """
-        Resolves a pointer or string key to its localized value.
-
-        Args:
-            pointer: The semantic key to look up.
-            lang: Optional explicit language override.
-
-        Returns:
-            The resolved string value, or the key itself if not found (Identity Fallback).
-        """
-        ...
-
-    def reload(self, lang: str | None = None) -> None:
-        """
-        Clears internal caches and forces a reload of resources.
-
-        Args:
-            lang: If provided, only reload that specific language.
-                  If None, reload all.
-        """
-        ...
+        # Lazy import to avoid circular dependency at module level
+        from .set import PointerSet
+        
+        return PointerSet(self / item for item in other)
 ~~~~~
 
-#### Acts 3: 导出与命名空间设置
-设置 `__init__.py`，确保它是一个正确的 namespace package，并导出协议。
+#### Acts 4: 实现 PointerSet (Ls)
+实现集合广播逻辑。
 
 ~~~~~act
 write_file
-packages/pyneedle-spec/src/needle/spec/__init__.py
+packages/pyneedle-pointer/src/needle/pointer/set.py
 ~~~~~
 ~~~~~python
-# Namespace package support
+from typing import Set, Iterable, Union, TYPE_CHECKING
+from needle.spec import PointerSetProtocol, SemanticPointerProtocol
+
+if TYPE_CHECKING:
+    from .core import SemanticPointer
+
+
+class PointerSet(Set["SemanticPointer"], PointerSetProtocol):
+    """
+    A collection of Semantic Pointers that supports algebraic broadcasting.
+    
+    Inherits from built-in set, so standard set operations (union, difference) work as expected.
+    """
+
+    def __truediv__(self, other: Union[str, "SemanticPointerProtocol"]) -> "PointerSet":
+        """
+        Operator '/': Broadcasts the join operation to all members.
+        
+        {L.a, L.b} / "end" -> {L.a.end, L.b.end}
+        """
+        # We assume elements are SemanticPointers which support __truediv__
+        return PointerSet(p / other for p in self)
+
+    def __add__(self, other: Union[str, "SemanticPointerProtocol"]) -> "PointerSet":
+        """
+        Operator '+': Broadcasts the add operation to all members.
+        Same as __truediv__ but for '+' operator preference.
+        """
+        return PointerSet(p + other for p in self)
+
+    def __mul__(self, other: Iterable[str]) -> "PointerSet":
+        """
+        Operator '*': Cartesian Product composition.
+        
+        {L.a, L.b} * {"1", "2"} -> {L.a.1, L.a.2, L.b.1, L.b.2}
+        """
+        new_set = PointerSet()
+        for p in self:
+            # p * other returns a PointerSet (from SemanticPointer.__mul__)
+            # We union these sets together
+            new_set.update(p * other)
+        return new_set
+~~~~~
+
+#### Acts 5: 导出 API
+在 `__init__.py` 中实例化根对象 `L`，并导出所有内容。
+
+~~~~~act
+write_file
+packages/pyneedle-pointer/src/needle/pointer/__init__.py
+~~~~~
+~~~~~python
 __path__ = __import__("pkgutil").extend_path(__path__, __name__)
 
-from .protocols import (
-    SemanticPointerProtocol,
-    PointerSetProtocol,
-    ResourceLoaderProtocol,
-    NexusProtocol,
-)
+from .core import SemanticPointer
+from .set import PointerSet
 
-__all__ = [
-    "SemanticPointerProtocol",
-    "PointerSetProtocol",
-    "ResourceLoaderProtocol",
-    "NexusProtocol",
-]
+# The Global Root Pointer
+L = SemanticPointer()
+
+__all__ = ["L", "SemanticPointer", "PointerSet"]
 ~~~~~
 
 ### 下一步建议
-配置完成后，我们应该紧接着实现 **Phase 2: 原子实现 (pyneedle-pointer)**，这将是 `L` 对象的实体化，它将依赖于刚刚定义的 `pyneedle-spec`。
+我们已经完成了协议定义和原子实现。接下来，我们需要构建 **Phase 3: 内核构建 (pyneedle-nexus)**。这将引入 `OverlayNexus` 和 `ChainMap` 引擎，将这些指针真正连接到数据上。
