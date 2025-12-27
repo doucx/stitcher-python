@@ -58,7 +58,7 @@ class SemanticPointer(SemanticPointerProtocol):
 
         items_to_process: Iterable[Any]
 
-        if isinstance(other, (str, SemanticPointerProtocol)):
+        if isinstance(other, (str, SemanticPointer)):
             # Rule 1: Treat str and SemanticPointer as atomic units
             items_to_process = [other]
         elif isinstance(other, Iterable):

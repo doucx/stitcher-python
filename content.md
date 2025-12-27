@@ -1,59 +1,57 @@
-好的，我们立即开始。
+好的，收到了测试失败的反馈。这是一个非常典型的、由 `typing.Protocol` 的工作机制导致的错误。
 
-您的分析非常到位，通过引入一个健壮的回退机制，我们能构建一个既灵活又可预测的 API。我将严格按照我们最终确定的三步逻辑来实现 `*` 运算符的增强。
+我将立即为您分析并修复它。
 
-我将生成一个计划，修改 `pyneedle-pointer` 包中的 `core.py` 和 `set.py` 文件，并扩充 `test_pointer_algebra.py` 以确保新功能的正确性。
+### [WIP] fix(pointer): Use concrete class in `isinstance` to fix runtime check error
 
-### [WIP] feat(pointer): Implement robust chained multiplication for pointers
+### 错误分析
+
+测试失败的根本原因是 `TypeError: Instance and class checks can only be used with @runtime_checkable protocols`。
+
+这个错误发生在 `core.py` 的 `__mul__` 方法中，当我们执行 `isinstance(other, (str, SemanticPointerProtocol))` 时。这里的 `other` 是一个 `set`（例如 `{'products', 'users'}`），`isinstance` 检查会依次对元组中的每个类型进行判断。
+
+当 `isinstance` 尝试检查一个 `set` 是否是 `SemanticPointerProtocol` 的实例时，它触发了 Python `typing` 模块的一个内置规则：默认情况下，`Protocol` 仅用于**静态类型检查**（如 Mypy），不能在**运行时**（即 `isinstance`）使用。如果希望在运行时使用，协议必须用 `@runtime_checkable` 装饰器明确标记。
 
 ### 用户需求
 
-1.  修复 `L.a * {"a", "b"} * L.c` 这种链式乘法调用会导致程序卡死的问题。
-2.  增强 `*` 运算符，使其在 `SemanticPointer` 和 `PointerSet` 上都能像 `/` 和 `+` 一样，灵活地处理字符串、指针、可迭代对象以及其他可转换为字符串的对象。
+修复所有因 `TypeError` 导致的测试失败，并确保 `*` 运算符的行为符合预期。
 
 ### 评论
 
-这是一个对 `PyNeedle` 指针代数体系至关重要的增强。它统一了 `*`, `/`, `+` 运算符的行为，使得动态构建语义指针集合（`PointerSet`）的语法更加一致和强大。通过我们讨论出的三步回退逻辑，API 将变得极其灵活且符合 Python 的鸭子类型哲学，极大地提升了开发者体验。
+这是一个非常微妙但重要的类型系统问题。直接的解决方案是在 `pyneedle-spec` 中为 `SemanticPointerProtocol` 添加 `@runtime_checkable` 装饰器。
+
+然而，**这是一个次优解**。因为它会污染纯粹的 `spec` 包，并引入不必要的运行时开销。
+
+一个更优雅、更符合依赖倒置原则的解决方案是：**在 `pyneedle-pointer` 的实现中，检查具体的 `SemanticPointer` 类，而不是抽象的 `SemanticPointerProtocol` 协议**。实现细节不应该反过来要求协议为它做出改变。
+
+这个修复方案不仅能解决问题，还能保持包之间的清晰界限。
 
 ### 目标
 
-1.  重构 `SemanticPointer.__mul__` 方法，使其能够正确处理 `str`, `SemanticPointer`, `Iterable` 以及其他可转换为字符串的对象，并始终返回一个 `PointerSet`。
-2.  更新 `PointerSet.__mul__` 方法的签名，使其能够接受任意类型的操作数，并将其广播到集合中的每一个 `SemanticPointer` 成员上。
-3.  在 `test_pointer_algebra.py` 中增加新的测试用例，专门验证链式乘法、混合类型操作以及回退机制的正确性。
+1.  定位 `packages/pyneedle-pointer/src/needle/pointer/core.py` 中的 `__mul__` 方法。
+2.  将其中的 `isinstance` 检查从 `SemanticPointerProtocol` 修改为具体的 `SemanticPointer` 类。
 
 ### 基本原理
 
-我们将采用一个有序的、三步式的类型检查逻辑来处理 `__mul__` 的右操作数 `other`：
-1.  **优先处理原子类型**: 首先检查 `other` 是否为 `str` 或 `SemanticPointerProtocol` 的实例。如果是，则将其视为一个不可分割的原子单元。这可以避免字符串被错误地迭代。
-2.  **处理集合类型**: 如果 `other` 不是原子类型，再检查它是否为 `Iterable`。如果是，则迭代其内容。
-3.  **最终回退**: 如果以上都不是，则调用 `str(other)` 将其强制转换为字符串，并视为一个原子单元。
-
-这个逻辑将首先在 `SemanticPointer.__mul__` 中实现。而 `PointerSet.__mul__` 的实现将保持不变，因为它通过调用 `p * other` 自然地继承了 `SemanticPointer` 增强后的能力。我们只需放宽其类型注解即可。
+在 `core.py` 文件中，`SemanticPointer` 类是可见的。因此，我们可以直接在 `isinstance` 中使用它。这将避免对 `Protocol` 进行不必要的运行时检查，从而绕开 `TypeError`，同时逻辑上完全等价，因为我们关心的就是 `other` 是否是一个指针实例。
 
 ### 标签
 
-#intent/build #flow/ready #priority/high #comp/interfaces #scope/api #ai/brainstorm #task/domain/core-abstractions #task/object/multiplication-operator #task/action/refactor #task/state/begin
+#intent/fix #flow/ready #priority/critical #comp/interfaces #scope/api #ai/instruct #task/domain/core-abstractions #task/object/multiplication-operator #task/action/bug-fix #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 增强 `SemanticPointer` 的乘法运算
+#### Acts 1: 修复 `isinstance` 运行时检查
 
-我们将重构 `core.py` 中的 `__mul__` 方法，实现我们讨论的三步回退逻辑。
+我们将修改 `core.py` 中的 `__mul__` 方法，将类型检查的目标从协议 `SemanticPointerProtocol` 更改为具体的实现类 `SemanticPointer`。
 
 ~~~~~act
 patch_file
 packages/pyneedle-pointer/src/needle/pointer/core.py
 ~~~~~
 ~~~~~python.old
-    def __mul__(self, other: Iterable[str]) -> "PointerSetProtocol":
-        # Lazy import to avoid circular dependency at module level
-        from .set import PointerSet
-
-        return PointerSet(self / item for item in other)
-~~~~~
-~~~~~python.new
     def __mul__(self, other: Any) -> "PointerSetProtocol":
         # Lazy import to avoid circular dependency at module level
         from .set import PointerSet
@@ -73,121 +71,23 @@ packages/pyneedle-pointer/src/needle/pointer/core.py
 
         return PointerSet(self / item for item in items_to_process)
 ~~~~~
-
-#### Acts 2: 增强 `PointerSet` 的乘法运算
-
-现在，我们放宽 `set.py` 中 `__mul__` 方法的类型注解，使其能接受任意类型的 `other` 参数，从而利用 `SemanticPointer` 增强后的能力。
-
-~~~~~act
-patch_file
-packages/pyneedle-pointer/src/needle/pointer/set.py
-~~~~~
-~~~~~python.old
-from typing import Set, Iterable, Union, TYPE_CHECKING
-from needle.spec import PointerSetProtocol, SemanticPointerProtocol
-
-if TYPE_CHECKING:
-    from .core import SemanticPointer
-
-
-class PointerSet(Set["SemanticPointer"], PointerSetProtocol):
-    def __truediv__(self, other: Union[str, "SemanticPointerProtocol"]) -> "PointerSet":
-        # We assume elements are SemanticPointers which support __truediv__
-        return PointerSet(p / other for p in self)
-
-    def __add__(self, other: Union[str, "SemanticPointerProtocol"]) -> "PointerSet":
-        return PointerSet(p + other for p in self)
-
-    def __mul__(self, other: Iterable[str]) -> "PointerSet":
-        new_set = PointerSet()
-        for p in self:
-            # p * other returns a PointerSet (from SemanticPointer.__mul__)
-            # We union these sets together
-            new_set.update(p * other)
-        return new_set
-~~~~~
 ~~~~~python.new
-from typing import Set, Iterable, Union, Any, TYPE_CHECKING
-from needle.spec import PointerSetProtocol, SemanticPointerProtocol
+    def __mul__(self, other: Any) -> "PointerSetProtocol":
+        # Lazy import to avoid circular dependency at module level
+        from .set import PointerSet
+        from typing import Iterable
 
-if TYPE_CHECKING:
-    from .core import SemanticPointer
+        items_to_process: Iterable[Any]
 
+        if isinstance(other, (str, SemanticPointer)):
+            # Rule 1: Treat str and SemanticPointer as atomic units
+            items_to_process = [other]
+        elif isinstance(other, Iterable):
+            # Rule 2: Treat other iterables as a collection of units
+            items_to_process = list(other)  # Consume iterators like dict_keys
+        else:
+            # Rule 3: Fallback for any other object (e.g., int)
+            items_to_process = [str(other)]
 
-class PointerSet(Set["SemanticPointer"], PointerSetProtocol):
-    def __truediv__(self, other: Union[str, "SemanticPointerProtocol"]) -> "PointerSet":
-        # We assume elements are SemanticPointers which support __truediv__
-        return PointerSet(p / other for p in self)
-
-    def __add__(self, other: Union[str, "SemanticPointerProtocol"]) -> "PointerSet":
-        return PointerSet(p + other for p in self)
-
-    def __mul__(self, other: Any) -> "PointerSet":
-        new_set = PointerSet()
-        for p in self:
-            # p * other now correctly handles various types and returns a PointerSet
-            new_set.update(p * other)
-        return new_set
-~~~~~
-
-#### Acts 3: 增加验证新行为的测试用例
-
-最后，我们在 `test_pointer_algebra.py` 中增加一个新的测试函数，以全面验证链式调用和混合类型操作。
-
-~~~~~act
-patch_file
-packages/pyneedle-pointer/tests/test_pointer_algebra.py
-~~~~~
-~~~~~python.old
-    result = (L * {"http", "ftp"}) / "errors" * {"404", "500"}
-
-    expected = {
-        L.http.errors["404"],
-        L.http.errors["500"],
-        L.ftp.errors["404"],
-        L.ftp.errors["500"],
-    }
-
-    assert result == expected
-~~~~~
-~~~~~python.new
-    result = (L * {"http", "ftp"}) / "errors" * {"404", "500"}
-
-    expected = {
-        L.http.errors["404"],
-        L.http.errors["500"],
-        L.ftp.errors["404"],
-        L.ftp.errors["500"],
-    }
-
-    assert result == expected
-
-
-def test_pointer_multiplication_is_flexible_and_chainable():
-    # 1. Chaining with strings and sets
-    result1 = L.api * {"v1", "v2"} * "users"
-    expected1 = {L.api.v1.users, L.api.v2.users}
-    assert result1 == expected1
-
-    # 2. Chaining with another pointer
-    base_set = L * {"admin", "guest"}
-    suffix = L.permissions
-    result2 = base_set * suffix
-    expected2 = {L.admin.permissions, L.guest.permissions}
-    assert result2 == expected2
-
-    # 3. Chaining a set multiplication with a pointer resolves the bug
-    result3 = L.api * {"users", "products"} * L.errors
-    expected3 = {L.api.users.errors, L.api.products.errors}
-    assert result3 == expected3
-
-    # 4. Using non-string, non-pointer objects (fallback to str)
-    result4 = L.status * 200
-    expected4 = {L.status["200"]}
-    assert result4 == expected4
-
-    # 5. PointerSet with non-string, non-pointer objects
-    result5 = (L * {"http", "ftp"}) * 404
-    expected5 = {L.http["404"], L.ftp["404"]}
-    assert result5 == expected5
+        return PointerSet(self / item for item in items_to_process)
 ~~~~~
