@@ -1,5 +1,3 @@
-__path__ = __import__("pkgutil").extend_path(__path__, __name__)
-
 from needle.pointer import L, SemanticPointer, PointerSet
 from needle.nexus import OverlayNexus
 from .loaders.fs_loader import FileSystemLoader
