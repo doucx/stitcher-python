@@ -120,3 +120,32 @@ def test_pointer_set_chained_broadcasting():
     }
 
     assert result == expected
+
+
+def test_pointer_multiplication_is_flexible_and_chainable():
+    # 1. Chaining with strings and sets
+    result1 = L.api * {"v1", "v2"} * "users"
+    expected1 = {L.api.v1.users, L.api.v2.users}
+    assert result1 == expected1
+
+    # 2. Chaining with another pointer
+    base_set = L * {"admin", "guest"}
+    suffix = L.permissions
+    result2 = base_set * suffix
+    expected2 = {L.admin.permissions, L.guest.permissions}
+    assert result2 == expected2
+
+    # 3. Chaining a set multiplication with a pointer resolves the bug
+    result3 = L.api * {"users", "products"} * L.errors
+    expected3 = {L.api.users.errors, L.api.products.errors}
+    assert result3 == expected3
+
+    # 4. Using non-string, non-pointer objects (fallback to str)
+    result4 = L.status * 200
+    expected4 = {L.status["200"]}
+    assert result4 == expected4
+
+    # 5. PointerSet with non-string, non-pointer objects
+    result5 = (L * {"http", "ftp"}) * 404
+    expected5 = {L.http["404"], L.ftp["404"]}
+    assert result5 == expected5

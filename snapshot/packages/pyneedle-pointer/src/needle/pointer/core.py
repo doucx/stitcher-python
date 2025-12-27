@@ -51,8 +51,21 @@ class SemanticPointer(SemanticPointerProtocol):
     def __getitem__(self, key: Union[str, int]) -> "SemanticPointer":
         return self._join(str(key))
 
-    def __mul__(self, other: Iterable[str]) -> "PointerSetProtocol":
+    def __mul__(self, other: Any) -> "PointerSetProtocol":
         # Lazy import to avoid circular dependency at module level
         from .set import PointerSet
+        from typing import Iterable
 
-        return PointerSet(self / item for item in other)
+        items_to_process: Iterable[Any]
+
+        if isinstance(other, (str, SemanticPointerProtocol)):
+            # Rule 1: Treat str and SemanticPointer as atomic units
+            items_to_process = [other]
+        elif isinstance(other, Iterable):
+            # Rule 2: Treat other iterables as a collection of units
+            items_to_process = list(other)  # Consume iterators like dict_keys
+        else:
+            # Rule 3: Fallback for any other object (e.g., int)
+            items_to_process = [str(other)]
+
+        return PointerSet(self / item for item in items_to_process)
