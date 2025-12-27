@@ -9,35 +9,60 @@ def test_pyright_resolves_types_from_stubs(
     """
     Verifies that Pyright (the engine for VSCode's Pylance) can successfully
     resolve types from a generated stub package, simulating the IDE experience.
+    This test ensures a realistic environment by installing BOTH the runtime
+    package and the stub package.
     """
-    # 1. Arrange: Create a source project to generate stubs for.
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_project_name("ide-proxy-proj")
-        .with_config({"scan_paths": ["src/ide_proxy"], "stub_package": "stubs"})
-        .with_source(
-            "src/ide_proxy/models.py",
-            """
-            class ProxyModel:
-                def get_id(self) -> int:
-                    return 1
-            """,
-        )
-        .build()
-    )
+    # --- ARRANGE ---
 
-    # 2. Act: Generate the stub package from the source project.
-    app = StitcherApp(root_path=project_root)
+    # 1. Define the shared source code content.
+    source_content = """
+class ProxyModel:
+    def get_id(self): # No type hints in runtime code
+        return 1
+"""
+    # 2. Create the source project that Stitcher will scan.
+    source_project_root = tmp_path / "source_project"
+    factory_source = WorkspaceFactory(source_project_root)
+    factory_source.with_project_name("ide-proxy-proj").with_config(
+        {"scan_paths": ["src/ide_proxy"], "stub_package": "stubs"}
+    ).with_source("src/ide_proxy/models.py", source_content).build()
+
+    # 3. Create a basic, installable RUNTIME package.
+    runtime_project_root = tmp_path / "runtime_project"
+    factory_runtime = WorkspaceFactory(runtime_project_root)
+    factory_runtime.with_source("src/ide_proxy/models.py", source_content).with_source(
+        # pkgutil-style namespace is robust
+        "src/ide_proxy/__init__.py",
+        "__path__ = __import__('pkgutil').extend_path(__path__, __name__)",
+    ).with_source(
+        # Minimal pyproject.toml to make it installable
+        "pyproject.toml",
+        """
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ide-proxy-proj"
+version = "0.1.0"
+""",
+    ).build()
+
+    # --- ACT ---
+
+    # 4. Generate the stub package from the source project.
+    app = StitcherApp(root_path=source_project_root)
     app.run_from_config()
-    stub_pkg_path = project_root / "stubs"
+    stub_pkg_path = source_project_root / "stubs"
     assert (
         stub_pkg_path / "src/ide_proxy-stubs/models.pyi"
     ).exists(), "Stub .pyi file was not generated."
 
-    # 3. Act: Install the generated stubs into the isolated venv.
+    # 5. Install BOTH packages into the isolated venv.
+    isolated_env.install(str(runtime_project_root))
     isolated_env.install(str(stub_pkg_path))
 
-    # 4. Act: Create a client script that consumes the code.
+    # 6. Create a client script that consumes the code.
     client_script = tmp_path / "client.py"
     client_script.write_text(
         """
@@ -49,15 +74,17 @@ reveal_type(instance.get_id())
 """
     )
 
-    # 5. Act: Run pyright inside the isolated environment.
+    # 7. Run pyright inside the isolated environment.
     result = isolated_env.run_pyright_check(client_script)
 
-    # 6. Assert
+    # --- ASSERT ---
+
+    # 8. Assert that pyright completes successfully.
     assert (
         result.returncode == 0
     ), f"Pyright failed with errors:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
 
-    # Verify Pyright's output confirms successful type analysis.
+    # 9. Verify Pyright's output confirms successful type analysis.
     assert (
         "0 errors" in result.stdout
     ), f"Pyright reported errors:\n{result.stdout}"

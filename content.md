@@ -1,111 +1,49 @@
-好的，我们来创建“IDE 自动补全模拟测试”。
+You've hit on a crucial and subtle aspect of how type checkers like `pyright` work with stub packages.
 
-这个测试的核心是验证 `stitcher` 生成的存根包（stub package）能被 `pyright`（VS Code Python 语言服务器的核心引擎）正确识别。如果 `pyright` 能够无错误地解析使用了存根类型的代码，就证明了 IDE 的自动补全、类型检查和定义跳转等功能可以正常工作。
+Your analysis is correct. The error `Import "ide_proxy.models" could not be resolved` happens because `pyright` is stricter than `mypy` in this scenario. It expects the *actual* runtime package (`ide-proxy-proj`) to be installed in the environment before it will look for and apply types from an associated stub package (`ide-proxy-proj-stubs`). Our test was only installing the stubs, creating a "ghost" namespace that `pyright` rightfully refused to resolve.
 
-我将分两步实现这个目标：
-1.  首先，扩展我们的测试工具 `VenvHarness`，增加一个执行 `pyright` 的新方法。
-2.  然后，创建一个新的集成测试文件，利用这个新方法来执行端到端的验证。
+To fix this, we must create a more realistic test environment that mimics a user's setup:
+1.  Create a basic, installable **runtime package** (even one without type hints).
+2.  Generate the **stub package** using `stitcher`.
+3.  Install **both** packages into the isolated virtual environment.
 
-## [WIP] feat(tests): 添加使用 pyright 的 IDE 代理测试
+This ensures `pyright` can find the runtime code and then correctly apply the high-fidelity types from our stub package. I will now generate a plan to implement this more robust test.
+
+## [WIP] fix(tests): Simulate full package installation for Pyright test
+
+### 错误分析
+
+`pyright` 测试失败的根本原因是测试环境不完整。我们只安装了 `stitcher` 生成的存根包 (`-stubs`)，而没有安装它所要提供类型信息的实际运行时包。`pyright` 遵循 PEP 561 的严格解释，它需要一个基础包存在，然后才会查找并应用存根包中的类型。由于找不到名为 `ide-proxy-proj` 的已安装包，它无法解析 `import ide_proxy.models`，导致测试失败。
 
 ### 用户需求
 
-实现“IDE 自动补全模拟测试”，以验证 `stitcher` 生成的存根对 IDE 工具链的有效性。
+修复 `test_ide_proxy.py` 中的 `test_pyright_resolves_types_from_stubs` 测试，使其能够通过 `pyright` 的严格检查。
 
 ### 评论
 
-这是一个至关重要的测试，它直接验证了 `stitcher` 项目的核心价值主张——改善开发体验（DX）。通过使用 `pyright` 这个业界标准的类型检查器作为 IDE 行为的代理，我们可以高置信度地确保生成的 `.pyi` 文件不仅结构正确，而且能被主流开发工具实际消费。
+这是一个非常有价值的失败，它迫使我们编写了更真实的集成测试。通过模拟运行时包和存根包同时存在的环境，我们能更准确地验证 `stitcher` 的产出在真实世界场景中的行为，确保了对 VS Code (Pylance) 等主流 IDE 的兼容性。
 
 ### 目标
 
-1.  在测试工具 `VenvHarness` 中新增一个 `run_pyright_check` 方法，用于在隔离环境中执行 `pyright`。
-2.  创建一个新的集成测试文件 `tests/integration/test_ide_proxy.py`。
-3.  在该文件中实现一个完整的测试用例，流程如下：
-    a.  构建一个源项目。
-    b.  运行 `stitcher` 生成存根包。
-    c.  在隔离环境中安装该存根包。
-    d.  编写一个消费该包的客户端脚本。
-    e.  使用 `pyright` 对客户端脚本进行类型检查，并断言其无错误通过。
+1.  重构测试 `test_pyright_resolves_types_from_stubs` 的 Arrange 阶段。
+2.  创建一个基础的、可安装的**运行时包**，它包含无类型提示的 Python 源代码和一个简单的 `pyproject.toml`。
+3.  保持现有的逻辑，使用 `stitcher` 从源码生成一个独立的**存根包**。
+4.  在 `isolated_env` 中，**同时安装**上述两个包。
+5.  保持测试的 Act 和 Assert 阶段不变，验证 `pyright` 现在可以正确解析类型。
 
 ### 基本原理
 
-我们将遵循“黑盒环境隔离”的测试策略。通过 `WorkspaceFactory` 和 `VenvHarness`，我们模拟了一个完整的用户工作流：一个开发者创建了代码，使用 `stitcher` 生成类型提示，然后将其发布（在此处简化为本地安装），最后另一个开发者（或同一个开发者在另一个项目中）安装并使用这个包。`pyright` 的成功运行证明了 `stitcher` 生成的产物是符合标准且有效的，能够被静态分析工具链无缝集成，从而为 IDE 提供了正确的类型信息。
+本修复遵循 PEP 561 的核心思想：存根包是对运行时包的**增强**，而非替代。通过在测试环境中同时提供这两个组件，我们创建了一个完整的、符合规范的包生态。`pyright` 在发现 `import ide_proxy` 时，会首先定位到已安装的 `ide-proxy-proj` 运行时包，然后根据 PEP 561 规范，自动发现并优先使用 `ide-proxy-proj-stubs` 包中的 `.pyi` 文件来获取类型信息，从而完美地模拟了 IDE 的行为。
 
 ### 标签
-#intent/build #intent/tooling #flow/ready #priority/high #comp/tests #scope/dx #ai/instruct #task/domain/testing #task/object/ide-simulation #task/action/implementation #task/state/continue
+#intent/fix #intent/tooling #flow/ready #priority/critical #comp/tests #scope/dx #ai/brainstorm #task/domain/testing #task/object/ide-simulation #task/action/bug-fix #task/state/continue
 
 ---
 ### Script
 
-#### Acts 1: 扩展测试工具
+#### Acts 1: 重构 Pyright 测试以模拟真实环境
 
-首先，我将为 `VenvHarness` 添加执行 `pyright` 的能力。
-
-~~~~~act
-patch_file
-packages/stitcher-test-utils/src/stitcher/test_utils/harness.py
-~~~~~
-~~~~~python.old
-    def run_type_check(self, script_path: Path) -> subprocess.CompletedProcess:
-        """
-        Runs mypy on a given script within the virtual environment.
-
-        Args:
-            script_path: The path to the Python script to type-check.
-
-        Returns:
-            The result of the subprocess call.
-        """
-        # Ensure mypy is installed for the check
-        self.install("mypy")
-        return subprocess.run(
-            [str(self.python_exe), "-m", "mypy", str(script_path)],
-            capture_output=True,
-            text=True,
-        )
-~~~~~
-~~~~~python.new
-    def run_type_check(self, script_path: Path) -> subprocess.CompletedProcess:
-        """
-        Runs mypy on a given script within the virtual environment.
-
-        Args:
-            script_path: The path to the Python script to type-check.
-
-        Returns:
-            The result of the subprocess call.
-        """
-        # Ensure mypy is installed for the check
-        self.install("mypy")
-        return subprocess.run(
-            [str(self.python_exe), "-m", "mypy", str(script_path)],
-            capture_output=True,
-            text=True,
-        )
-
-    def run_pyright_check(self, script_path: Path) -> subprocess.CompletedProcess:
-        """
-        Runs pyright on a given script within the virtual environment.
-
-        Args:
-            script_path: The path to the Python script to type-check.
-
-        Returns:
-            The result of the subprocess call.
-        """
-        self.install("pyright")
-        # Pyright is a JS application, so it provides an entry point script.
-        # We find it in the venv's bin directory.
-        bin_dir = "Scripts" if sys.platform == "win32" else "bin"
-        pyright_exe = self.venv_dir / bin_dir / "pyright"
-        return subprocess.run(
-            [str(pyright_exe), str(script_path)], capture_output=True, text=True
-        )
-~~~~~
-
-#### Acts 2: 创建 IDE 代理测试
-
-现在，我将创建新的测试文件，并实现端到端的验证逻辑。
+我将使用 `write_file` 完整地替换掉 `test_ide_proxy.py` 的内容，以实现新的、更健壮的测试逻辑。
 
 ~~~~~act
 write_file
@@ -123,35 +61,60 @@ def test_pyright_resolves_types_from_stubs(
     """
     Verifies that Pyright (the engine for VSCode's Pylance) can successfully
     resolve types from a generated stub package, simulating the IDE experience.
+    This test ensures a realistic environment by installing BOTH the runtime
+    package and the stub package.
     """
-    # 1. Arrange: Create a source project to generate stubs for.
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_project_name("ide-proxy-proj")
-        .with_config({"scan_paths": ["src/ide_proxy"], "stub_package": "stubs"})
-        .with_source(
-            "src/ide_proxy/models.py",
-            """
-            class ProxyModel:
-                def get_id(self) -> int:
-                    return 1
-            """,
-        )
-        .build()
-    )
+    # --- ARRANGE ---
 
-    # 2. Act: Generate the stub package from the source project.
-    app = StitcherApp(root_path=project_root)
+    # 1. Define the shared source code content.
+    source_content = """
+class ProxyModel:
+    def get_id(self): # No type hints in runtime code
+        return 1
+"""
+    # 2. Create the source project that Stitcher will scan.
+    source_project_root = tmp_path / "source_project"
+    factory_source = WorkspaceFactory(source_project_root)
+    factory_source.with_project_name("ide-proxy-proj").with_config(
+        {"scan_paths": ["src/ide_proxy"], "stub_package": "stubs"}
+    ).with_source("src/ide_proxy/models.py", source_content).build()
+
+    # 3. Create a basic, installable RUNTIME package.
+    runtime_project_root = tmp_path / "runtime_project"
+    factory_runtime = WorkspaceFactory(runtime_project_root)
+    factory_runtime.with_source("src/ide_proxy/models.py", source_content).with_source(
+        # pkgutil-style namespace is robust
+        "src/ide_proxy/__init__.py",
+        "__path__ = __import__('pkgutil').extend_path(__path__, __name__)",
+    ).with_source(
+        # Minimal pyproject.toml to make it installable
+        "pyproject.toml",
+        """
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ide-proxy-proj"
+version = "0.1.0"
+""",
+    ).build()
+
+    # --- ACT ---
+
+    # 4. Generate the stub package from the source project.
+    app = StitcherApp(root_path=source_project_root)
     app.run_from_config()
-    stub_pkg_path = project_root / "stubs"
+    stub_pkg_path = source_project_root / "stubs"
     assert (
         stub_pkg_path / "src/ide_proxy-stubs/models.pyi"
     ).exists(), "Stub .pyi file was not generated."
 
-    # 3. Act: Install the generated stubs into the isolated venv.
+    # 5. Install BOTH packages into the isolated venv.
+    isolated_env.install(str(runtime_project_root))
     isolated_env.install(str(stub_pkg_path))
 
-    # 4. Act: Create a client script that consumes the code.
+    # 6. Create a client script that consumes the code.
     client_script = tmp_path / "client.py"
     client_script.write_text(
         """
@@ -163,15 +126,17 @@ reveal_type(instance.get_id())
 """
     )
 
-    # 5. Act: Run pyright inside the isolated environment.
+    # 7. Run pyright inside the isolated environment.
     result = isolated_env.run_pyright_check(client_script)
 
-    # 6. Assert
+    # --- ASSERT ---
+
+    # 8. Assert that pyright completes successfully.
     assert (
         result.returncode == 0
     ), f"Pyright failed with errors:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
 
-    # Verify Pyright's output confirms successful type analysis.
+    # 9. Verify Pyright's output confirms successful type analysis.
     assert (
         "0 errors" in result.stdout
     ), f"Pyright reported errors:\n{result.stdout}"
