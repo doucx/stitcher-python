@@ -32,7 +32,7 @@ class StubPackageManager:
                 "description": f"PEP 561 type stubs for {source_project_name}",
             },
         }
-        with config_path.open("w", encoding="utf-8") as f:
+        with config_path.open("wb") as f:
             tomli_w.dump(pyproject_content, f)
 
         return True
