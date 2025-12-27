@@ -55,9 +55,9 @@ stub_package = "stubs-b"
 
     with stub_a_toml_path.open("rb") as f:
         config_a = tomllib.load(f)
-    assert (
-        config_a["project"]["name"] == "app-a-stubs"
-    ), "Stub package for app-a has the wrong project name"
+    assert config_a["project"]["name"] == "app-a-stubs", (
+        "Stub package for app-a has the wrong project name"
+    )
 
     # --- Assert Structure for Target B ---
     stub_b_path = project_root / "stubs-b"
@@ -66,6 +66,6 @@ stub_package = "stubs-b"
 
     with stub_b_toml_path.open("rb") as f:
         config_b = tomllib.load(f)
-    assert (
-        config_b["project"]["name"] == "app-b-stubs"
-    ), "Stub package for app-b has the wrong project name"
+    assert config_b["project"]["name"] == "app-b-stubs", (
+        "Stub package for app-b has the wrong project name"
+    )

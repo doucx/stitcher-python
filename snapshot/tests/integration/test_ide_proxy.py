@@ -4,9 +4,7 @@ from stitcher.app import StitcherApp
 from stitcher.test_utils import WorkspaceFactory, VenvHarness
 
 
-def test_pyright_resolves_types_from_stubs(
-    tmp_path: Path, isolated_env: VenvHarness
-):
+def test_pyright_resolves_types_from_stubs(tmp_path: Path, isolated_env: VenvHarness):
     """
     Verifies that Pyright can resolve types from a generated stub package by
     running it from a controlled working directory with an explicit pyright
@@ -22,9 +20,7 @@ def test_pyright_resolves_types_from_stubs(
         "ide-proxy-proj"
     ).with_config(
         {"scan_paths": ["src/ide_proxy"], "stub_package": "stubs"}
-    ).with_source(
-        "src/ide_proxy/models.py", source_content
-    ).build()
+    ).with_source("src/ide_proxy/models.py", source_content).build()
 
     # 2. Create a correctly configured, installable RUNTIME package.
     runtime_project_root = tmp_path / "runtime_project"
@@ -34,7 +30,8 @@ def test_pyright_resolves_types_from_stubs(
         "src/ide_proxy/__init__.py",
         "__path__ = __import__('pkgutil').extend_path(__path__, __name__)",
     ).with_source(
-        "src/ide_proxy/py.typed", ""  # The final piece of the puzzle for PEP 561
+        "src/ide_proxy/py.typed",
+        "",  # The final piece of the puzzle for PEP 561
     ).with_source(
         "pyproject.toml",
         """
@@ -97,9 +94,9 @@ packages = ["src/ide_proxy"]
 
     assert result.returncode == 0, f"Pyright failed with errors.\n{diagnostic_info}"
     assert "0 errors" in result.stdout, f"Pyright reported errors.\n{diagnostic_info}"
-    assert (
-        'Type of "instance.get_id()" is "int"' in result.stdout
-    ), f"Pyright did not resolve the return type correctly.\n{diagnostic_info}"
+    assert 'Type of "instance.get_id()" is "int"' in result.stdout, (
+        f"Pyright did not resolve the return type correctly.\n{diagnostic_info}"
+    )
 
     # --- Part 2: Verify Precedence (Stub > Source) ---
 

@@ -33,7 +33,9 @@ def test_pep561_structure_compliance(tmp_path: Path):
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_project_name(project_name)
-        .with_config({"scan_paths": [f"src/{namespace}"], "stub_package": stub_dir_name})
+        .with_config(
+            {"scan_paths": [f"src/{namespace}"], "stub_package": stub_dir_name}
+        )
         .with_source(f"src/{namespace}/main.py", "def func(): ...")
         .build()
     )
@@ -62,9 +64,9 @@ def test_pep561_structure_compliance(tmp_path: Path):
     incorrect_src_dir = stub_pkg_path / "src" / namespace
 
     assert expected_src_dir.is_dir(), f"Expected src dir not found.\n{debug_message}"
-    assert (
-        not incorrect_src_dir.exists()
-    ), f"Incorrectly named src dir found.\n{debug_message}"
+    assert not incorrect_src_dir.exists(), (
+        f"Incorrectly named src dir found.\n{debug_message}"
+    )
 
     # 3.3. Assert Hatch config points to the correct directory
     hatch_packages = config["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"]
