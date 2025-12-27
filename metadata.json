@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[COMMIT] fix(build): 修正 pyrefly 配置并补全工作区开发依赖", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766802405.9772096, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "Capture: M __init__.py, M loaders.py, M nexus.py ... and 12 more files", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766802581.1853817, "duration_ms": 0}}

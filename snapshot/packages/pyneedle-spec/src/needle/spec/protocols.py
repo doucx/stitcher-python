@@ -73,7 +73,9 @@ class PointerSetProtocol(Protocol):
         """
         ...
 
-    def __truediv__(self, other: Union[str, SemanticPointerProtocol]) -> "PointerSetProtocol":
+    def __truediv__(
+        self, other: Union[str, SemanticPointerProtocol]
+    ) -> "PointerSetProtocol":
         """
         Operator '/': Broadcasts the join operation to all members of the set.
         Example: {L.a, L.b} / "end" -> {L.a.end, L.b.end}
@@ -86,19 +88,9 @@ class PointerSetProtocol(Protocol):
         """
         ...
 
-    def __add__(self, other: Union[str, SemanticPointerProtocol]) -> "PointerSetProtocol":
-        """
-        Operator '+': Broadcasts the add operation to all members.
-        """
-        ...
-
-    def __mul__(self, other: Iterable[str]) -> "PointerSetProtocol":
-        """
-        Operator '*': Broadcasts a cartesian product operation.
-        """
-        ...
-        
-    def __add__(self, other: Union[str, SemanticPointerProtocol]) -> "PointerSetProtocol":
+    def __add__(
+        self, other: Union[str, SemanticPointerProtocol]
+    ) -> "PointerSetProtocol":
         """
         Operator '+': Broadcasts the add operation to all members.
         """
@@ -135,7 +127,9 @@ class NexusProtocol(Protocol):
     Defines the contract for the runtime central hub (Nexus).
     """
 
-    def get(self, pointer: Union[str, SemanticPointerProtocol], lang: str | None = None) -> str:
+    def get(
+        self, pointer: Union[str, SemanticPointerProtocol], lang: str | None = None
+    ) -> str:
         """
         Resolves a pointer or string key to its localized value.
 

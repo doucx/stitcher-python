@@ -6,6 +6,7 @@ class FileHandlerProtocol(Protocol):
     """
     Protocol for file handlers that can parse specific formats like JSON, YAML, etc.
     """
+
     def match(self, path: Path) -> bool:
         """Returns True if this handler can process the given file path."""
         ...

@@ -1,8 +1,8 @@
-import pytest
 from needle.pointer import L, SemanticPointer, PointerSet
 
 
 # --- SemanticPointer (L) Tests ---
+
 
 def test_pointer_core_behavior():
     """Tests basic path building, str, repr, and equality."""
@@ -63,6 +63,7 @@ def test_pointer_multiplication_distributes_to_set():
 
 # --- PointerSet (Ls) Tests ---
 
+
 def test_pointer_set_behaves_like_a_set():
     """Tests basic set-like behaviors."""
     s1 = PointerSet([L.a, L.b])
@@ -99,10 +100,7 @@ def test_pointer_set_multiplication_cartesian_product():
 
     permissions = roles * actions
 
-    expected = {
-        L.admin.read, L.admin.write,
-        L.guest.read, L.guest.write
-    }
+    expected = {L.admin.read, L.admin.write, L.guest.read, L.guest.write}
     assert permissions == expected
 
 
@@ -124,8 +122,10 @@ def test_pointer_set_chained_broadcasting():
     result = (L * {"http", "ftp"}) / "errors" * {"404", "500"}
 
     expected = {
-        L.http.errors['404'], L.http.errors['500'],
-        L.ftp.errors['404'], L.ftp.errors['500'],
+        L.http.errors["404"],
+        L.http.errors["500"],
+        L.ftp.errors["404"],
+        L.ftp.errors["500"],
     }
 
     assert result == expected

@@ -22,9 +22,11 @@ def nexus_instance() -> OverlayNexus:
         "en": {"app.title": "My App (Low Priority)", "app.version": "1.0"},
         "zh": {"app.welcome": "欢迎！", "app.version": "1.0"},
     }
-    
+
     # loader1 has higher priority
-    return OverlayNexus(loaders=[MemoryLoader(loader1_data), MemoryLoader(loader2_data)])
+    return OverlayNexus(
+        loaders=[MemoryLoader(loader1_data), MemoryLoader(loader2_data)]
+    )
 
 
 def test_get_simple_retrieval_and_identity_fallback(nexus_instance: OverlayNexus):
@@ -54,22 +56,19 @@ def test_get_language_specificity_and_fallback(nexus_instance: OverlayNexus):
     # ChainMap for 'zh' combines loader1(zh) and loader2(zh).
     # loader1(zh) has NO 'app.welcome'. loader2(zh) HAS 'app.welcome' ("欢迎！").
     # So it should resolve to "欢迎！".
-    assert nexus_instance.get(L.app.welcome, lang="zh") == "欢迎！" 
-    
+    assert nexus_instance.get(L.app.welcome, lang="zh") == "欢迎！"
+
     # 3. Key missing in both loaders for 'zh', falls back to 'en'
     # Let's add a key that is ONLY in EN
     # 'app.title' is in both. 'app.welcome' is in both (one en, one zh).
     # 'app.version' is in EN (loader2) and ZH (loader2).
     # We need a key that is truly missing in ZH.
     # Let's use a dynamic key for testing fallback.
-    
+
     # Create a temporary nexus for precise fallback testing
-    loader_fallback = MemoryLoader({
-        "en": {"only.in.en": "Fallback Value"},
-        "zh": {}
-    })
+    loader_fallback = MemoryLoader({"en": {"only.in.en": "Fallback Value"}, "zh": {}})
     nexus_fallback = OverlayNexus([loader_fallback])
-    
+
     assert nexus_fallback.get("only.in.en", lang="zh") == "Fallback Value"
 
 
@@ -77,7 +76,7 @@ def test_reload_clears_cache_and_refetches_data():
     """Tests that reload() forces a new data fetch after underlying data changes."""
     # Test data is isolated to this test function
     initial_data = {"en": {"key": "initial_value"}}
-    
+
     # Create the loader and nexus
     loader = MemoryLoader(initial_data)
     nexus = OverlayNexus(loaders=[loader])
@@ -86,8 +85,8 @@ def test_reload_clears_cache_and_refetches_data():
     assert nexus.get("key") == "initial_value"
 
     # 2. Simulate an external change to the underlying data source
-    initial_data["en"]["key"] = "updated_value" 
-    
+    initial_data["en"]["key"] = "updated_value"
+
     # The cache is still holding the old view
     assert nexus.get("key") == "initial_value"
 
@@ -100,7 +99,13 @@ def test_reload_clears_cache_and_refetches_data():
 
 def test_language_resolution_priority(monkeypatch):
     """Tests the hierarchy of language resolution."""
-    nexus = OverlayNexus(loaders=[MemoryLoader({"de": {"key": "de"}, "fr": {"key": "fr"}, "en": {"key": "en"}})])
+    nexus = OverlayNexus(
+        loaders=[
+            MemoryLoader(
+                {"de": {"key": "de"}, "fr": {"key": "fr"}, "en": {"key": "en"}}
+            )
+        ]
+    )
 
     # Priority 1: Explicit `lang` argument
     assert nexus.get("key", lang="de") == "de"
@@ -108,14 +113,14 @@ def test_language_resolution_priority(monkeypatch):
     # Priority 2: NEEDLE_LANG env var
     monkeypatch.setenv("NEEDLE_LANG", "fr")
     # Even if STITCHER_LANG is set, NEEDLE_LANG should win
-    monkeypatch.setenv("STITCHER_LANG", "de") 
+    monkeypatch.setenv("STITCHER_LANG", "de")
     assert nexus.get("key") == "fr"
 
     # Priority 3: STITCHER_LANG env var (legacy compatibility)
     monkeypatch.delenv("NEEDLE_LANG")
     # Now STITCHER_LANG ("de") should take effect
     assert nexus.get("key") == "de"
-    
+
     # Priority 4: System LANG env var
     monkeypatch.delenv("STITCHER_LANG")
     monkeypatch.setenv("LANG", "fr_FR.UTF-8")

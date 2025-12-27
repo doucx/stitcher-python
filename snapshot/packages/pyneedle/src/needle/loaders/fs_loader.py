@@ -14,7 +14,12 @@ class FileSystemLoader(ResourceLoaderProtocol):
     It searches for project roots and then looks for standard resource
     directories (`needle/` and `.stitcher/needle/`).
     """
-    def __init__(self, roots: Optional[List[Path]] = None, handlers: Optional[List[FileHandlerProtocol]] = None):
+
+    def __init__(
+        self,
+        roots: Optional[List[Path]] = None,
+        handlers: Optional[List[FileHandlerProtocol]] = None,
+    ):
         self.handlers = handlers or [JsonHandler()]
         self.roots = roots or [self._find_project_root()]
 
@@ -22,7 +27,9 @@ class FileSystemLoader(ResourceLoaderProtocol):
         current_dir = (start_dir or Path.cwd()).resolve()
         # Stop at filesystem root
         while current_dir.parent != current_dir:
-            if (current_dir / "pyproject.toml").is_file() or (current_dir / ".git").is_dir():
+            if (current_dir / "pyproject.toml").is_file() or (
+                current_dir / ".git"
+            ).is_dir():
                 return current_dir
             current_dir = current_dir.parent
         return start_dir or Path.cwd()
@@ -38,7 +45,7 @@ class FileSystemLoader(ResourceLoaderProtocol):
         Later roots in the list override earlier ones.
         """
         merged_registry: Dict[str, str] = {}
-        
+
         for root in self.roots:
             # Path Option 1: .stitcher/needle/<lang> (for project-specific overrides)
             hidden_path = root / ".stitcher" / "needle" / lang
@@ -64,5 +71,5 @@ class FileSystemLoader(ResourceLoaderProtocol):
                         # Ensure all values are strings for FQN registry
                         for key, value in content.items():
                             registry[str(key)] = str(value)
-                        break # Stop after first matching handler
+                        break  # Stop after first matching handler
         return registry
