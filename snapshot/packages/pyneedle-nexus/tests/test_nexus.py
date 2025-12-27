@@ -4,10 +4,45 @@ from needle.nexus import OverlayNexus, MemoryLoader
 
 # A simple pointer mock for testing that satisfies the protocol
 class MockPointer(SemanticPointerProtocol):
-    def __init__(self, path):
+    def __init__(self, path: str):
         self._path = path
     def __str__(self):
         return self._path
+    def __repr__(self):
+        return f"<MockPointer: '{self._path}'>"
+
+    def __getattr__(self, name: str) -> "MockPointer":
+        new_path = f"{self._path}.{name}" if self._path else name
+        return MockPointer(new_path)
+    
+    def __eq__(self, other: Any) -> bool:
+        if isinstance(other, MockPointer):
+            return self._path == other._path
+        return str(other) == self._path
+
+    def __hash__(self) -> int:
+        return hash(self._path)
+
+    # Minimal implementation for protocol compliance needed by some tests or tools.
+    def _join(self, other: Union[str, "SemanticPointerProtocol"]) -> "MockPointer":
+        suffix = str(other).strip(".")
+        new_path = f"{self._path}.{suffix}" if self._path else suffix
+        return MockPointer(new_path)
+
+    def __add__(self, other: Union[str, "SemanticPointerProtocol"]) -> "MockPointer":
+        return self._join(other)
+
+    def __truediv__(self, other: Union[str, "SemanticPointerProtocol"]) -> "MockPointer":
+        return self._join(other)
+    
+    def __getitem__(self, key: Union[str, int]) -> "MockPointer":
+        return self._join(str(key))
+
+    def __mul__(self, other: Iterable[str]) -> "PointerSetProtocol":
+        # For mock, we don't need a full PointerSetProtocol implementation as it's not directly used by Nexus.get
+        # Just return a list of MockPointers for simplicity in this mock context.
+        return [self._join(item) for item in other]
+
 
 L_TEST = type("L_TEST", (), {"__getattr__": lambda _, name: MockPointer(name)})()
 
@@ -69,25 +104,55 @@ def test_get_language_specificity_and_fallback(nexus_instance: OverlayNexus):
 
 
 def test_reload_clears_cache_and_refetches_data():
-    """Tests that reload() forces a new data fetch."""
-    mutable_data = {"en": {"key": "initial_value"}}
-    loader = MemoryLoader(mutable_data)
+    """Tests that reload() forces a new data fetch after underlying data changes."""
+    # Test data is isolated to this test function
+    initial_data = {"en": {"key": "initial_value"}}
+    
+    # Create the loader and nexus
+    loader = MemoryLoader(initial_data)
     nexus = OverlayNexus(loaders=[loader])
 
-    # 1. First get, value is cached
+    # 1. First get, value is 'initial_value' and this is cached
     assert nexus.get("key") == "initial_value"
 
-    # 2. Modify the underlying data source
-    mutable_data["en"]["key"] = "updated_value"
+    # 2. Simulate an external change to the underlying data source
+    # We must replace the entire dictionary for the loader to "see" it on next load
+    # or ensure the loader can be re-initialized with new data.
+    # For MemoryLoader, we'll simulate this by creating a NEW loader with NEW data
+    # after the initial setup.
 
-    # 3. Get again, should return the OLD cached value
+    # Modify the initial_data. This change needs to be "seen" by the loader when it reloads.
+    initial_data["en"]["key"] = "updated_value" 
+    
+    # The cache is still holding the old view
     assert nexus.get("key") == "initial_value"
 
-    # 4. Reload the cache
+    # 3. Reload the cache (this will cause `loader.load()` to be called again next time)
     nexus.reload()
 
-    # 5. Get again, should now return the NEW value
+    # 4. Get again, should now return the NEW value from the (modified) initial_data
+    # Since loader._data still points to initial_data, loader.load() will pick up the change.
     assert nexus.get("key") == "updated_value"
+
+    # Test with specific language reload
+    initial_data_fr = {"fr": {"key_fr": "initial_fr"}}
+    loader_fr = MemoryLoader(initial_data_fr)
+    nexus_fr = OverlayNexus(loaders=[loader_fr])
+    assert nexus_fr.get("key_fr", lang="fr") == "initial_fr"
+    initial_data_fr["fr"]["key_fr"] = "updated_fr"
+    nexus_fr.reload(lang="fr")
+    assert nexus_fr.get("key_fr", lang="fr") == "updated_fr"
+    
+    # Reloading a different language should not affect the other.
+    initial_data_es = {"es": {"key_es": "initial_es"}}
+    loader_es = MemoryLoader(initial_data_es)
+    nexus_es = OverlayNexus(loaders=[loader_es])
+    assert nexus_es.get("key_es", lang="es") == "initial_es"
+    initial_data_es["es"]["key_es"] = "updated_es"
+    nexus_es.reload(lang="en") # Reload a different language
+    assert nexus_es.get("key_es", lang="es") == "initial_es" # Should still be initial
+    nexus_es.reload(lang="es") # Reload correct language
+    assert nexus_es.get("key_es", lang="es") == "updated_es"
 
 
 def test_language_resolution_priority(monkeypatch):

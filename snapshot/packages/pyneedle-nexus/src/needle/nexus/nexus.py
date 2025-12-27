@@ -45,7 +45,13 @@ class OverlayNexus(NexusProtocol):
         if explicit_lang:
             return explicit_lang
 
-        stitcher_lang = os.getenv("STITCHER_LANG") or os.getenv("NEEDLE_LANG")
+        # Priority 1: NEEDLE_LANG (new standard)
+        needle_lang = os.getenv("NEEDLE_LANG")
+        if needle_lang:
+            return needle_lang
+
+        # Priority 2: STITCHER_LANG (legacy compatibility)
+        stitcher_lang = os.getenv("STITCHER_LANG")
         if stitcher_lang:
             return stitcher_lang
 
