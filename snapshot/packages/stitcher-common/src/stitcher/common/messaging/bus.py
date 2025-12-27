@@ -1,7 +1,7 @@
 from typing import Any, Optional, Union
 
 from needle.pointer import SemanticPointer
-from needle import nexus
+from stitcher.common import stitcher_nexus as nexus
 from .protocols import Renderer
 
 

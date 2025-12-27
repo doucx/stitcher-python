@@ -13,8 +13,9 @@ class MockNeedle:
     @contextmanager
     def patch(self, monkeypatch: Any):
         # The target path must be where `nexus` is used by the code under test.
-        # In our case, MessageBus imports it.
-        target_path = "stitcher.common.messaging.bus.nexus.get"
+        # The MessageBus now imports `stitcher_nexus` from `stitcher.common` and aliases it.
+        # So we patch the original location.
+        target_path = "stitcher.common.stitcher_nexus.get"
         try:
             monkeypatch.setattr(target_path, self._mock_get)
             yield

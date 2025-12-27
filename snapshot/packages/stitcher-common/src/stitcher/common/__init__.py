@@ -1,23 +1,29 @@
 __path__ = __import__("pkgutil").extend_path(__path__, __name__)
 
-# Make core singletons easily accessible
-from .messaging.bus import bus
-from needle.runtime import _default_loader
 from pathlib import Path
+from needle.nexus import OverlayNexus
+from needle.loaders.fs_loader import FileSystemLoader
+from .messaging.bus import bus
 
-# --- Auto-register built-in assets ---
-# Find the path to our packaged assets directory and register it with Needle.
-# This makes default translations and messages available out-of-the-box.
+# --- Composition Root for Stitcher's Nexus ---
+# We create and configure our own instances instead of using pyneedle's global singletons.
+# This decouples us and follows Inversion of Control principles.
+
+# 1. Create the loader instance.
+stitcher_loader = FileSystemLoader()
+
+# 2. Create the nexus instance, injecting the loader.
+stitcher_nexus = OverlayNexus(loaders=[stitcher_loader])
+
+# 3. Auto-register built-in assets for the 'common' package.
 try:
-    # __file__ gives the path to this __init__.py file
     _assets_path = Path(__file__).parent / "assets"
     if _assets_path.is_dir():
-        _default_loader.add_root(_assets_path)
+        stitcher_loader.add_root(_assets_path)
 except NameError:
-    # __file__ might not be defined in some environments (e.g. frozen).
-    # We can add more robust discovery methods here later if needed.
     pass
-# -------------------------------------
+# ---------------------------------------------
 
 
-__all__ = ["bus"]
+# Public API for stitcher packages
+__all__ = ["bus", "stitcher_nexus", "stitcher_loader"]
