@@ -1,4 +1,4 @@
-from typing import Set, Iterable, Union, TYPE_CHECKING
+from typing import Set, Union, Any, TYPE_CHECKING
 from needle.spec import PointerSetProtocol, SemanticPointerProtocol
 
 if TYPE_CHECKING:
@@ -13,10 +13,9 @@ class PointerSet(Set["SemanticPointer"], PointerSetProtocol):
     def __add__(self, other: Union[str, "SemanticPointerProtocol"]) -> "PointerSet":
         return PointerSet(p + other for p in self)
 
-    def __mul__(self, other: Iterable[str]) -> "PointerSet":
+    def __mul__(self, other: Any) -> "PointerSet":
         new_set = PointerSet()
         for p in self:
-            # p * other returns a PointerSet (from SemanticPointer.__mul__)
-            # We union these sets together
+            # p * other now correctly handles various types and returns a PointerSet
             new_set.update(p * other)
         return new_set
