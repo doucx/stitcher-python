@@ -63,44 +63,76 @@ def test_check_detects_signature_change(tmp_path, monkeypatch):
     spy_bus.assert_id_called(L.check.issue.mismatch, level="error")
 
 
-def test_generate_updates_signatures(tmp_path, monkeypatch):
+def test_generate_does_not_update_signatures(tmp_path, monkeypatch):
     """
-    Verify that running 'generate' updates the signature baseline.
+    Verify that running 'generate' is now pure and DOES NOT update the signature baseline.
     """
-    # 1. Setup Workspace
     factory = WorkspaceFactory(tmp_path)
-    # Simple one-liner to avoid any parsing ambiguity
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
         .with_source("src/main.py", "def func(a: int): ...")
         .with_docs("src/main.stitcher.yaml", {"func": "doc"})
         .build()
     )
-
     app = StitcherApp(root_path=project_root)
 
-    # 2. Run Init
+    # 1. Run Init to set baseline
     with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
         app.run_init()
 
-    # 3. Modify Code
-    (project_root / "src/main.py").write_text("def func(a: str): ...", encoding="utf-8")
+    # 2. Modify Code
+    (project_root / "src/main.py").write_text("def func(a: str): ...")
 
-    # 4. Run Generate (Should update signatures)
-    spy_bus = SpyBus()
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
+    # 3. Run Generate
+    with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
         app.run_from_config()
 
-    _assert_no_errors(spy_bus)
-    spy_bus.assert_id_called(L.generate.run.complete, level="success")
-
-    # Verify fingerprint file timestamp or content?
-    # Better to verify via Check.
-
-    # 5. Run Check (Should now pass)
-    spy_bus = SpyBus()
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
+    # 4. Run Check - it should now FAIL because generate did not update anything.
+    spy_bus_check = SpyBus()
+    with spy_bus_check.patch(monkeypatch, "stitcher.app.core.bus"):
         success = app.run_check()
 
-    assert success is True, "Check failed but should have passed after Generate"
-    spy_bus.assert_id_called(L.check.run.success, level="success")
+    assert not success, "Check passed, but it should have failed."
+    spy_bus_check.assert_id_called(L.check.issue.mismatch, level="error")
+
+
+def test_check_with_update_signatures_flag_reconciles_changes(tmp_path, monkeypatch):
+    """
+    Verify the complete workflow of reconciling signature changes with `check --update-signatures`.
+    """
+    # 1. Arrange: Setup and Init to establish a baseline
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/main.py", "def func(a: int): ...")
+        .build()
+    )
+    app = StitcherApp(root_path=project_root)
+    with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
+        app.run_init()
+
+    # 2. Modify the code to create a signature mismatch
+    (project_root / "src/main.py").write_text("def func(a: str): ...")
+
+    # 3. Act I: Run check with the --update-signatures flag
+    spy_bus_reconcile = SpyBus()
+    with spy_bus_reconcile.patch(monkeypatch, "stitcher.app.core.bus"):
+        success_reconcile = app.run_check(update_signatures=True)
+
+    # 4. Assert I: The reconciliation check should succeed and report the update
+    assert success_reconcile is True, "Check with --update-signatures failed"
+    spy_bus_reconcile.assert_id_called(L.check.run.signatures_updated, level="success")
+    # Crucially, it should NOT have reported a mismatch error
+    mismatch_errors = [
+        m for m in spy_bus_reconcile.get_messages() if m["id"] == str(L.check.issue.mismatch)
+    ]
+    assert not mismatch_errors, "Mismatch error was reported during reconciliation"
+
+    # 5. Act II: Run a normal check again to verify the baseline was updated
+    spy_bus_verify = SpyBus()
+    with spy_bus_verify.patch(monkeypatch, "stitcher.app.core.bus"):
+        success_verify = app.run_check()
+
+    # 6. Assert II: The verification check should now pass cleanly
+    assert success_verify is True, "Verification check failed after reconciliation"
+    spy_bus_verify.assert_id_called(L.check.run.success, level="success")

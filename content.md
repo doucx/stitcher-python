@@ -1,388 +1,259 @@
-好的，我们开始实施。
+Excellent. It's crucial to update the tests to validate our refactoring, ensuring the new behavior is correct and preventing future regressions.
 
-我将生成一个计划，该计划将精确地执行我们刚才讨论的架构重构。它会解耦签名更新逻辑，增强 `check` 命令的功能，并调整问题的严重性级别。
+I will now generate a plan to update the integration tests. This plan will focus on two key areas:
+1.  Verifying the new `check --update-signatures` workflow.
+2.  Ensuring that `extra` (dangling) docstrings are correctly reported as non-blocking warnings.
 
-## [WIP] feat(cli): Decouple signature updates and enhance check command
+## [WIP] test(integration): Update tests for signature reconciliation and policy changes
 
 ### 用户需求
-1.  将“更新函数签名指纹”的职责从 `generate` 命令中移除。
-2.  为 `check` 命令增加 `--update-signatures` 选项，使其能够接受并更新代码签名变更，而不仅仅是报错。
-3.  在 `check` 命令中，将“文档中存在但代码中不存在的定义（extra）”的严重性从**错误（Error）**降级为**警告（Warning）**。
+更新集成测试套件，以验证 `check` 命令的新功能和策略变更：
+1.  添加测试用例来覆盖 `check --update-signatures` 的完整工作流。
+2.  修改现有测试，以确认 `extra` (dangling) 文档定义现在被视为警告（Warning），而不是阻塞性错误（Error）。
+3.  移除或修改因 `generate` 命令不再更新签名而失效的旧测试。
 
 ### 评论
-这个重构计划将 `stitcher` 的核心工作流变得更加清晰和健壮。通过将状态变更（更新签名）的职责从 `generate` 转移到 `check --update-signatures`，我们将 `generate` 变成了一个纯粹、幂等的构建器，同时赋予了 `check` 命令协调代码与元数据之间差异的核心职责。这完全符合“关注点分离”的设计原则，并极大地提升了开发者体验。
+这是一次至关重要的测试更新。通过为新功能添加专门的验证场景，我们不仅能确保代码按预期工作，还能将这些测试用例作为新功能的“活文档”。同时，调整策略相关的测试可以锁定新的行为（例如，`extra` 只是警告），防止未来不经意的改动破坏我们精心设计的开发者体验。
 
 ### 目标
-1.  **重构 `StitcherApp`**:
-    -   修改 `_generate_stubs` 方法，移除其中对 `sig_manager.save_signatures` 的调用。
-    -   修改 `run_check` 方法，增加 `update_signatures: bool` 参数。
-    -   在 `run_check` 中实现新逻辑：如果 `update_signatures` 为 `True`，则更新签名并报告成功；否则，报告签名不匹配错误。
-    -   调整 `run_check` 中的严重性逻辑，将 `extra` 问题作为警告处理。
-2.  **更新 `CLI`**:
-    -   在 `check` 命令中添加 `--update-signatures` 命令行选项。
-3.  **更新语言资源**:
-    -   为新的命令行选项和执行结果添加相应的英文和中文提示信息。
+1.  **修改 `tests/integration/test_check_signatures.py`**:
+    -   删除过时的 `test_generate_updates_signatures` 测试，因为它验证的是现已移除的功能。
+    -   添加一个新的测试 `test_check_with_update_signatures_flag_reconciles_changes`，该测试将模拟从“代码变更”到“运行 `check --update-signatures`”再到“确认同步”的完整生命周期。
+2.  **修改 `tests/integration/test_check_policy.py`**:
+    -   更新 `test_ghost_keys_trigger_extra_error` 测试，将其断言逻辑从验证“失败”和“错误”改为验证“成功”和“警告”。
 
 ### 基本原理
-我们将对 `stitcher-application` 和 `stitcher-cli` 两个核心包进行精确修改。在应用层 (`core.py`)，我们将实现所有新的业务逻辑，包括签名更新和严重性调整。在接口层 (`main.py`)，我们将暴露这个新功能为一个命令行开关。最后，通过更新 `stitcher-common` 和 `stitcher-cli` 中的 `json` 资源文件，确保用户能够获得清晰、一致的交互反馈。
+我们将通过精确的 `patch_file` 操作来更新测试代码。对于 `test_check_signatures.py`，我们将首先移除一个现在完全错误的测试用例，然后在其原位置注入一个全新的、更全面的测试用例。对于 `test_check_policy.py`，我们将直接修改现有测试的断言部分，使其与 `check` 命令的新策略保持一致。这些修改将确保我们的测试套件能够准确反映并保护我们刚刚完成的重构工作。
 
 ### 标签
-#intent/build #flow/ready #priority/high #comp/cli #comp/application #concept/state #scope/dx #ai/instruct #task/domain/cli #task/object/check-command #task/action/refactor #task/state/continue
+#intent/tooling #flow/ready #priority/high #comp/tests #scope/dx #ai/instruct #task/domain/cli #task/object/check-command #task/action/refactor #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 重构应用核心逻辑
+#### Acts 1: 更新签名检查相关的测试
 
-首先，我们将修改 `stitcher-application` 包，这是所有变更的核心。
-
-从 `_generate_stubs` 方法中移除签名保存的逻辑。
+首先，我们处理 `test_check_signatures.py`。我们将删除旧的、不正确的测试，并添加一个验证新工作流的测试。
 
 ~~~~~act
 patch_file
-packages/stitcher-application/src/stitcher/app/core.py
+tests/integration/test_check_signatures.py
 ~~~~~
 ~~~~~python.old
-            # Step 3: Update signatures (Snapshot current state)
-            # When we generate stubs, we assume the code is the new source of truth
-            self.sig_manager.save_signatures(module)
-
-            relative_path = output_path.relative_to(self.root_path)
-~~~~~
-~~~~~python.new
-            relative_path = output_path.relative_to(self.root_path)
-~~~~~
-
-接着，为 `run_check` 方法实现新的签名更新与警告逻辑。
-
-~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
-~~~~~
-~~~~~python.old
-    def run_check(self) -> bool:
-        configs, _ = load_config_from_path(self.root_path)
-        total_warnings = 0
-        total_failed_files = 0
-
-        for config in configs:
-            if config.name != "default":
-                bus.info(L.generate.target.processing, name=config.name)
-
-            unique_files = self._get_files_from_config(config)
-            modules = self._scan_files(unique_files)
-
-            if not modules:
-                continue
-
-            for module in modules:
-                # File-level check: Does the corresponding doc file exist?
-                doc_path = (self.root_path / module.file_path).with_suffix(
-                    ".stitcher.yaml"
-                )
-
-                if not doc_path.exists():
-                    undocumented_keys = module.get_undocumented_public_keys()
-                    if undocumented_keys:
-                        # Case 1: Untracked and has public APIs needing docs.
-                        # This is a high-priority warning.
-                        bus.warning(
-                            L.check.file.untracked_with_details,
-                            path=module.file_path,
-                            count=len(undocumented_keys),
-                        )
-                        for key in undocumented_keys:
-                            bus.warning(L.check.issue.untracked_missing_key, key=key)
-                        total_warnings += 1
-                    elif module.is_documentable():
-                        # Case 2: Untracked but all public APIs have docs.
-                        # This is a lower-priority "please hydrate" warning.
-                        bus.warning(L.check.file.untracked, path=module.file_path)
-                        total_warnings += 1
-                    # Case 3: Untracked and not documentable (empty/boilerplate).
-                    # Silently skip.
-                    continue
-
-                # Key-level check (existing logic)
-                doc_issues = self.doc_manager.check_module(module)
-                sig_issues = self.sig_manager.check_signatures(module)
-
-                missing = doc_issues["missing"]
-                pending = doc_issues["pending"]
-                redundant = doc_issues["redundant"]
-                extra = doc_issues["extra"]
-                conflict = doc_issues["conflict"]
-                mismatched = sig_issues
-
-                # Errors: Critical inconsistencies or unsynced changes
-                error_count = (
-                    len(extra) + len(mismatched) + len(conflict) + len(pending)
-                )
-                # Warnings: Suggestions for improvement
-                warning_count = len(missing) + len(redundant)
-
-                total_issues = error_count + warning_count
-
-                if total_issues == 0:
-                    continue
-
-                file_rel_path = module.file_path
-
-                if error_count > 0:
-                    total_failed_files += 1
-                    bus.error(L.check.file.fail, path=file_rel_path, count=total_issues)
-                else:
-                    bus.warning(
-                        L.check.file.warn, path=file_rel_path, count=total_issues
-                    )
-                    total_warnings += 1
-
-                # Report Warnings First
-                for key in sorted(list(missing)):
-                    bus.warning(L.check.issue.missing, key=key)
-                for key in sorted(list(redundant)):
-                    bus.warning(L.check.issue.redundant, key=key)
-
-                # Report Errors
-                for key in sorted(list(pending)):
-                    bus.error(L.check.issue.pending, key=key)
-                for key in sorted(list(extra)):
-                    bus.error(L.check.issue.extra, key=key)
-                for key in sorted(list(conflict)):
-                    bus.error(L.check.issue.conflict, key=key)
-                for key in sorted(list(mismatched.keys())):
-                    bus.error(L.check.issue.mismatch, key=key)
-
-        if total_failed_files > 0:
-            bus.error(L.check.run.fail, count=total_failed_files)
-            return False
-
-        if total_warnings > 0:
-            bus.success(L.check.run.success_with_warnings, count=total_warnings)
-        else:
-            bus.success(L.check.run.success)
-        return True
-~~~~~
-~~~~~python.new
-    def run_check(self, update_signatures: bool = False) -> bool:
-        configs, _ = load_config_from_path(self.root_path)
-        total_warnings = 0
-        total_failed_files = 0
-
-        for config in configs:
-            if config.name != "default":
-                bus.info(L.generate.target.processing, name=config.name)
-
-            unique_files = self._get_files_from_config(config)
-            modules = self._scan_files(unique_files)
-
-            if not modules:
-                continue
-
-            for module in modules:
-                doc_path = (self.root_path / module.file_path).with_suffix(
-                    ".stitcher.yaml"
-                )
-
-                if not doc_path.exists():
-                    undocumented_keys = module.get_undocumented_public_keys()
-                    if undocumented_keys:
-                        bus.warning(
-                            L.check.file.untracked_with_details,
-                            path=module.file_path,
-                            count=len(undocumented_keys),
-                        )
-                        for key in undocumented_keys:
-                            bus.warning(L.check.issue.untracked_missing_key, key=key)
-                        total_warnings += 1
-                    elif module.is_documentable():
-                        bus.warning(L.check.file.untracked, path=module.file_path)
-                        total_warnings += 1
-                    continue
-
-                doc_issues = self.doc_manager.check_module(module)
-                sig_issues = self.sig_manager.check_signatures(module)
-
-                missing = doc_issues["missing"]
-                pending = doc_issues["pending"]
-                redundant = doc_issues["redundant"]
-                extra = doc_issues["extra"]
-                conflict = doc_issues["conflict"]
-                mismatched = sig_issues
-                reconciled_mismatches = 0
-
-                if update_signatures and mismatched:
-                    self.sig_manager.save_signatures(module)
-                    reconciled_mismatches = len(mismatched)
-                    bus.success(
-                        L.check.run.signatures_updated,
-                        path=module.file_path,
-                        count=reconciled_mismatches,
-                    )
-                    mismatched = {}
-
-                error_count = len(mismatched) + len(conflict) + len(pending)
-                warning_count = len(missing) + len(redundant) + len(extra)
-                total_issues = error_count + warning_count
-
-                if total_issues == 0 and reconciled_mismatches == 0:
-                    continue
-
-                file_rel_path = module.file_path
-
-                if error_count > 0:
-                    total_failed_files += 1
-                    bus.error(L.check.file.fail, path=file_rel_path, count=error_count)
-                else:
-                    bus.warning(
-                        L.check.file.warn, path=file_rel_path, count=warning_count
-                    )
-                    total_warnings += 1
-
-                for key in sorted(list(missing)):
-                    bus.warning(L.check.issue.missing, key=key)
-                for key in sorted(list(redundant)):
-                    bus.warning(L.check.issue.redundant, key=key)
-                for key in sorted(list(extra)):
-                    bus.warning(L.check.issue.extra, key=key)
-
-                for key in sorted(list(pending)):
-                    bus.error(L.check.issue.pending, key=key)
-                for key in sorted(list(conflict)):
-                    bus.error(L.check.issue.conflict, key=key)
-                for key in sorted(list(mismatched.keys())):
-                    bus.error(L.check.issue.mismatch, key=key)
-
-        if total_failed_files > 0:
-            bus.error(L.check.run.fail, count=total_failed_files)
-            return False
-
-        if total_warnings > 0:
-            bus.success(L.check.run.success_with_warnings, count=total_warnings)
-        else:
-            bus.success(L.check.run.success)
-        return True
-~~~~~
-
-#### Acts 2: 更新 CLI 接口
-
-现在，我们在 `stitcher-cli` 中添加 `--update-signatures` 选项。
-
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/main.py
-~~~~~
-~~~~~python.old
-@app.command(help=nexus.get(L.cli.command.check.help))
-def check():
-    project_root = Path.cwd()
-    app_instance = StitcherApp(root_path=project_root)
-    success = app_instance.run_check()
-    if not success:
-        raise typer.Exit(code=1)
-~~~~~
-~~~~~python.new
-@app.command(help=nexus.get(L.cli.command.check.help))
-def check(
-    update_signatures: bool = typer.Option(
-        False,
-        "--update-signatures",
-        help=nexus.get(L.cli.option.update_signatures.help),
+def test_generate_updates_signatures(tmp_path, monkeypatch):
+    """
+    Verify that running 'generate' updates the signature baseline.
+    """
+    # 1. Setup Workspace
+    factory = WorkspaceFactory(tmp_path)
+    # Simple one-liner to avoid any parsing ambiguity
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/main.py", "def func(a: int): ...")
+        .with_docs("src/main.stitcher.yaml", {"func": "doc"})
+        .build()
     )
-):
-    project_root = Path.cwd()
-    app_instance = StitcherApp(root_path=project_root)
-    success = app_instance.run_check(update_signatures=update_signatures)
-    if not success:
-        raise typer.Exit(code=1)
+
+    app = StitcherApp(root_path=project_root)
+
+    # 2. Run Init
+    with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
+        app.run_init()
+
+    # 3. Modify Code
+    (project_root / "src/main.py").write_text("def func(a: str): ...", encoding="utf-8")
+
+    # 4. Run Generate (Should update signatures)
+    spy_bus = SpyBus()
+    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
+        app.run_from_config()
+
+    _assert_no_errors(spy_bus)
+    spy_bus.assert_id_called(L.generate.run.complete, level="success")
+
+    # Verify fingerprint file timestamp or content?
+    # Better to verify via Check.
+
+    # 5. Run Check (Should now pass)
+    spy_bus = SpyBus()
+    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
+        success = app.run_check()
+
+    assert success is True, "Check failed but should have passed after Generate"
+    spy_bus.assert_id_called(L.check.run.success, level="success")
+~~~~~
+~~~~~python.new
+def test_generate_does_not_update_signatures(tmp_path, monkeypatch):
+    """
+    Verify that running 'generate' is now pure and DOES NOT update the signature baseline.
+    """
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/main.py", "def func(a: int): ...")
+        .with_docs("src/main.stitcher.yaml", {"func": "doc"})
+        .build()
+    )
+    app = StitcherApp(root_path=project_root)
+
+    # 1. Run Init to set baseline
+    with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
+        app.run_init()
+
+    # 2. Modify Code
+    (project_root / "src/main.py").write_text("def func(a: str): ...")
+
+    # 3. Run Generate
+    with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
+        app.run_from_config()
+
+    # 4. Run Check - it should now FAIL because generate did not update anything.
+    spy_bus_check = SpyBus()
+    with spy_bus_check.patch(monkeypatch, "stitcher.app.core.bus"):
+        success = app.run_check()
+
+    assert not success, "Check passed, but it should have failed."
+    spy_bus_check.assert_id_called(L.check.issue.mismatch, level="error")
+
+
+def test_check_with_update_signatures_flag_reconciles_changes(tmp_path, monkeypatch):
+    """
+    Verify the complete workflow of reconciling signature changes with `check --update-signatures`.
+    """
+    # 1. Arrange: Setup and Init to establish a baseline
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/main.py", "def func(a: int): ...")
+        .build()
+    )
+    app = StitcherApp(root_path=project_root)
+    with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
+        app.run_init()
+
+    # 2. Modify the code to create a signature mismatch
+    (project_root / "src/main.py").write_text("def func(a: str): ...")
+
+    # 3. Act I: Run check with the --update-signatures flag
+    spy_bus_reconcile = SpyBus()
+    with spy_bus_reconcile.patch(monkeypatch, "stitcher.app.core.bus"):
+        success_reconcile = app.run_check(update_signatures=True)
+
+    # 4. Assert I: The reconciliation check should succeed and report the update
+    assert success_reconcile is True, "Check with --update-signatures failed"
+    spy_bus_reconcile.assert_id_called(L.check.run.signatures_updated, level="success")
+    # Crucially, it should NOT have reported a mismatch error
+    mismatch_errors = [
+        m for m in spy_bus_reconcile.get_messages() if m["id"] == str(L.check.issue.mismatch)
+    ]
+    assert not mismatch_errors, "Mismatch error was reported during reconciliation"
+
+    # 5. Act II: Run a normal check again to verify the baseline was updated
+    spy_bus_verify = SpyBus()
+    with spy_bus_verify.patch(monkeypatch, "stitcher.app.core.bus"):
+        success_verify = app.run_check()
+
+    # 6. Assert II: The verification check should now pass cleanly
+    assert success_verify is True, "Verification check failed after reconciliation"
+    spy_bus_verify.assert_id_called(L.check.run.success, level="success")
 ~~~~~
 
-#### Acts 3: 添加新的提示文案
+#### Acts 2: 更新策略检查相关的测试
 
-最后，我们为新功能和新流程添加对应的中英文提示。
+现在，我们修改 `test_check_policy.py` 来验证 `extra` 问题现在是警告级别。
 
 ~~~~~act
 patch_file
-packages/stitcher-cli/src/stitcher/cli/assets/needle/en/commands.json
+tests/integration/test_check_policy.py
 ~~~~~
-~~~~~json.old
-    "cli.command.hydrate.help": "Extract new docstrings from source code and merge them into .stitcher.yaml.",
-    "cli.option.strip.help": "Remove docstrings from source code after hydration.",
-    "cli.option.force.help": "Code-first: Overwrite YAML content if it differs from source code.",
-    "cli.option.reconcile.help": "YAML-first: Ignore source docstrings if they conflict with existing YAML."
-}
-~~~~~
-~~~~~json.new
-    "cli.command.hydrate.help": "Extract new docstrings from source code and merge them into .stitcher.yaml.",
-    "cli.option.strip.help": "Remove docstrings from source code after hydration.",
-    "cli.option.force.help": "Code-first: Overwrite YAML content if it differs from source code.",
-    "cli.option.reconcile.help": "YAML-first: Ignore source docstrings if they conflict with existing YAML.",
-    "cli.option.update_signatures.help": "Accept signature changes and update the stored fingerprints."
-}
-~~~~~
+~~~~~python.old
+def test_ghost_keys_trigger_extra_error(tmp_path, monkeypatch):
+    """
+    Policy Test: Keys in YAML that do not exist in code (even privately)
+    MUST trigger EXTRA error.
+    """
+    # 1. Arrange: Docs pointing to non-existent code
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/ghost.py", "def real(): pass")
+        .with_docs(
+            "src/ghost.stitcher.yaml",
+            {
+                "real": "Exists",
+                "ghost_func": "Does not exist",
+                "_ghost_private": "Does not exist either",
+            },
+        )
+        .build()
+    )
 
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/assets/needle/zh/commands.json
-~~~~~
-~~~~~json.old
-    "cli.command.hydrate.help": "从源代码提取新文档并合并至 .stitcher.yaml。",
-    "cli.option.strip.help": "在补水后立即从源码中移除文档字符串。",
-    "cli.option.force.help": "代码优先：如果内容不一致，覆盖 YAML 内容。",
-    "cli.option.reconcile.help": "YAML 优先：忽略与现有 YAML 冲突的源码文档。"
-}
-~~~~~
-~~~~~json.new
-    "cli.command.hydrate.help": "从源代码提取新文档并合并至 .stitcher.yaml。",
-    "cli.option.strip.help": "在补水后立即从源码中移除文档字符串。",
-    "cli.option.force.help": "代码优先：如果内容不一致，覆盖 YAML 内容。",
-    "cli.option.reconcile.help": "YAML 优先：忽略与现有 YAML 冲突的源码文档。",
-    "cli.option.update_signatures.help": "接受签名变更并更新存储的指纹。"
-}
-~~~~~
+    app = StitcherApp(root_path=project_root)
+    spy_bus = SpyBus()
 
-~~~~~act
-patch_file
-packages/stitcher-common/src/stitcher/common/assets/needle/en/check/main.json
-~~~~~
-~~~~~json.old
-    "check.issue.conflict": "   - [CONFLICT]  {key} (content differs between code and YAML)",
-    "check.run.success": "✨ All checks passed. Documentation is in sync.",
-    "check.run.success_with_warnings": "⚠️  Check passed with warnings in {count} files.",
-    "check.run.fail": "🚫 Check failed. Found errors in {count} files."
-}
-~~~~~
-~~~~~json.new
-    "check.issue.conflict": "   - [CONFLICT]  {key} (content differs between code and YAML)",
-    "check.run.signatures_updated": "✅ {path}: Accepted {count} signature changes.",
-    "check.run.success": "✨ All checks passed. Documentation is in sync.",
-    "check.run.success_with_warnings": "⚠️  Check passed with warnings in {count} files.",
-    "check.run.fail": "🚫 Check failed. Found errors in {count} files."
-}
-~~~~~
+    # 2. Act
+    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
+        success = app.run_check()
 
-~~~~~act
-patch_file
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/check/main.json
+    # 3. Assert
+    assert success is False
+
+    # We expect EXTRA errors for both ghost keys
+    spy_bus.assert_id_called(L.check.issue.extra, level="error")
+
+    # Verify specific keys
+    extra_msgs = [
+        m for m in spy_bus.get_messages() if m["id"] == str(L.check.issue.extra)
+    ]
+    keys = sorted([m["params"]["key"] for m in extra_msgs])
+    assert keys == ["_ghost_private", "ghost_func"]
 ~~~~~
-~~~~~json.old
-    "check.issue.conflict": "   - [内容冲突] {key} (代码和 YAML 中的文档内容不一致)",
-    "check.run.success": "✨ 所有检查通过，文档保持同步。",
-    "check.run.success_with_warnings": "⚠️  检查通过，但在 {count} 个文件中发现警告。",
-    "check.run.fail": "🚫 检查失败，在 {count} 个文件中发现错误。"
-}
-~~~~~
-~~~~~json.new
-    "check.issue.conflict": "   - [内容冲突] {key} (代码和 YAML 中的文档内容不一致)",
-    "check.run.signatures_updated": "✅ {path}: 已接受 {count} 项签名变更。",
-    "check.run.success": "✨ 所有检查通过，文档保持同步。",
-    "check.run.success_with_warnings": "⚠️  检查通过，但在 {count} 个文件中发现警告。",
-    "check.run.fail": "🚫 检查失败，在 {count} 个文件中发现错误。"
-}
+~~~~~python.new
+def test_ghost_keys_trigger_extra_warning(tmp_path, monkeypatch):
+    """
+    Policy Test: Keys in YAML that do not exist in code should trigger
+    a non-blocking EXTRA warning.
+    """
+    # 1. Arrange: Docs pointing to non-existent code
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/ghost.py", "def real(): pass")
+        .with_docs(
+            "src/ghost.stitcher.yaml",
+            {
+                "real": "Exists",
+                "ghost_func": "Does not exist",
+                "_ghost_private": "Does not exist either",
+            },
+        )
+        .build()
+    )
+
+    app = StitcherApp(root_path=project_root)
+    spy_bus = SpyBus()
+
+    # 2. Act
+    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
+        success = app.run_check()
+
+    # 3. Assert
+    assert success is True, "Check should pass even with EXTRA warnings."
+
+    # We expect EXTRA warnings for both ghost keys
+    spy_bus.assert_id_called(L.check.issue.extra, level="warning")
+    spy_bus.assert_id_called(L.check.run.success_with_warnings, level="success")
+
+    # Verify specific keys
+    extra_msgs = [
+        m for m in spy_bus.get_messages() if m["id"] == str(L.check.issue.extra)
+    ]
+    keys = sorted([m["params"]["key"] for m in extra_msgs])
+    assert keys == ["_ghost_private", "ghost_func"]
 ~~~~~
 
 ### 下一步建议
-我们已经完成了核心逻辑的重构。现在是时候将这些变更作为一个完整的、逻辑一致的单元提交到版本控制中了。
+我们已经成功地重构了核心逻辑并更新了测试以验证新行为。现在，所有相关的代码和测试都已同步。
 
-我建议生成一个 `[COMMIT]` 计划，其中会包含 `git add` 和 `git commit` 指令，并附上清晰的提交信息来阐述本次重构的价值。
+是时候将这些变更作为一个完整的逻辑单元提交了。我将生成一个 `[COMMIT]` 计划，其中包含 `git add` 和 `git commit` 指令，并提供一份清晰的提交信息。
