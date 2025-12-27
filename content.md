@@ -1,46 +1,119 @@
-这是一个非常棒的建议，体现了优秀的软件架构思想。
+您分析得非常准确，这正是一个典型的循环导入（circular import）问题，由我上一步的重构引入。我深表歉歉。
 
-您的提议——让 `stitcher-common` 包作为“组合根 (Composition Root)”来手动创建和配置 `OverlayNexus` 实例，而不是依赖于 `pyneedle` 提供的全局单例——是架构上的巨大进步。
+问题的根源在于我创建的依赖关系环：
+1.  `stitcher.common.__init__.py` 尝试导入 `bus` 实例 (`from .messaging.bus import bus`)。
+2.  为了加载 `bus`，Python 开始执行 `stitcher.common.messaging.bus.py`。
+3.  在 `bus.py` 内部，代码又尝试从 `stitcher.common` 导入 `stitcher_nexus` (`from stitcher.common import stitcher_nexus as nexus`)。
+4.  此时，`stitcher.common.__init__.py` 还没有执行完毕（它正停在导入 `bus` 的那一步），因此 `stitcher_nexus` 尚未在 `stitcher.common` 模块的命名空间中定义，导致了 `ImportError`。
 
-**这样做的好处是：**
-1.  **明确的依赖关系**: 它将隐式的全局状态依赖（`pyneedle.nexus`）转变为显式的、由 Stitcher 自身控制的实例。
-2.  **增强的解耦**: Stitcher 应用与 `pyneedle` 的具体实现细节进一步解耦。我们只依赖于 `OverlayNexus` 和 `FileSystemLoader` 这些稳定的类，而不是一个可能变化的单例。
-3.  **避免内部 API**: 您是对的，依赖 `_default_loader` 这种带下划线的“内部”变量是不稳健的。自行创建实例可以确保我们只使用公共 API。
-4.  **提升可测试性**: 尽管我们有 Mock 工具，但直接控制实例的创建使得在测试中替换或配置依赖项变得更加简单和干净。
+**一句话概括：`common` 依赖 `bus`，而 `bus` 又反过来依赖 `common`，形成了死锁。**
 
-我将立即为您生成实施此架构改进的计划。
+正确的做法是打破这个循环。`MessageBus` 类不应该知道 `nexus` 实例来自哪里；它只需要一个实现了 `get` 方法的对象即可。我们将采用依赖注入的方式来解决这个问题：
+1.  修改 `MessageBus` 类，让它的构造函数 (`__init__`) 接收一个 `nexus` 实例作为参数。
+2.  将 `bus` 单例的创建过程从 `bus.py` 文件中移出。
+3.  在 `stitcher.common.__init__.py` 中，先创建 `stitcher_nexus` 实例，然后创建 `bus` 实例，并将 `stitcher_nexus` *注入* 到 `bus` 中。
+4.  最后，修复因 `MessageBus` 构造函数变更而受影响的测试代码。
 
-## [WIP] refactor: 在 stitcher-common 中组合 Nexus 以实现依赖解耦
+这样，依赖关系就变成了单向的：`stitcher.common` -> `MessageBus` 类，循环被彻底打破。
+
+## [WIP] fix: 通过依赖注入解决 circular import 问题
+
+### 错误分析
+上一个计划在 `stitcher-common` 中创建 `stitcher_nexus` 实例，但导致了 `stitcher.common` 和其子模块 `messaging.bus` 之间的循环导入。原因是 `bus.py` 试图从一个尚未完全初始化的 `stitcher.common` 模块中导入 `stitcher_nexus`。
 
 ### 用户需求
-用户建议停止使用 `pyneedle` 提供的全局 `nexus` 单例，改为在 `stitcher-common` 包中手动创建和配置一个专属于 Stitcher 应用的 `OverlayNexus` 实例。
+修复由于循环导入导致的 `ImportError`，使测试能够正常运行。
 
 ### 评论
-这是一个卓越的架构重构建议。通过在 `stitcher-common` 中显式组合 `OverlayNexus`，我们将 Stitcher 从对外部库全局状态的隐式依赖中解放出来，转向了更加健壮和可维护的依赖注入模式。这完全符合控制反转 (IoC) 原则，将使 Stitcher 核心更加独立和稳定。
+这是一个经典的架构问题。通过将 `MessageBus` 对 `nexus` 的依赖关系从“拉取”（在模块内部导入）改为“推送”（通过构造函数注入），我们遵循了控制反转原则，不仅解决了循环导入，还使 `MessageBus` 组件更加解耦和易于测试。
 
 ### 目标
-1.  在 `stitcher-common` 的 `__init__.py` 中，导入 `OverlayNexus` 和 `FileSystemLoader` 类。
-2.  创建并导出一个专用于 Stitcher 的 `loader` 和 `nexus` 实例。
-3.  更新 `stitcher-common` 自身以及 `stitcher-cli`，使其使用这个新创建的本地 `nexus` 实例，而不是 `pyneedle` 的全局实例。
-4.  更新测试工具 (`stitcher-test-utils`) 中的 `monkeypatch` 目标，以确保测试能够继续正确地模拟 `nexus` 的行为。
+1.  重构 `MessageBus` 类，使其在构造时接收一个 `nexus` 依赖。
+2.  在 `stitcher.common.__init__.py` 中统一创建和组装 `stitcher_nexus` 和 `bus` 单例。
+3.  修复受 `MessageBus` 构造函数变更影响的单元测试。
 
 ### 基本原理
-我们将把 `stitcher-common` 定义为 Stitcher 应用中 `Nexus` 依赖的“组合根”。
-1.  `stitcher-common` 将负责创建 `FileSystemLoader` 和 `OverlayNexus` 的实例，并将它们作为 `stitcher_loader` 和 `stitcher_nexus` 导出。它还会负责添加 `stitcher-common` 自身的资源路径。
-2.  `stitcher-cli` 包将从 `stitcher-common` 导入 `stitcher_loader`，并使用它来添加 CLI 相关的资源路径。
-3.  所有需要解析语义指针的地方（如 `MessageBus` 和 `Typer` 命令）将从 `stitcher-common` 导入 `stitcher_nexus` 实例来执行 `.get()` 操作。
-4.  通过这种方式，`pyneedle` 库退化为一个纯粹的“库”角色，提供类和功能，而不再提供具有全局状态的单例，Stitcher 应用完全控制其依赖项的生命周期和配置。
+我们将把 `stitcher.common.__init__.py` 作为这两个核心单例的“组合根”。
+1.  `MessageBus` 类将被修改为纯粹的业务逻辑，其依赖项 (`nexus`) 通过构造函数提供。
+2.  `bus.py` 文件将只定义 `MessageBus` 类，不再创建全局单例 `bus`。
+3.  `stitcher.common.__init__.py` 文件将首先创建 `stitcher_nexus`，然后导入 `MessageBus` *类*，最后用 `stitcher_nexus` 实例化 `MessageBus` 类来创建 `bus` 单例。这个清晰的、单向的创建流程将彻底消除循环依赖。
 
 ### 标签
-#intent/architect #intent/refine #flow/ready #priority/high #comp/common #comp/cli #scope/core #scope/dx #ai/instruct #task/domain/architecture #task/object/dependency-injection #task/action/implementation #task/state/continue
+#intent/fix #flow/ready #priority/critical #comp/common #scope/core #ai/instruct #task/domain/architecture #task/object/dependency-injection #task/action/refactor #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 在 `stitcher-common` 中创建并导出本地 Nexus 实例
+#### Acts 1: 重构 `MessageBus` 以接受依赖注入
 
-这是本次重构的核心。我们将修改 `stitcher-common` 的 `__init__.py`，使其成为 `nexus` 实例的“所有者”。
+我们将修改 `MessageBus` 类，使其不再从全局导入 `nexus`，而是在初始化时接收它。同时，我们将 `bus` 单例的创建移出此文件。
+
+~~~~~act
+write_file
+packages/stitcher-common/src/stitcher/common/messaging/bus.py
+~~~~~
+~~~~~python
+from typing import Any, Optional, Union
+
+from needle.pointer import SemanticPointer
+from .protocols import Renderer
+
+
+class MessageBus:
+    def __init__(self, nexus_instance: Any):
+        self._renderer: Optional[Renderer] = None
+        self._nexus = nexus_instance
+
+    def set_renderer(self, renderer: Renderer):
+        self._renderer = renderer
+
+    def _render(
+        self, level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any
+    ) -> None:
+        if not self._renderer:
+            return
+
+        # Resolve the pointer to a string template using the injected nexus
+        template = self._nexus.get(msg_id)
+
+        # Format the final message
+        try:
+            message = template.format(**kwargs)
+        except KeyError:
+            # Fallback for formatting errors
+            message = f"<formatting_error for '{str(msg_id)}'>"
+
+        self._renderer.render(message, level)
+
+    def info(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
+        self._render("info", msg_id, **kwargs)
+
+    def success(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
+        self._render("success", msg_id, **kwargs)
+
+    def warning(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
+        self._render("warning", msg_id, **kwargs)
+
+    def error(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
+        self._render("error", msg_id, **kwargs)
+
+    def render_to_string(
+        self, msg_id: Union[str, SemanticPointer], **kwargs: Any
+    ) -> str:
+        template = self._nexus.get(msg_id)
+        try:
+            return template.format(**kwargs)
+        except KeyError:
+            return f"<formatting_error for '{str(msg_id)}'>"
+
+
+# The global singleton is now created in stitcher.common.__init__
+~~~~~
+
+#### Acts 2: 在 `stitcher-common` 中组装单例，打破循环
+
+现在，`__init__.py` 将负责创建所有核心单例并正确地将它们连接在一起。
 
 ~~~~~act
 write_file
@@ -52,11 +125,9 @@ __path__ = __import__("pkgutil").extend_path(__path__, __name__)
 from pathlib import Path
 from needle.nexus import OverlayNexus
 from needle.loaders.fs_loader import FileSystemLoader
-from .messaging.bus import bus
+from .messaging.bus import MessageBus
 
-# --- Composition Root for Stitcher's Nexus ---
-# We create and configure our own instances instead of using pyneedle's global singletons.
-# This decouples us and follows Inversion of Control principles.
+# --- Composition Root for Stitcher's Core Services ---
 
 # 1. Create the loader instance.
 stitcher_loader = FileSystemLoader()
@@ -64,7 +135,10 @@ stitcher_loader = FileSystemLoader()
 # 2. Create the nexus instance, injecting the loader.
 stitcher_nexus = OverlayNexus(loaders=[stitcher_loader])
 
-# 3. Auto-register built-in assets for the 'common' package.
+# 3. Create the bus instance, injecting the nexus.
+bus = MessageBus(nexus_instance=stitcher_nexus)
+
+# 4. Auto-register built-in assets for the 'common' package.
 try:
     _assets_path = Path(__file__).parent / "assets"
     if _assets_path.is_dir():
@@ -78,122 +152,36 @@ except NameError:
 __all__ = ["bus", "stitcher_nexus", "stitcher_loader"]
 ~~~~~
 
-#### Acts 2: 更新 `MessageBus` 以使用新的 `stitcher_nexus`
+#### Acts 3: 修复 `test_message_bus` 单元测试
 
-现在 `MessageBus` 将从 `stitcher.common` 导入 `stitcher_nexus`。
-
-~~~~~act
-patch_file
-packages/stitcher-common/src/stitcher/common/messaging/bus.py
-~~~~~
-~~~~~python.old
-from needle.pointer import SemanticPointer
-from needle import nexus
-from .protocols import Renderer
-~~~~~
-~~~~~python.new
-from needle.pointer import SemanticPointer
-from stitcher.common import stitcher_nexus as nexus
-from .protocols import Renderer
-~~~~~
-
-#### Acts 3: 更新 `stitcher-cli` 以使用新的 `stitcher_loader` 和 `stitcher_nexus`
-
-CLI 包现在将使用 `stitcher_common` 提供的 `loader` 来注册自己的资源，并使用 `nexus` 来获取帮助文本。
+由于 `MessageBus` 的构造函数已更改，我们需要更新其单元测试以提供所需的 `nexus` 依赖。
 
 ~~~~~act
 patch_file
-packages/stitcher-cli/src/stitcher/cli/__init__.py
+packages/stitcher-common/tests/test_message_bus.py
 ~~~~~
 ~~~~~python.old
-from needle.runtime import _default_loader
-from pathlib import Path
+@pytest.fixture
+def test_bus():
+    return MessageBus()
 
-# --- Auto-register CLI assets ---
-try:
-    _assets_path = Path(__file__).parent / "assets"
-    if _assets_path.is_dir():
-        _default_loader.add_root(_assets_path)
-except NameError:
-    pass
-# --------------------------------
+
+def test_bus_does_not_fail_without_renderer(test_bus: MessageBus):
 ~~~~~
 ~~~~~python.new
-from stitcher.common import stitcher_loader
-from pathlib import Path
+class MockNexus:
+    def get(self, key, **kwargs):
+        return str(key)
 
-# --- Auto-register CLI assets ---
-try:
-    _assets_path = Path(__file__).parent / "assets"
-    if _assets_path.is_dir():
-        stitcher_loader.add_root(_assets_path)
-except NameError:
-    pass
-# --------------------------------
-~~~~~
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/main.py
-~~~~~
-~~~~~python.old
-from stitcher.app import StitcherApp
-from stitcher.common import bus
-from needle.pointer import L
-from needle import nexus
-from .rendering import CliRenderer
 
-app = typer.Typer(
-    name="stitcher",
-    help=nexus.get(L.cli.app.description),
-    no_args_is_help=True,
-)
-~~~~~
-~~~~~python.new
-from stitcher.app import StitcherApp
-from stitcher.common import bus, stitcher_nexus as nexus
-from needle.pointer import L
-from .rendering import CliRenderer
+@pytest.fixture
+def test_bus():
+    # Provide a mock nexus instance to satisfy the constructor
+    return MessageBus(nexus_instance=MockNexus())
 
-app = typer.Typer(
-    name="stitcher",
-    help=nexus.get(L.cli.app.description),
-    no_args_is_help=True,
-)
-~~~~~
 
-#### Acts 4: 更新测试工具以指向正确的 `monkeypatch` 目标
-
-这是确保测试继续通过的关键一步。`MockNeedle` 现在必须 `patch` `stitcher.common` 内部的 `nexus` 实例。
-
-~~~~~act
-patch_file
-packages/stitcher-test-utils/src/stitcher/test_utils/needle.py
-~~~~~
-~~~~~python.old
-    def patch(self, monkeypatch: Any):
-        # The target path must be where `nexus` is used by the code under test.
-        # In our case, MessageBus imports it.
-        target_path = "stitcher.common.messaging.bus.nexus.get"
-        try:
-            monkeypatch.setattr(target_path, self._mock_get)
-            yield
-        finally:
-            # monkeypatch handles teardown automatically, but this ensures clarity.
-            pass
-~~~~~
-~~~~~python.new
-    def patch(self, monkeypatch: Any):
-        # The target path must be where `nexus` is used by the code under test.
-        # The MessageBus now imports `stitcher_nexus` from `stitcher.common` and aliases it.
-        # So we patch the original location.
-        target_path = "stitcher.common.stitcher_nexus.get"
-        try:
-            monkeypatch.setattr(target_path, self._mock_get)
-            yield
-        finally:
-            # monkeypatch handles teardown automatically, but this ensures clarity.
-            pass
+def test_bus_does_not_fail_without_renderer(test_bus: MessageBus):
 ~~~~~
 
 ### 下一步建议
-这次重构的影响范围较大，但逻辑上是完整且正确的。在应用此计划后，请立即运行完整的测试套件。如果所有测试都通过，那么我们就成功地实现了依赖解耦，并且可以确信地进入 `[COMMIT]` 阶段，将这一系列重构作为一个原子单元提交。
+这次的修复更加深入和彻底。在应用此计划后，循环导入问题应该会完全解决。请重新运行测试套件。如果一切顺利，我们就可以进入 `[COMMIT]` 阶段，完成这次重要的重构。

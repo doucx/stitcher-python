@@ -13,9 +13,15 @@ class MockRenderer(Renderer):
         self.messages.append({"level": level, "message": message})
 
 
+class MockNexus:
+    def get(self, key, **kwargs):
+        return str(key)
+
+
 @pytest.fixture
 def test_bus():
-    return MessageBus()
+    # Provide a mock nexus instance to satisfy the constructor
+    return MessageBus(nexus_instance=MockNexus())
 
 
 def test_bus_does_not_fail_without_renderer(test_bus: MessageBus):
