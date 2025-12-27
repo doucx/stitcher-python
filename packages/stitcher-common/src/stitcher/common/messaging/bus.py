@@ -1,12 +1,13 @@
 from typing import Any, Optional, Union
 
-from stitcher.needle import SemanticPointer, needle
+from needle.pointer import SemanticPointer
 from .protocols import Renderer
 
 
 class MessageBus:
-    def __init__(self):
+    def __init__(self, nexus_instance: Any):
         self._renderer: Optional[Renderer] = None
+        self._nexus = nexus_instance
 
     def set_renderer(self, renderer: Renderer):
         self._renderer = renderer
@@ -17,8 +18,8 @@ class MessageBus:
         if not self._renderer:
             return
 
-        # Resolve the pointer to a string template using the Needle runtime
-        template = needle.get(msg_id)
+        # Resolve the pointer to a string template using the injected nexus
+        template = self._nexus.get(msg_id)
 
         # Format the final message
         try:
@@ -44,12 +45,11 @@ class MessageBus:
     def render_to_string(
         self, msg_id: Union[str, SemanticPointer], **kwargs: Any
     ) -> str:
-        template = needle.get(msg_id)
+        template = self._nexus.get(msg_id)
         try:
             return template.format(**kwargs)
         except KeyError:
             return f"<formatting_error for '{str(msg_id)}'>"
 
 
-# Global singleton instance
-bus = MessageBus()
+# The global singleton is now created in stitcher.common.__init__

@@ -18,7 +18,6 @@ dev = [
     "pyneedle-spec",
     "stitcher-cli",
     "stitcher-application",
-    "stitcher-needle",
     "stitcher-test-utils",
 ]
 
@@ -37,7 +36,6 @@ stitcher-io = { workspace = true }
 stitcher-config = { workspace = true }
 stitcher-application = { workspace = true }
 stitcher-cli = { workspace = true }
-stitcher-needle = { workspace = true }
 stitcher-test-utils = { workspace = true }
 
 [tool.pytest.ini_options]
@@ -52,7 +50,6 @@ pythonpath = [
     "packages/stitcher-config/src", 
     "packages/stitcher-application/src", 
     "packages/stitcher-cli/src", 
-    "packages/stitcher-needle/src",
     "packages/pyneedle-spec/src",
     "packages/pyneedle-pointer/src",
     "packages/pyneedle-nexus/src",
@@ -73,7 +70,6 @@ extraPaths = [
     "packages/stitcher-config/src",
     "packages/stitcher-application/src",
     "packages/stitcher-cli/src",
-    "packages/stitcher-needle/src",
     "packages/stitcher-test-utils/src",
     "packages/pyneedle-spec/src",
     "packages/pyneedle-pointer/src",
@@ -90,7 +86,6 @@ extraPaths = [
     "packages/stitcher-config/src",
     "packages/stitcher-application/src",
     "packages/stitcher-cli/src",
-    "packages/stitcher-needle/src",
     "packages/stitcher-test-utils/src",
     "packages/pyneedle-spec/src",
     "packages/pyneedle-pointer/src",

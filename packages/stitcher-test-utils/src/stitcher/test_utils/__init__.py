@@ -1,5 +1,5 @@
 from .bus import SpyBus
-from .needle import MockNeedle
+from .nexus import MockNexus
 from .workspace import WorkspaceFactory
 
-__all__ = ["SpyBus", "MockNeedle", "WorkspaceFactory"]
+__all__ = ["SpyBus", "MockNexus", "WorkspaceFactory"]
