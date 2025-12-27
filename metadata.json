@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] test: 复现多目标模式下存根包脚手架名称错误的 bug", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766816430.756703, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix: Use target name for stub package scaffolding in multi-target mode", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766816538.566889, "duration_ms": 0}}
