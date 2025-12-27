@@ -57,7 +57,7 @@ pythonpath = [
     "packages/stitcher-test-utils/src"
 ]
 
-[tool.stitcher.targets.stitcher-python]
+[tool.stitcher.targets.stitcher]
 scan_paths = [
     "packages/stitcher-spec/src",
     "packages/stitcher-common/src",
@@ -68,7 +68,7 @@ scan_paths = [
     "packages/stitcher-cli/src",
     "packages/stitcher-test-utils/src",
 ]
-stub_package = "packages/stitcher-stubs"
+stub_package = "packages/stitcher-python-stubs"
 
 [tool.stitcher.targets.pyneedle]
 scan_paths = [
@@ -82,25 +82,6 @@ stub_package = "packages/pyneedle-stubs"
 [tool.pyright]
 include = ["packages", "tests"]
 # 显式告知 IDE 所有子包的源码位置，解决 Monorepo 解析问题
-extraPaths = [
-    "packages/stitcher-spec/src",
-    "packages/stitcher-common/src",
-    "packages/stitcher-scanner/src",
-    "packages/stitcher-io/src",
-    "packages/stitcher-config/src",
-    "packages/stitcher-application/src",
-    "packages/stitcher-cli/src",
-    "packages/stitcher-test-utils/src",
-    "packages/pyneedle-spec/src",
-    "packages/pyneedle-pointer/src",
-    "packages/pyneedle-nexus/src",
-    "packages/pyneedle/src",
-    # Add the new stub packages' source directories
-    "packages/stitcher-stubs/src",
-    "packages/pyneedle-stubs/src",
-]
-
-[tool.pyrefly]
 extraPaths = [
     "packages/stitcher-spec/src",
     "packages/stitcher-common/src",
