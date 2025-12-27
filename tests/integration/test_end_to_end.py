@@ -79,14 +79,13 @@ def test_app_run_multi_target(tmp_path, monkeypatch):
     """
     # 1. Arrange
     factory = WorkspaceFactory(tmp_path)
-    
+
     # Manually injecting multi-target config into pyproject.toml via raw content
     # because WorkspaceFactory.with_config currently assumes simple [tool.stitcher] structure.
     # We'll just overwrite pyproject.toml at the end or use with_source for it.
-    
+
     project_root = (
-        factory
-        .with_source("src/pkg_a/main.py", "def func_a(): ...")
+        factory.with_source("src/pkg_a/main.py", "def func_a(): ...")
         .with_source("src/pkg_b/main.py", "def func_b(): ...")
         .build()
     )
@@ -105,7 +104,7 @@ stub_path = "typings/pkg_a"
 scan_paths = ["src/pkg_b"]
 stub_path = "typings/pkg_b"
         """,
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     app = StitcherApp(root_path=project_root)
@@ -125,9 +124,11 @@ stub_path = "typings/pkg_b"
     # Check bus messages
     # We expect "Processing target: ..." messages
     messages = spy_bus.get_messages()
-    processing_msgs = [m for m in messages if m["id"] == str(L.generate.target.processing)]
+    processing_msgs = [
+        m for m in messages if m["id"] == str(L.generate.target.processing)
+    ]
     assert len(processing_msgs) == 2
-    
+
     target_names = {m["params"]["name"] for m in processing_msgs}
     assert target_names == {"pkg_a", "pkg_b"}
 
