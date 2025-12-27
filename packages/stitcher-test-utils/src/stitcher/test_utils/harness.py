@@ -1,7 +1,6 @@
 import subprocess
 import venv
 from pathlib import Path
-from typing import List
 import sys
 
 

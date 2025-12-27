@@ -65,7 +65,7 @@ def test_generate_with_stub_package_creates_correct_structure(tmp_path, monkeypa
     with stub_pyproject.open("rb") as f:
         stub_config = tomllib.load(f)
     assert stub_config["project"]["name"] == "my-test-project-stubs"
-    
+
     # Assert new Hatchling configuration is present and correct
     hatch_config = stub_config["tool"]["hatch"]["build"]["targets"]["wheel"]
     assert hatch_config["packages"] == ["src/my_app"]

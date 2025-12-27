@@ -235,7 +235,9 @@ class StitcherApp:
 
             # 0. Scaffold stub package if configured
             if config.stub_package:
-                stub_base_name = config.name if config.name != "default" else project_name
+                stub_base_name = (
+                    config.name if config.name != "default" else project_name
+                )
                 self._scaffold_stub_package(config, stub_base_name)
 
             # 1. Process source files
@@ -297,7 +299,6 @@ class StitcherApp:
 
     def run_check(self) -> bool:
         configs, _ = load_config_from_path(self.root_path)
-        all_success = True
         total_warnings = 0
         total_failed_files = 0
 
