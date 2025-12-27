@@ -43,11 +43,6 @@ class StitcherApp:
         return modules
 
     def _derive_logical_path(self, file_path: str) -> Path:
-        """
-        Heuristic to derive the logical import path from a physical file path.
-        Assumes a standard 'src/' layout.
-        e.g., 'packages/pkg-a/src/foo/bar.py' -> 'foo/bar.py'
-        """
         path_obj = Path(file_path)
         parts = path_obj.parts
 
