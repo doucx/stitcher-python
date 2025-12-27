@@ -298,7 +298,6 @@ class StitcherApp:
 
                 if error_count > 0:
                     total_failed_files += 1
-                    all_success = False
                     bus.error(L.check.file.fail, path=file_rel_path, count=total_issues)
                 else:
                     bus.warning(

@@ -41,7 +41,7 @@ def test_load_config_discovers_plugins_legacy_mode(workspace: Path):
     # Assert
     assert len(configs) == 1
     config = configs[0]
-    
+
     assert config.name == "default"
     assert config.scan_paths == ["src/app"]
     assert "my_plugin.api" in config.plugins
