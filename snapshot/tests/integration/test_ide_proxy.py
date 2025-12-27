@@ -14,7 +14,7 @@ def test_pyright_resolves_types_from_stubs(
     """
     # --- ARRANGE ---
 
-    source_content = "class ProxyModel:\n    def get_id(self):\n        return 1"
+    source_content = "class ProxyModel:\n    def get_id(self) -> int:\n        return 1"
 
     # 1. Create the source project for Stitcher to scan.
     source_project_root = tmp_path / "source_project"
