@@ -81,9 +81,10 @@ extraPaths = [
 ]
 
 [tool.pyrefly]
+stubPath = "typings"
 extraPaths = [
     "packages/stitcher-spec/src",
-    "packages/stitcher-common/src",
+    "packages-stitcher-common/src",
     "packages/stitcher-scanner/src",
     "packages/stitcher-io/src",
     "packages/stitcher-config/src",
