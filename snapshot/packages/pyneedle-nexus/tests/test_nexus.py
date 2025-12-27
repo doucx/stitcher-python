@@ -1,6 +1,7 @@
 import pytest
 from needle.spec import SemanticPointerProtocol
 from needle.nexus import OverlayNexus, MemoryLoader
+from typing import Any, Union, Iterable
 
 # A simple pointer mock for testing that satisfies the protocol
 class MockPointer(SemanticPointerProtocol):
