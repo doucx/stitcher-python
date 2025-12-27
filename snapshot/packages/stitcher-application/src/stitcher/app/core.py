@@ -352,9 +352,9 @@ class StitcherApp:
 
                 error_count = len(mismatched) + len(conflict) + len(pending)
                 warning_count = len(missing) + len(redundant) + len(extra)
-                total_issues = error_count + warning_count
 
-                if total_issues == 0 and reconciled_mismatches == 0:
+                # If there are no remaining issues to report for this file, skip to the next.
+                if error_count == 0 and warning_count == 0:
                     continue
 
                 file_rel_path = module.file_path
@@ -362,7 +362,7 @@ class StitcherApp:
                 if error_count > 0:
                     total_failed_files += 1
                     bus.error(L.check.file.fail, path=file_rel_path, count=error_count)
-                else:
+                else:  # warning_count must be > 0 here
                     bus.warning(
                         L.check.file.warn, path=file_rel_path, count=warning_count
                     )
