@@ -1,38 +1,78 @@
-太棒了。所有测试均已通过，这标志着 Stitcher 对 PEP 561 存根包的支持已经从“功能实现”进化到了“质量可验证”的阶段。
+简要回答：
+是的，需要修改。目前根目录的 `pyproject.toml` 中 `extraPaths` 的配置存在两处不一致：
+1.  **路径不匹配**：`needle` 目标的 `stub_package` 定义为 `packages/needle-stubs`，但 `extraPaths` 中写成了 `packages/pyneedle-stubs/src`。
+2.  **结构适应**：随着我们引入了 `src/<namespace>-stubs` 的结构，将 `packages/xxx-stubs/src` 加入 `extraPaths` 是正确的，因为 Pyright 会在其中发现 `xxx-stubs` 目录并将其识别为 `xxx` 命名空间的类型源。
 
-通过 `test_ide_proxy.py` 中的 shadowing 验证，我们确信生成的 `pyi` 文件在 site-packages 中具有正确的优先级，且不会破坏同名命名空间的其他运行时子包。
+我将更新计划，包含对 `pyproject.toml` 的修正，然后完成提交。
 
-我将生成一个 `[COMMIT]` 计划，将这些关键的改进和测试套件正式合入仓库。
-
-## [COMMIT] test: add integration tests for PEP 561 stub package resolution and compliance
+## [COMMIT] fix: align root pyproject.toml with new stub structure and naming
 
 ### 用户需求
-将近期关于存根包 (Stub Package) 生成逻辑的重构，以及配套的集成测试套件（包括隔离环境测试工具 `VenvHarness`）提交到 Git 仓库。
+修正根目录 `pyproject.toml` 中的 `extraPaths` 配置，确保 IDE (Pyright/Pyrefly) 能够正确识别新生成的符合 PEP 561 规范的存根包。
 
 ### 评论
-这是一次重要的提交。它不仅修复了存根包生成时的命名规范问题（遵循 PEP 561），还引入了一套基于隔离虚拟环境的集成测试方法论。这套方法论为后续验证 Stitcher 在复杂 Monorepo 环境下的行为提供了坚实的基础。
+在 Monorepo 开发中，`extraPaths` 是 IDE 能够跨越包边界进行代码跳转和类型推断的关键。将 `pyneedle-stubs` 修正为 `needle-stubs` 解决了路径失效的问题。同时，保留指向 `src` 的路径是正确的，这符合检查器寻找 `X-stubs` 文件夹的逻辑。
 
 ### 目标
-1.  提交 `stitcher-application` 中关于 PEP 561 路径计算的修复。
-2.  提交 `stitcher-test-utils` 中新增的 `VenvHarness` 工具，用于创建隔离的测试环境。
-3.  提交完整的集成测试套件，覆盖结构合规性、类型解析、命名空间共存以及 IDE Proxy 优先级验证。
-
-### 基本原理
-按照计划，我们先执行文件变更，确认无误后通过独立的 `[COMMIT]` 计划进行提交。这符合“脚本与提交隔离”的原则。
+1.  修正 `tool.pyright.extraPaths` 中的 `pyneedle-stubs` 路径。
+2.  修正 `tool.pyrefly.extraPaths` 中的 `pyneedle-stubs` 路径。
+3.  完成所有变更的 Git 提交。
 
 ### 标签
-#intent/tooling #flow/ready #priority/high #comp/tests #comp/runtime #comp/build #concept/executor #scope/dx #ai/instruct #task/domain/testing #task/object/stub-package-integration #task/action/implementation #task/state/end #task/status/completed
+#intent/tune #flow/ready #priority/medium #comp/build #scope/dx #ai/instruct #task/domain/build-system #task/object/root-pyproject #task/action/align-paths #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 暂存并提交变更
+#### Acts 1: 修正根目录 pyproject.toml
 
-我们将所有涉及到的文件添加到暂存区，并创建一个描述详尽的提交。
+将 `pyneedle-stubs` 统一更正为 `needle-stubs`。
+
+~~~~~act
+patch_file
+pyproject.toml
+~~~~~
+~~~~~python.old
+    # Add the new stub packages' source directories
+    "packages/stitcher-stubs/src",
+    "packages/pyneedle-stubs/src",
+]
+
+[tool.pyrefly]
+~~~~~
+~~~~~python.new
+    # Add the new stub packages' source directories
+    "packages/stitcher-stubs/src",
+    "packages/needle-stubs/src",
+]
+
+[tool.pyrefly]
+~~~~~
+~~~~~act
+patch_file
+pyproject.toml
+~~~~~
+~~~~~python.old
+    # Add the new stub packages' source directories
+    "packages/stitcher-stubs/src",
+    "packages/pyneedle-stubs/src",
+]
+~~~~~
+~~~~~python.new
+    # Add the new stub packages' source directories
+    "packages/stitcher-stubs/src",
+    "packages/needle-stubs/src",
+]
+~~~~~
+
+#### Acts 2: 暂存并提交所有变更
+
+现在我们将所有修改过的文件和新创建的测试文件一并提交。
 
 ~~~~~act
 git_add
+pyproject.toml
 packages/stitcher-application/src/stitcher/app/core.py
 packages/stitcher-application/src/stitcher/app/services/stub_package_manager.py
 packages/stitcher-test-utils/src/stitcher/test_utils/__init__.py
@@ -48,26 +88,22 @@ tests/integration/test_stub_package_resolution.py
 git_commit
 ~~~~~
 ~~~~~text
-test: add integration tests for PEP 561 stub package resolution
+feat(stub): implement PEP 561 compliance and add integration test suite
 
-This commit introduces a robust integration testing suite for generated 
-PEP 561 "Stub-only Packages" and refactors the generation logic to 
-ensure full compliance with naming conventions.
+This commit completes the transition to PEP 561 compliant stub packages and 
+establishes a robust testing infrastructure.
 
-Key changes:
-- Refactored `StubPackageManager` and `StitcherApp` to use standardized 
-  `<namespace>-stubs` naming for the internal source directory, 
-  preventing namespace collisions as per PEP 561.
-- Introduced `VenvHarness` in `stitcher-test-utils`, providing an 
-  automated way to create isolated virtual environments, install 
-  generated packages, and run type checkers (Mypy/Pyright).
-- Added E2E tests for:
-    - Structure compliance (correct directory nesting and pyproject.toml).
-    - Installation and resolution (verifying types are read from stubs).
-    - Namespace coexistence (ensuring stubs don't "kill" runtime siblings).
-    - Shadowing priority (verifying stubs take precedence over implementation).
+Core changes:
+- Logic: Renamed internal stub directories to `<namespace>-stubs` to support 
+  shadowing without namespace pollution.
+- Tooling: Introduced `VenvHarness` for automated environment isolation tests.
+- Testing: Added E2E tests for stub resolution, namespace coexistence, 
+  and IDE precedence verification (Stub > Source).
+- DX: Updated root pyproject.toml extraPaths to ensure IDEs correctly 
+  resolve the new stub package structure.
 ~~~~~
 
 ### 下一步建议
-- **CI 集成**: 建议将这些集成测试集成到项目的 GitHub Actions 或其他 CI 流水中，因为它们依赖真实的 `pip` 和类型检查器，是防止回归的最佳手段。
-- **发布准备**: 随着测试链路的打通，下一步可以考虑优化存根包的版本控制逻辑（目前是占位符 `0.1.0`），使其能自动同步主项目的版本。
+我们已经完成了存根包的核心逻辑和验证。下一步可以考虑：
+- **版本自动化**：目前存根包的版本硬编码为 `0.1.0`。在生产环境中，我们通常希望存根包的版本与源包保持同步（或带上特定的后缀）。
+- **CI/CD 验证**：在 GitHub Actions 中引入一个步骤，运行这些集成测试，确保未来的修改不会破坏存根包的兼容性。
