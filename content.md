@@ -1,93 +1,57 @@
-好的，收到了测试失败的反馈。这是一个非常典型的、由 `typing.Protocol` 的工作机制导致的错误。
-
-我将立即为您分析并修复它。
-
-### [WIP] fix(pointer): Use concrete class in `isinstance` to fix runtime check error
-
-### 错误分析
-
-测试失败的根本原因是 `TypeError: Instance and class checks can only be used with @runtime_checkable protocols`。
-
-这个错误发生在 `core.py` 的 `__mul__` 方法中，当我们执行 `isinstance(other, (str, SemanticPointerProtocol))` 时。这里的 `other` 是一个 `set`（例如 `{'products', 'users'}`），`isinstance` 检查会依次对元组中的每个类型进行判断。
-
-当 `isinstance` 尝试检查一个 `set` 是否是 `SemanticPointerProtocol` 的实例时，它触发了 Python `typing` 模块的一个内置规则：默认情况下，`Protocol` 仅用于**静态类型检查**（如 Mypy），不能在**运行时**（即 `isinstance`）使用。如果希望在运行时使用，协议必须用 `@runtime_checkable` 装饰器明确标记。
+## [COMMIT] feat(pointer): Implement robust chained multiplication and flexible `*` operator
 
 ### 用户需求
 
-修复所有因 `TypeError` 导致的测试失败，并确保 `*` 运算符的行为符合预期。
+1.  实现 `L.a * {"a", "b"} * L.c` 等复杂链式乘法调用。
+2.  增强 `*` 运算符的灵活性，使其能够接收字符串、指针、集合、字典键以及其他支持 `__str__` 的对象。
+3.  修复因使用抽象协议 `SemanticPointerProtocol` 进行 `isinstance` 运行时检查导致的 `TypeError`。
 
 ### 评论
 
-这是一个非常微妙但重要的类型系统问题。直接的解决方案是在 `pyneedle-spec` 中为 `SemanticPointerProtocol` 添加 `@runtime_checkable` 装饰器。
-
-然而，**这是一个次优解**。因为它会污染纯粹的 `spec` 包，并引入不必要的运行时开销。
-
-一个更优雅、更符合依赖倒置原则的解决方案是：**在 `pyneedle-pointer` 的实现中，检查具体的 `SemanticPointer` 类，而不是抽象的 `SemanticPointerProtocol` 协议**。实现细节不应该反过来要求协议为它做出改变。
-
-这个修复方案不仅能解决问题，还能保持包之间的清晰界限。
+本次提交实现了 `SemanticPointer` 和 `PointerSet` 的核心代数增强，允许开发者以高度声明式和灵活的方式构造语义集合。通过三步式回退逻辑（原子 -> 集合 -> 强制字符串原子），我们最大化了运算符的通用性，同时解决了由于 `typing.Protocol` 导致的运行时检查错误。这使得语义指针的代数体系更加成熟。
 
 ### 目标
 
-1.  定位 `packages/pyneedle-pointer/src/needle/pointer/core.py` 中的 `__mul__` 方法。
-2.  将其中的 `isinstance` 检查从 `SemanticPointerProtocol` 修改为具体的 `SemanticPointer` 类。
+1.  在 `SemanticPointer.__mul__` 中实现了灵活的类型处理和原子化回退逻辑。
+2.  修复了因在运行时对 `SemanticPointerProtocol` 进行 `isinstance` 检查而导致的 `TypeError`，将其替换为对具体类 `SemanticPointer` 的检查。
+3.  在 `PointerSet` 上实现了对非集合类型（如 `SemanticPointer`）的乘法广播，从而支持无限链式调用。
+4.  增加了新的测试用例来全面验证所有这些新行为的正确性。
 
 ### 基本原理
 
-在 `core.py` 文件中，`SemanticPointer` 类是可见的。因此，我们可以直接在 `isinstance` 中使用它。这将避免对 `Protocol` 进行不必要的运行时检查，从而绕开 `TypeError`，同时逻辑上完全等价，因为我们关心的就是 `other` 是否是一个指针实例。
+通过将 `isinstance(other, (str, SemanticPointerProtocol))` 替换为 `isinstance(other, (str, SemanticPointer))`，我们遵守了 Python 中对协议进行运行时检查的限制，同时保持了代码的架构纯洁性（不要求协议添加 `@runtime_checkable` 装饰器）。新的 `__mul__` 逻辑现在是所有语义代数的基础，确保了 `L.a * {B} * C` 这种结构化表达的稳定性。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/critical #comp/interfaces #scope/api #ai/instruct #task/domain/core-abstractions #task/object/multiplication-operator #task/action/bug-fix #task/state/end
+#intent/build #flow/done #priority/high
+#comp/interfaces #concept/state #scope/api #scope/dx
+#ai/instruct
+#task/domain/core-abstractions #task/object/multiplication-operator #task/action/refactor #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修复 `isinstance` 运行时检查
-
-我们将修改 `core.py` 中的 `__mul__` 方法，将类型检查的目标从协议 `SemanticPointerProtocol` 更改为具体的实现类 `SemanticPointer`。
+#### Acts 1: 添加所有修改文件并提交
 
 ~~~~~act
-patch_file
+git_add
 packages/pyneedle-pointer/src/needle/pointer/core.py
+packages/pyneedle-pointer/src/needle/pointer/set.py
+packages/pyneedle-pointer/tests/test_pointer_algebra.py
 ~~~~~
-~~~~~python.old
-    def __mul__(self, other: Any) -> "PointerSetProtocol":
-        # Lazy import to avoid circular dependency at module level
-        from .set import PointerSet
-        from typing import Iterable
 
-        items_to_process: Iterable[Any]
-
-        if isinstance(other, (str, SemanticPointerProtocol)):
-            # Rule 1: Treat str and SemanticPointer as atomic units
-            items_to_process = [other]
-        elif isinstance(other, Iterable):
-            # Rule 2: Treat other iterables as a collection of units
-            items_to_process = list(other)  # Consume iterators like dict_keys
-        else:
-            # Rule 3: Fallback for any other object (e.g., int)
-            items_to_process = [str(other)]
-
-        return PointerSet(self / item for item in items_to_process)
+~~~~~act
+git_commit
 ~~~~~
-~~~~~python.new
-    def __mul__(self, other: Any) -> "PointerSetProtocol":
-        # Lazy import to avoid circular dependency at module level
-        from .set import PointerSet
-        from typing import Iterable
+~~~~~text
+feat(pointer): Implement robust chained multiplication and flexible * operator
 
-        items_to_process: Iterable[Any]
+This commit significantly enhances the algebraic flexibility of Semantic Pointers (L) and Pointer Sets (Ls).
 
-        if isinstance(other, (str, SemanticPointer)):
-            # Rule 1: Treat str and SemanticPointer as atomic units
-            items_to_process = [other]
-        elif isinstance(other, Iterable):
-            # Rule 2: Treat other iterables as a collection of units
-            items_to_process = list(other)  # Consume iterators like dict_keys
-        else:
-            # Rule 3: Fallback for any other object (e.g., int)
-            items_to_process = [str(other)]
+Key Changes:
 
-        return PointerSet(self / item for item in items_to_process)
+1. Flexible Multiplication (`*`): The `__mul__` method now robustly handles various types (str, SemanticPointer, Iterable, Any other) using a 3-step type fallback. This enables constructs like `L.status * 200` (converts 200 to '200') and `L.a * dict.keys()`.
+2. Chained Operations: The enhancement of `SemanticPointer.__mul__` directly fixes the issue where chained multiplication like `L * {A} * B` would fail, as the PointerSet now correctly applies the next operand as a single unit via `p * other`.
+3. Fix Runtime Type Check: Replaced the non-functional `isinstance(other, SemanticPointerProtocol)` with `isinstance(other, SemanticPointer)` to resolve the `TypeError` and maintain architectural purity (not requiring `@runtime_checkable` on the protocol).
 ~~~~~
