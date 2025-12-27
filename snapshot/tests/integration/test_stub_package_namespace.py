@@ -43,6 +43,8 @@ def test_namespace_coexistence(tmp_path: Path, isolated_env: VenvHarness):
         )
         # This __init__.py makes `my_project` a package.
         .with_source("src/my_project/__init__.py", "")
+        # PEP 561: This marker is required for mypy to read inline types from this package
+        .with_source("src/my_project/py.typed", "")
         # We need a pyproject.toml to make it an installable package
         # We use setuptools here as it is the most standard fallback and less prone
         # to configuration quirks in test environments than hatchling for simple cases.
