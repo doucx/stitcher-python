@@ -1,6 +1,7 @@
 from pathlib import Path
 from typing import Dict, List, Optional
 from collections import defaultdict
+from dataclasses import dataclass, field
 
 from stitcher.scanner import (
     parse_source_code,
@@ -19,6 +20,26 @@ from stitcher.app.services import (
     SignatureManager,
     StubPackageManager,
 )
+
+
+@dataclass
+class FileCheckResult:
+    path: str
+    errors: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
+    warnings: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
+    reconciled: int = 0  # Count of reconciled signature mismatches
+
+    @property
+    def error_count(self) -> int:
+        return sum(len(keys) for keys in self.errors.values())
+
+    @property
+    def warning_count(self) -> int:
+        return sum(len(keys) for keys in self.warnings.values())
+
+    @property
+    def is_clean(self) -> int:
+        return self.error_count == 0 and self.warning_count == 0 and self.reconciled == 0
 
 
 class StitcherApp:
@@ -206,10 +227,6 @@ class StitcherApp:
 
             output_path.write_text(pyi_content, encoding="utf-8")
 
-            # Step 3: Update signatures (Snapshot current state)
-            # When we generate stubs, we assume the code is the new source of truth
-            self.sig_manager.save_signatures(module)
-
             relative_path = output_path.relative_to(self.root_path)
             bus.success(L.generate.file.success, path=relative_path)
             generated_files.append(output_path)
@@ -297,10 +314,55 @@ class StitcherApp:
 
         return all_created_files
 
-    def run_check(self) -> bool:
+    def _analyze_file(
+        self, module: ModuleDef, update_signatures: bool
+    ) -> FileCheckResult:
+        result = FileCheckResult(path=module.file_path)
+
+        # 1. Check if tracked
+        doc_path = (self.root_path / module.file_path).with_suffix(".stitcher.yaml")
+        if not doc_path.exists():
+            undocumented_keys = module.get_undocumented_public_keys()
+            if undocumented_keys:
+                result.warnings["untracked_detailed"].extend(undocumented_keys)
+            elif module.is_documentable():
+                result.warnings["untracked"].append("all")
+            return result
+
+        # 2. Check Docs & Signatures
+        doc_issues = self.doc_manager.check_module(module)
+        sig_issues = self.sig_manager.check_signatures(module)
+
+        # 3. Categorize Issues
+        # Warnings
+        if doc_issues["missing"]:
+            result.warnings["missing"].extend(doc_issues["missing"])
+        if doc_issues["redundant"]:
+            result.warnings["redundant"].extend(doc_issues["redundant"])
+
+        # Errors
+        if doc_issues["pending"]:
+            result.errors["pending"].extend(doc_issues["pending"])
+        if doc_issues["conflict"]:
+            result.errors["conflict"].extend(doc_issues["conflict"])
+        if doc_issues["extra"]:
+            result.errors["extra"].extend(doc_issues["extra"])
+
+        # 4. Handle Signatures & Reconciliation
+        if sig_issues:
+            if update_signatures:
+                self.sig_manager.save_signatures(module)
+                result.reconciled = len(sig_issues)
+            else:
+                # Treat keys as list of mismatches
+                result.errors["mismatch"].extend(sig_issues.keys())
+
+        return result
+
+    def run_check(self, update_signatures: bool = False) -> bool:
         configs, _ = load_config_from_path(self.root_path)
-        total_warnings = 0
-        total_failed_files = 0
+        global_failed_files = 0
+        global_warnings_files = 0
 
         for config in configs:
             if config.name != "default":
@@ -313,89 +375,76 @@ class StitcherApp:
                 continue
 
             for module in modules:
-                # File-level check: Does the corresponding doc file exist?
-                doc_path = (self.root_path / module.file_path).with_suffix(
-                    ".stitcher.yaml"
-                )
+                # Phase 1: Analyze & Reconcile
+                res = self._analyze_file(module, update_signatures)
 
-                if not doc_path.exists():
-                    undocumented_keys = module.get_undocumented_public_keys()
-                    if undocumented_keys:
-                        # Case 1: Untracked and has public APIs needing docs.
-                        # This is a high-priority warning.
-                        bus.warning(
-                            L.check.file.untracked_with_details,
-                            path=module.file_path,
-                            count=len(undocumented_keys),
-                        )
-                        for key in undocumented_keys:
-                            bus.warning(L.check.issue.untracked_missing_key, key=key)
-                        total_warnings += 1
-                    elif module.is_documentable():
-                        # Case 2: Untracked but all public APIs have docs.
-                        # This is a lower-priority "please hydrate" warning.
-                        bus.warning(L.check.file.untracked, path=module.file_path)
-                        total_warnings += 1
-                    # Case 3: Untracked and not documentable (empty/boilerplate).
-                    # Silently skip.
+                # Phase 2: Report
+                if res.is_clean:
                     continue
 
-                # Key-level check (existing logic)
-                doc_issues = self.doc_manager.check_module(module)
-                sig_issues = self.sig_manager.check_signatures(module)
-
-                missing = doc_issues["missing"]
-                pending = doc_issues["pending"]
-                redundant = doc_issues["redundant"]
-                extra = doc_issues["extra"]
-                conflict = doc_issues["conflict"]
-                mismatched = sig_issues
-
-                # Errors: Critical inconsistencies or unsynced changes
-                error_count = (
-                    len(extra) + len(mismatched) + len(conflict) + len(pending)
-                )
-                # Warnings: Suggestions for improvement
-                warning_count = len(missing) + len(redundant)
-
-                total_issues = error_count + warning_count
-
-                if total_issues == 0:
-                    continue
-
-                file_rel_path = module.file_path
-
-                if error_count > 0:
-                    total_failed_files += 1
-                    bus.error(L.check.file.fail, path=file_rel_path, count=total_issues)
-                else:
-                    bus.warning(
-                        L.check.file.warn, path=file_rel_path, count=total_issues
+                # Report Reconciliation (Success)
+                if res.reconciled > 0:
+                    bus.success(
+                        L.check.run.signatures_updated,
+                        path=res.path,
+                        count=res.reconciled,
                     )
-                    total_warnings += 1
 
-                # Report Warnings First
-                for key in sorted(list(missing)):
+                # Report File-level Status (Error/Warn)
+                if res.error_count > 0:
+                    global_failed_files += 1
+                    total_file_issues = res.error_count + res.warning_count
+                    bus.error(
+                        L.check.file.fail, path=res.path, count=total_file_issues
+                    )
+                elif res.warning_count > 0:
+                    global_warnings_files += 1
+                    # Special handling for untracked headers which are printed differently
+                    if "untracked" in res.warnings or "untracked_detailed" in res.warnings:
+                        # Logic handled in detail block below
+                        pass
+                    else:
+                        bus.warning(
+                            L.check.file.warn, path=res.path, count=res.warning_count
+                        )
+
+                # Report Detailed Issues
+                # Untracked (Special)
+                if "untracked_detailed" in res.warnings:
+                    keys = res.warnings["untracked_detailed"]
+                    bus.warning(
+                        L.check.file.untracked_with_details,
+                        path=res.path,
+                        count=len(keys),
+                    )
+                    for key in sorted(keys):
+                        bus.warning(L.check.issue.untracked_missing_key, key=key)
+                elif "untracked" in res.warnings:
+                    bus.warning(L.check.file.untracked, path=res.path)
+
+                # Standard Warnings
+                for key in sorted(res.warnings["missing"]):
                     bus.warning(L.check.issue.missing, key=key)
-                for key in sorted(list(redundant)):
+                for key in sorted(res.warnings["redundant"]):
                     bus.warning(L.check.issue.redundant, key=key)
 
-                # Report Errors
-                for key in sorted(list(pending)):
+                # Standard Errors
+                for key in sorted(res.errors["pending"]):
                     bus.error(L.check.issue.pending, key=key)
-                for key in sorted(list(extra)):
-                    bus.error(L.check.issue.extra, key=key)
-                for key in sorted(list(conflict)):
+                for key in sorted(res.errors["conflict"]):
                     bus.error(L.check.issue.conflict, key=key)
-                for key in sorted(list(mismatched.keys())):
+                for key in sorted(res.errors["mismatch"]):
                     bus.error(L.check.issue.mismatch, key=key)
+                for key in sorted(res.errors["extra"]):
+                    bus.error(L.check.issue.extra, key=key)
 
-        if total_failed_files > 0:
-            bus.error(L.check.run.fail, count=total_failed_files)
+        # Phase 3: Global Summary
+        if global_failed_files > 0:
+            bus.error(L.check.run.fail, count=global_failed_files)
             return False
 
-        if total_warnings > 0:
-            bus.success(L.check.run.success_with_warnings, count=total_warnings)
+        if global_warnings_files > 0:
+            bus.success(L.check.run.success_with_warnings, count=global_warnings_files)
         else:
             bus.success(L.check.run.success)
         return True
