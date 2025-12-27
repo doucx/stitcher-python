@@ -314,9 +314,9 @@ class StitcherApp:
 
             for module in modules:
                 # File-level check: Does the corresponding doc file exist?
-                doc_path = (
-                    self.root_path / module.file_path
-                ).with_suffix(".stitcher.yaml")
+                doc_path = (self.root_path / module.file_path).with_suffix(
+                    ".stitcher.yaml"
+                )
 
                 if not doc_path.exists():
                     # If doc file doesn't exist, only warn if the module
