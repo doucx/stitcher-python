@@ -43,12 +43,20 @@ class VenvHarness:
         Returns:
             The result of the subprocess call.
         """
-        return subprocess.run(
-            [str(self.python_exe), "-m", "pip", "install", *packages],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            return subprocess.run(
+                [str(self.python_exe), "-m", "pip", "install", *packages],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as e:
+            # Print output to ensure it's captured by pytest even if exception msg is truncated
+            print(f"--- PIP INSTALL FAILED ---\nCMD: {e.args}\n")
+            print(f"STDOUT:\n{e.stdout}\n")
+            print(f"STDERR:\n{e.stderr}\n")
+            print("--------------------------")
+            raise
 
     def run_type_check(self, script_path: Path) -> subprocess.CompletedProcess:
         """
