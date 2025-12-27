@@ -100,3 +100,36 @@ packages = ["src/ide_proxy"]
     assert (
         'Type of "instance.get_id()" is "int"' in result.stdout
     ), f"Pyright did not resolve the return type correctly.\n{diagnostic_info}"
+
+    # --- Part 2: Verify Precedence (Stub > Source) ---
+
+    # 8. Modify the stub file to remove the return type annotation.
+    # We locate the generated .pyi file in the source stub package directory.
+    # Namespace is "ide_proxy", so dir is "ide_proxy-stubs".
+    pyi_path = stub_pkg_path / "src" / "ide_proxy-stubs" / "models.pyi"
+    assert pyi_path.exists()
+
+    # Replace "-> int" with "" (stripping type info)
+    original_pyi_content = pyi_path.read_text()
+    stripped_pyi_content = original_pyi_content.replace("-> int", "")
+    pyi_path.write_text(stripped_pyi_content)
+
+    # 9. Reinstall the modified stub package to update site-packages.
+    # We use --force-reinstall to ensure pip updates the files.
+    isolated_env.install("--force-reinstall", str(stub_pkg_path))
+
+    # 10. Run Pyright again.
+    # Now that the stub has no return type, Pyright should treat it as Unknown/Any,
+    # IGNORING the source code which still has "-> int".
+    # This proves Pyright is indeed reading the .pyi file, not the .py file.
+    result_stripped = isolated_env.run_pyright_check(
+        Path("."), verbose=True, cwd=client_project_dir
+    )
+
+    assert result_stripped.returncode == 0
+    # Pyright default for unannotated return is Unknown
+    assert 'Type of "instance.get_id()" is "Unknown"' in result_stripped.stdout, (
+        f"Pyright should have fallen back to Unknown after stripping stubs.\n"
+        f"This implies it might be reading source code instead of stubs.\n"
+        f"STDOUT:\n{result_stripped.stdout}"
+    )
