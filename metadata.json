@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[COMMIT] refactor(runtime): 将 stitcher-needle 重构为模块化的 pyneedle 生态", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766801358.540641, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix: 修正 pyrefly 静态分析错误并完善协议", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766801479.647608, "duration_ms": 0}}
