@@ -65,8 +65,11 @@ class OverlayNexus(BaseLoader, NexusProtocol):
 
     def _get_writable_loader(self) -> Optional[WritableResourceLoaderProtocol]:
         for loader in self.loaders:
-            if isinstance(loader, WritableResourceLoaderProtocol):
-                return loader
+            # Duck typing: Check for the required methods instead of the type.
+            is_writable = hasattr(loader, "put") and hasattr(loader, "locate")
+            if is_writable:
+                # We can safely cast here because we've verified the contract.
+                return loader  # type: ignore
         return None
 
     def put(

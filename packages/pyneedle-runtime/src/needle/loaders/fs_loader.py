@@ -1,138 +1,164 @@
 import os
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Union, Tuple
 
 from .protocols import FileHandlerProtocol
 from .json_handler import JsonHandler
 
-
 from needle.spec import WritableResourceLoaderProtocol
 from needle.nexus import BaseLoader
-
-# ... imports ...
 
 
 class FileSystemLoader(BaseLoader, WritableResourceLoaderProtocol):
     def __init__(
         self,
-        roots: Optional[List[Path]] = None,
+        root: Optional[Path] = None,
         handlers: Optional[List[FileHandlerProtocol]] = None,
         default_domain: str = "en",
     ):
         super().__init__(default_domain)
         self.handlers = handlers or [JsonHandler()]
-        self.roots = roots or [self._find_project_root()]
+        self.root = root
 
-    def _find_project_root(self, start_dir: Optional[Path] = None) -> Path:
-        current_dir = (start_dir or Path.cwd()).resolve()
-        # Stop at filesystem root
-        while current_dir.parent != current_dir:
-            if (current_dir / "pyproject.toml").is_file() or (
-                current_dir / ".git"
-            ).is_dir():
-                return current_dir
-            current_dir = current_dir.parent
-        return start_dir or Path.cwd()
+        # Cache structure: domain -> flattened_dict
+        self._data_cache: Dict[str, Dict[str, str]] = {}
 
-    def add_root(self, path: Path):
-        if path not in self.roots:
-            self.roots.insert(0, path)
+    def _ensure_loaded(self, domain: str) -> Dict[str, str]:
+        if domain not in self._data_cache:
+            if not self.root:
+                self._data_cache[domain] = {}
+            else:
+                self._data_cache[domain] = self._scan_root(domain)
+        return self._data_cache[domain]
 
-    def fetch(
-        self, pointer: str, domain: str, ignore_cache: bool = False
-    ) -> Optional[str]:
-        # TODO: Implement optimized physical probing based on SST v2 relative keys.
-        # For now, we rely on the full load() method to maintain backward compatibility
-        # and correctness during the architectural migration.
-        registry = self.load(domain, ignore_cache)
-        val = registry.get(pointer)
-        return str(val) if val is not None else None
+    def _scan_root(self, domain: str) -> Dict[str, str]:
+        """Scans the single root and returns a merged, flattened dictionary."""
+        merged_data: Dict[str, str] = {}
 
-    def load(self, domain: str, ignore_cache: bool = False) -> Dict[str, Any]:
-        merged_registry: Dict[str, str] = {}
+        # Priority: .stitcher/needle overrides needle/
 
-        for root in self.roots:
-            # Path Option 1: .stitcher/needle/<domain> (for project-specific overrides)
-            hidden_path = root / ".stitcher" / "needle" / domain
-            if hidden_path.is_dir():
-                merged_registry.update(self._load_directory(hidden_path))
+        # 1. Load from standard asset path first (lower priority)
+        asset_path = self.root / "needle" / domain
+        if asset_path.is_dir():
+            merged_data.update(self._scan_directory_to_dict(asset_path))
 
-            # Path Option 2: needle/<domain> (for packaged assets)
-            asset_path = root / "needle" / domain
-            if asset_path.is_dir():
-                merged_registry.update(self._load_directory(asset_path))
+        # 2. Load from hidden path, overriding previous values (higher priority)
+        hidden_path = self.root / ".stitcher" / "needle" / domain
+        if hidden_path.is_dir():
+            merged_data.update(self._scan_directory_to_dict(hidden_path))
 
-        return merged_registry
+        return merged_data
 
-    def _load_directory(self, root_path: Path) -> Dict[str, str]:
-        registry: Dict[str, str] = {}
+    def _scan_directory_to_dict(self, root_path: Path) -> Dict[str, str]:
+        """Scans a directory and merges all found files into a single dictionary."""
+        data: Dict[str, str] = {}
         for dirpath, _, filenames in os.walk(root_path):
-            for filename in filenames:
+            for filename in sorted(filenames):
                 file_path = Path(dirpath) / filename
                 for handler in self.handlers:
                     if handler.match(file_path):
                         content = handler.load(file_path)
-                        # Ensure all values are strings for FQN registry
-                        for key, value in content.items():
-                            registry[str(key)] = str(value)
-                        break  # Stop after first matching handler
-        return registry
+                        prefix = self._calculate_prefix(file_path, root_path)
 
-    def _get_writable_path(self, pointer: str, domain: str) -> Path:
+                        for k, v in content.items():
+                            str_k = str(k)
+                            full_key = f"{prefix}.{str_k}" if prefix else str_k
+                            data[full_key] = str(v)
+                        break
+        return data
+
+    def _scan_directory(self, root_path: Path) -> List[Tuple[Path, Dict[str, str]]]:
         """
-        Determines the physical file path for a given pointer.
-        Prioritizes the first root (highest priority) and .stitcher hidden dir.
-        Strategy: Use FQN parts to build path.
-        e.g., L.auth.login.success -> auth/login.json
+        Scans a directory for supported files.
+        Returns a list of layers.
+        Note: The order of files within a directory is OS-dependent,
+        but we process them deterministically if needed.
         """
-        root = self.roots[0]  # Write to highest priority root
-        parts = pointer.split(".")
+        layers = []
+        # We walk top-down.
+        for dirpath, _, filenames in os.walk(root_path):
+            # Sort filenames to ensure deterministic loading order
+            for filename in sorted(filenames):
+                file_path = Path(dirpath) / filename
+                for handler in self.handlers:
+                    if handler.match(file_path):
+                        # Handler is responsible for flattening
+                        content = handler.load(file_path)
+                        prefix = self._calculate_prefix(file_path, root_path)
 
-        # Simple heuristic: Use the first part as directory, second as file, rest as keys
-        # But wait, our current physical layout logic in SST (Stitcher SST) is:
-        # needle/<lang>/<category>/<namespace>.json
-        # L.cli.ui.welcome -> needle/en/cli/ui.json -> key: welcome
-        # This requires pointer algebra knowledge or a heuristic.
+                        # Ensure content is strictly Dict[str, str] and prepend prefix
+                        str_content = {}
+                        for k, v in content.items():
+                            str_k = str(k)
+                            full_key = f"{prefix}.{str_k}" if prefix else str_k
+                            str_content[full_key] = str(v)
 
-        # For this MVP implementation, let's use a flat fallback or a simple folder strategy.
-        # Let's assume: <domain>/<p1>/<p2>.json if len > 2
-        # else <domain>/<p1>.json
+                        layers.append((file_path, str_content))
+                        break  # Only use the first matching handler per file
+        return layers
 
-        base_dir = root / ".stitcher" / "needle" / domain
+    def _calculate_prefix(self, file_path: Path, root_path: Path) -> str:
+        rel_path = file_path.relative_to(root_path)
+        # Remove suffix (e.g. .json)
+        parts = list(rel_path.with_suffix("").parts)
+        # Handle __init__ convention: remove it from prefix
+        if parts and parts[-1] == "__init__":
+            parts.pop()
+        return ".".join(parts)
 
-        if len(parts) >= 3:
-            # L.cli.ui.welcome -> cli/ui.json
-            relative = Path(*parts[:2]).with_suffix(".json")
-        elif len(parts) == 2:
-            # L.cli.help -> cli.json
-            relative = Path(parts[0]).with_suffix(".json")
-        else:
-            # L.error -> __init__.json (fallback)
-            relative = Path("__init__.json")
+    def fetch(
+        self, pointer: str, domain: str, ignore_cache: bool = False
+    ) -> Optional[str]:
+        if ignore_cache:
+            self._data_cache.pop(domain, None)
 
-        return base_dir / relative
+        data = self._ensure_loaded(domain)
+        return data.get(pointer)
+
+    def load(self, domain: str, ignore_cache: bool = False) -> Dict[str, Any]:
+        """Returns the aggregated view of the domain for this root."""
+        if ignore_cache:
+            self._data_cache.pop(domain, None)
+
+        # Return a copy to prevent mutation
+        return self._ensure_loaded(domain).copy()
 
     def locate(self, pointer: Union[str, Any], domain: str) -> Path:
-        return self._get_writable_path(str(pointer), domain)
+        """For a single-root loader, locate is deterministic."""
+        if not self.root:
+            raise RuntimeError("Cannot locate path on a loader with no root.")
+
+        key = str(pointer)
+        base_dir = self.root / ".stitcher" / "needle" / domain
+
+        parts = key.split(".")
+        filename = f"{parts[0]}.json"  # Default to JSON
+        return base_dir / filename
 
     def put(self, pointer: Union[str, Any], value: Any, domain: str) -> bool:
         key = str(pointer)
+        str_value = str(value)
+
+        # 1. Determine target path (always writes to .stitcher for user overrides)
         target_path = self.locate(key, domain)
 
-        # We need to find the specific handler for .json (default)
-        handler = self.handlers[0]  # Assume JSON for MVP writing
-
-        # Load existing (if any)
-        data = {}
+        # 2. Load existing data from that specific file, or create empty dict
+        handler = self.handlers[0]  # Default to JSON
+        file_data = {}
         if target_path.exists():
-            data = handler.load(target_path)
+            # NOTE: We load the raw file, not from our merged cache,
+            # to avoid writing aggregated data back into a single file.
+            # The handler will flatten it for us.
+            file_data = handler.load(target_path)
 
-        # Update
-        # Note: This simple put assumes the file structure matches the key structure
-        # based on _get_writable_path.
-        # But wait, load() flattens everything.
-        # If we write { "cli.ui.welcome": "Hi" } into cli/ui.json, that's fine for now.
-        # FQN keys in files are valid per SST.
-        data[key] = str(value)
+        # 3. Update the file's data
+        file_data[key] = str_value
 
-        return handler.save(target_path, data)
+        # 4. Save back to the specific file
+        success = handler.save(target_path, file_data)
+
+        # 5. Invalidate cache for this domain to force a reload on next access
+        if success:
+            self._data_cache.pop(domain, None)
+
+        return success
