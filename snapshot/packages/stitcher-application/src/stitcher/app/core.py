@@ -27,6 +27,7 @@ class FileCheckResult:
     path: str
     errors: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
     warnings: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
+    infos: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
     reconciled: Dict[str, List[str]] = field(
         default_factory=lambda: defaultdict(list)
     )
@@ -258,6 +259,26 @@ class StitcherApp:
         self, module: ModuleDef, force_relink: bool, reconcile: bool
     ) -> FileCheckResult:
         result = FileCheckResult(path=module.file_path)
+
+        # 1. Content Checks (Missing, Extra, Conflict, Pending)
+        # This populates errors/warnings for content-level issues.
+        if (self.root_path / module.file_path).with_suffix(".stitcher.yaml").exists():
+            doc_issues = self.doc_manager.check_module(module)
+            if doc_issues["missing"]:
+                result.warnings["missing"].extend(doc_issues["missing"])
+            if doc_issues["redundant"]:
+                result.warnings["redundant"].extend(doc_issues["redundant"])
+            if doc_issues["pending"]:
+                result.errors["pending"].extend(doc_issues["pending"])
+            if doc_issues["conflict"]:
+                result.errors["conflict"].extend(doc_issues["conflict"])
+            # 'extra' from check_module refers to keys in YAML not in Code.
+            # We will handle 'extra' in the state machine loop below to be consistent
+            # with hash checking, or merge them. check_module's extra is accurate for keys.
+            if doc_issues["extra"]:
+                result.errors["extra"].extend(doc_issues["extra"])
+
+        # 2. State Machine Checks (Signature Drift, Co-evolution, Doc Improvement)
         doc_path = (self.root_path / module.file_path).with_suffix(".stitcher.yaml")
         is_tracked = doc_path.exists()
 
@@ -275,31 +296,40 @@ class StitcherApp:
             s_stored = stored.get("signature_hash")
             d_stored = stored.get("document_hash")
 
+            # Case: Extra (In Storage, Not in Code)
             if not s_current and s_stored:
-                result.errors["extra"].append(fqn)
-                new_hashes_map.pop(fqn, None)
+                # doc_manager.check_module already reports 'extra' for keys in YAML.
+                # Here we ensure it's removed from hash storage.
+                # We don't need to report it again if doc_manager did, but cleaning up is good.
+                if fqn in new_hashes_map:
+                    new_hashes_map.pop(fqn, None)
                 continue
 
+            # Case: New (In Code, Not in Storage)
             if s_current and not s_stored:
                 if is_tracked:
-                    result.warnings["untracked_key"].append(fqn)
-                new_hashes_map[fqn] = {
-                    "signature_hash": s_current,
-                    "document_hash": d_current,
-                }
+                    # If it's a new function in a tracked file, check_module reports 'missing' or 'pending'.
+                    # We just need to initialize its hash.
+                    new_hashes_map[fqn] = {
+                        "signature_hash": s_current,
+                        "document_hash": d_current,
+                    }
                 continue
 
+            # Case: Existing (In Code and Storage)
             s_match = s_current == s_stored
             d_match = d_current == d_stored
 
             if s_match and d_match:
-                pass
+                pass  # Synchronized
             elif s_match and not d_match:
-                result.warnings["doc_improvement"].append(fqn)
+                # Doc Improvement: INFO, Auto-reconcile
+                result.infos["doc_improvement"].append(fqn)
                 if fqn in new_hashes_map:
                     new_hashes_map[fqn]["document_hash"] = d_current
                 result.auto_reconciled_count += 1
             elif not s_match and d_match:
+                # Signature Drift
                 if force_relink:
                     result.reconciled["force_relink"].append(fqn)
                     if fqn in new_hashes_map:
@@ -307,6 +337,7 @@ class StitcherApp:
                 else:
                     result.errors["signature_drift"].append(fqn)
             elif not s_match and not d_match:
+                # Co-evolution
                 if reconcile:
                     result.reconciled["reconcile"].append(fqn)
                     new_hashes_map[fqn] = {
@@ -316,6 +347,7 @@ class StitcherApp:
                 else:
                     result.errors["co_evolution"].append(fqn)
 
+        # 3. Untracked File check
         if not is_tracked and module.is_documentable():
             undocumented = module.get_undocumented_public_keys()
             if undocumented:
@@ -323,6 +355,7 @@ class StitcherApp:
             else:
                 result.warnings["untracked"].append("all")
 
+        # Save hash updates if any
         if new_hashes_map != stored_hashes_map:
             self.sig_manager.save_hashes(module, new_hashes_map)
 
@@ -342,8 +375,14 @@ class StitcherApp:
             for module in modules:
                 res = self._analyze_file(module, force_relink, reconcile)
                 if res.is_clean:
+                    # Even if clean, report Auto-reconciled (INFO)
+                    if res.auto_reconciled_count > 0:
+                        bus.info(
+                            f"[INFO] Automatically updated {res.auto_reconciled_count} documentation hash(es) in {res.path}"
+                        )
                     continue
 
+                # Report Reconciled Actions (Success)
                 if res.reconciled_count > 0:
                     for key in res.reconciled.get("force_relink", []):
                         bus.success(
@@ -353,6 +392,7 @@ class StitcherApp:
                         bus.success(
                             f"[OK] Reconciled changes for '{key}' in {res.path}"
                         )
+                # Report Auto-reconciled (INFO) - also here if file had other issues
                 if res.auto_reconciled_count > 0:
                     bus.info(
                         f"[INFO] Automatically updated {res.auto_reconciled_count} documentation hash(es) in {res.path}"
@@ -367,8 +407,9 @@ class StitcherApp:
                         L.check.file.warn, path=res.path, count=res.warning_count
                     )
 
+                # Report Specific Issues
                 for key in sorted(res.errors["extra"]):
-                    bus.error(f"[Extra Doc] '{key}': In docs but not in code.")
+                    bus.error(L.check.issue.extra, key=key)
                 for key in sorted(res.errors["signature_drift"]):
                     bus.error(
                         f"[Signature Drift] '{key}': Code changed, docs may be stale."
@@ -377,21 +418,35 @@ class StitcherApp:
                     bus.error(
                         f"[Co-evolution] '{key}': Both code and docs changed; intent unclear."
                     )
+                for key in sorted(res.errors["conflict"]):
+                    bus.error(L.check.issue.conflict, key=key)
+                for key in sorted(res.errors["pending"]):
+                    bus.error(L.check.issue.pending, key=key)
+
+                for key in sorted(res.warnings["missing"]):
+                    bus.warning(L.check.issue.missing, key=key)
+                for key in sorted(res.warnings["redundant"]):
+                    bus.warning(L.check.issue.redundant, key=key)
                 for key in sorted(res.warnings["untracked_key"]):
                     bus.warning(
                         f"[Untracked Code] '{key}': New public API without documentation."
                     )
-                for key in sorted(res.warnings["doc_improvement"]):
+                
+                # Infos are just printed, usually
+                for key in sorted(res.infos["doc_improvement"]):
                     bus.info(f"[Doc Updated] '{key}': Documentation was improved.")
+
                 if "untracked_detailed" in res.warnings:
                     keys = res.warnings["untracked_detailed"]
                     bus.warning(
-                        f"[Untracked File] '{res.path}' has {len(keys)} undocumented public APIs."
+                        L.check.file.untracked_with_details,
+                        path=res.path,
+                        count=len(keys),
                     )
+                    for key in sorted(keys):
+                        bus.warning(L.check.issue.untracked_missing_key, key=key)
                 elif "untracked" in res.warnings:
-                    bus.warning(
-                        f"[Untracked File] '{res.path}' is not tracked by stitcher."
-                    )
+                    bus.warning(L.check.file.untracked, path=res.path)
 
         if global_failed_files > 0:
             bus.error(L.check.run.fail, count=global_failed_files)

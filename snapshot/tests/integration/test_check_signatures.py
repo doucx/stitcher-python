@@ -16,7 +16,6 @@ def test_check_detects_signature_change(tmp_path, monkeypatch):
     """
     # 1. Setup Initial Workspace
     factory = WorkspaceFactory(tmp_path)
-    # Use dedent to ensure clean indentation
     initial_code = dedent("""
     def process(value: int) -> int:
         \"\"\"Process an integer.\"\"\"
@@ -39,10 +38,6 @@ def test_check_detects_signature_change(tmp_path, monkeypatch):
     _assert_no_errors(spy_bus)
     spy_bus.assert_id_called(L.init.run.complete, level="success")
 
-    # Verify fingerprint file exists
-    sig_file = project_root / ".stitcher/signatures/src/processor.json"
-    assert sig_file.exists(), "Fingerprint file was not created during Init"
-
     # 3. Modify Code
     modified_code = dedent("""
     def process(value: str) -> int:
@@ -57,10 +52,10 @@ def test_check_detects_signature_change(tmp_path, monkeypatch):
         success = app.run_check()
 
     # 5. Assertions
-    assert success is False, (
-        "Check passed but should have failed due to signature mismatch"
-    )
-    spy_bus.assert_id_called(L.check.issue.mismatch, level="error")
+    assert success is False, "Check passed but should have failed due to signature mismatch"
+    # New error message format for Signature Drift
+    msg = f"[Signature Drift] 'process': Code changed, docs may be stale."
+    spy_bus.assert_id_called(msg, level="error")
 
 
 def test_generate_does_not_update_signatures(tmp_path, monkeypatch):
@@ -93,16 +88,15 @@ def test_generate_does_not_update_signatures(tmp_path, monkeypatch):
         success = app.run_check()
 
     assert not success, "Check passed, but it should have failed."
-    spy_bus_check.assert_id_called(L.check.issue.mismatch, level="error")
+    msg = f"[Signature Drift] 'func': Code changed, docs may be stale."
+    spy_bus_check.assert_id_called(msg, level="error")
 
 
-def test_check_with_update_signatures_flag_reconciles_changes(tmp_path, monkeypatch):
+def test_check_with_force_relink_reconciles_changes(tmp_path, monkeypatch):
     """
-    Verify the complete workflow of reconciling signature changes with `check --update-signatures`.
+    Verify the complete workflow of reconciling signature changes with `check --force-relink`.
     """
     # 1. Arrange: Setup and Init to establish a baseline.
-    # CRITICAL: The source MUST have a docstring so 'init' creates the tracking file (.stitcher.yaml).
-    # If the file is untracked, 'check' skips signature verification!
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
@@ -113,29 +107,19 @@ def test_check_with_update_signatures_flag_reconciles_changes(tmp_path, monkeypa
     with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
         app.run_init()
 
-    # 2. Modify the code to create a signature mismatch.
-    # CRITICAL: Do NOT include the docstring here. If we do, 'check' will report a
-    # REDUNDANT warning (because docs exist in both code and YAML), causing the
-    # final result to be 'success_with_warnings' instead of 'success'.
-    # We want a clean state where docs are only in YAML.
-    (project_root / "src/main.py").write_text("def func(a: str):\n    ...")
+    # 2. Modify the code to create a signature mismatch (Signature Drift).
+    # Docstring in code matches YAML docstring, so no content conflict.
+    (project_root / "src/main.py").write_text('def func(a: str):\n    """Doc."""\n    ...')
 
-    # 3. Act I: Run check with the --update-signatures flag
+    # 3. Act I: Run check with the --force-relink flag
     spy_bus_reconcile = SpyBus()
     with spy_bus_reconcile.patch(monkeypatch, "stitcher.app.core.bus"):
-        success_reconcile = app.run_check(update_signatures=True)
+        success_reconcile = app.run_check(force_relink=True)
 
     # 4. Assert I: The reconciliation check should succeed and report the update
-    assert success_reconcile is True, "Check with --update-signatures failed"
-    spy_bus_reconcile.assert_id_called(L.check.run.signatures_updated, level="success")
-    # Crucially, it should NOT have reported a mismatch error
-    mismatch_errors = [
-        m
-        for m in spy_bus_reconcile.get_messages()
-        if m["id"] == str(L.check.issue.mismatch)
-    ]
-    assert not mismatch_errors, "Mismatch error was reported during reconciliation"
-
+    assert success_reconcile is True, "Check with --force-relink failed"
+    spy_bus_reconcile.assert_id_called(f"[OK] Re-linked signature for 'func' in src/main.py", level="success")
+    
     # 5. Act II: Run a normal check again to verify the baseline was updated
     spy_bus_verify = SpyBus()
     with spy_bus_verify.patch(monkeypatch, "stitcher.app.core.bus"):

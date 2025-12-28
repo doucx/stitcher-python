@@ -86,6 +86,7 @@ def test_state_doc_improvement_auto_reconciled(tmp_path, monkeypatch):
     # 4. Assert: Should pass, report doc improvement, and update doc hash
     assert success is True
     spy_bus.assert_id_called(f"[Doc Updated] 'func': Documentation was improved.", level="info")
+    # Because there are auto-reconciled items (infos), check reports clean success
     spy_bus.assert_id_called(L.check.run.success, level="success")
 
     final_hashes = _get_stored_hashes(project_root, "src/module.py")
