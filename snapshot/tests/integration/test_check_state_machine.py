@@ -84,10 +84,10 @@ def test_state_doc_improvement_auto_reconciled(tmp_path, monkeypatch):
     spy_bus.assert_id_called(L.check.run.success, level="success")
 
     final_hashes = _get_stored_hashes(project_root, "src/module.py")
-    assert final_hashes["func"]["code_structure_hash"] == initial_hashes["func"]["code_structure_hash"]
+    assert final_hashes["func"]["baseline_code_structure_hash"] == initial_hashes["func"]["baseline_code_structure_hash"]
     
     expected_hash = app.doc_manager.compute_yaml_content_hash(new_doc_content)
-    assert final_hashes["func"]["yaml_content_hash"] == expected_hash
+    assert final_hashes["func"]["baseline_yaml_content_hash"] == expected_hash
 
 
 def test_state_signature_drift_error(tmp_path, monkeypatch):
@@ -145,8 +145,8 @@ def test_state_signature_drift_force_relink(tmp_path, monkeypatch):
 
     final_hashes = _get_stored_hashes(project_root, "src/module.py")
     
-    assert final_hashes["func"]["code_structure_hash"] != initial_hashes["func"]["code_structure_hash"]
-    assert final_hashes["func"]["yaml_content_hash"] == initial_hashes["func"]["yaml_content_hash"]
+    assert final_hashes["func"]["baseline_code_structure_hash"] != initial_hashes["func"]["baseline_code_structure_hash"]
+    assert final_hashes["func"]["baseline_yaml_content_hash"] == initial_hashes["func"]["baseline_yaml_content_hash"]
 
 
 def test_state_co_evolution_error(tmp_path, monkeypatch):
@@ -210,8 +210,8 @@ def test_state_co_evolution_reconcile(tmp_path, monkeypatch):
     spy_bus.assert_id_called(L.check.run.success, level="success")
 
     final_hashes = _get_stored_hashes(project_root, "src/module.py")
-    assert final_hashes["func"]["code_structure_hash"] != initial_hashes["func"]["code_structure_hash"]
-    assert final_hashes["func"]["yaml_content_hash"] != initial_hashes["func"]["yaml_content_hash"]
+    assert final_hashes["func"]["baseline_code_structure_hash"] != initial_hashes["func"]["baseline_code_structure_hash"]
+    assert final_hashes["func"]["baseline_yaml_content_hash"] != initial_hashes["func"]["baseline_yaml_content_hash"]
     
     expected_doc_hash = app.doc_manager.compute_yaml_content_hash(new_doc_content)
-    assert final_hashes["func"]["yaml_content_hash"] == expected_doc_hash
+    assert final_hashes["func"]["baseline_yaml_content_hash"] == expected_doc_hash

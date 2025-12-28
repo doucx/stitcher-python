@@ -30,7 +30,7 @@ class SignatureManager:
     def save_composite_hashes(self, module: ModuleDef, hashes: Dict[str, Any]) -> None:
         """
         Saves the composite hash map for a module.
-        Expected format: { "FQN": { "code_structure_hash": "...", "yaml_content_hash": "..." } }
+        Expected format: { "FQN": { "baseline_code_structure_hash": "...", "baseline_yaml_content_hash": "..." } }
         """
         if not hashes:
             sig_path = self._get_sig_path(module)

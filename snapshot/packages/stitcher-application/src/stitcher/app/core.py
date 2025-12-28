@@ -241,8 +241,8 @@ class StitcherApp:
                 all_fqns = set(code_hashes.keys()) | set(yaml_hashes.keys())
                 for fqn in all_fqns:
                     combined[fqn] = {
-                        "code_structure_hash": code_hashes.get(fqn),
-                        "yaml_content_hash": yaml_hashes.get(fqn),
+                        "baseline_code_structure_hash": code_hashes.get(fqn),
+                        "baseline_yaml_content_hash": yaml_hashes.get(fqn),
                     }
                 self.sig_manager.save_composite_hashes(module, combined)
                 if output_path and output_path.name:
@@ -289,27 +289,27 @@ class StitcherApp:
             current_code_structure_hash = current_code_structure_map.get(fqn)
             current_yaml_content_hash = current_yaml_content_map.get(fqn)
             stored = stored_hashes_map.get(fqn, {})
-            stored_code_structure_hash = stored.get("code_structure_hash")
-            stored_yaml_content_hash = stored.get("yaml_content_hash")
+            baseline_code_structure_hash = stored.get("baseline_code_structure_hash")
+            baseline_yaml_content_hash = stored.get("baseline_yaml_content_hash")
 
             # Case: Extra (In Storage, Not in Code)
-            if not current_code_structure_hash and stored_code_structure_hash:
+            if not current_code_structure_hash and baseline_code_structure_hash:
                 if fqn in new_hashes_map:
                     new_hashes_map.pop(fqn, None)
                 continue
 
             # Case: New (In Code, Not in Storage)
-            if current_code_structure_hash and not stored_code_structure_hash:
+            if current_code_structure_hash and not baseline_code_structure_hash:
                 if is_tracked:
                     new_hashes_map[fqn] = {
-                        "code_structure_hash": current_code_structure_hash,
-                        "yaml_content_hash": current_yaml_content_hash,
+                        "baseline_code_structure_hash": current_code_structure_hash,
+                        "baseline_yaml_content_hash": current_yaml_content_hash,
                     }
                 continue
 
             # Case: Existing
-            code_structure_matches = current_code_structure_hash == stored_code_structure_hash
-            yaml_content_matches = current_yaml_content_hash == stored_yaml_content_hash
+            code_structure_matches = current_code_structure_hash == baseline_code_structure_hash
+            yaml_content_matches = current_yaml_content_hash == baseline_yaml_content_hash
 
             if code_structure_matches and yaml_content_matches:
                 pass  # Synchronized
@@ -317,14 +317,14 @@ class StitcherApp:
                 # Doc Improvement: INFO, Auto-reconcile
                 result.infos["doc_improvement"].append(fqn)
                 if fqn in new_hashes_map:
-                    new_hashes_map[fqn]["yaml_content_hash"] = current_yaml_content_hash
+                    new_hashes_map[fqn]["baseline_yaml_content_hash"] = current_yaml_content_hash
                 result.auto_reconciled_count += 1
             elif not code_structure_matches and yaml_content_matches:
                 # Signature Drift
                 if force_relink:
                     result.reconciled["force_relink"].append(fqn)
                     if fqn in new_hashes_map:
-                        new_hashes_map[fqn]["code_structure_hash"] = current_code_structure_hash
+                        new_hashes_map[fqn]["baseline_code_structure_hash"] = current_code_structure_hash
                 else:
                     result.errors["signature_drift"].append(fqn)
             elif not code_structure_matches and not yaml_content_matches:
@@ -332,8 +332,8 @@ class StitcherApp:
                 if reconcile:
                     result.reconciled["reconcile"].append(fqn)
                     new_hashes_map[fqn] = {
-                        "code_structure_hash": current_code_structure_hash,
-                        "yaml_content_hash": current_yaml_content_hash,
+                        "baseline_code_structure_hash": current_code_structure_hash,
+                        "baseline_yaml_content_hash": current_yaml_content_hash,
                     }
                 else:
                     result.errors["co_evolution"].append(fqn)

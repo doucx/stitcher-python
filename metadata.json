@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] refactor: 全面重构哈希命名与校验逻辑", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766895086.4546254, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] refactor: 强制执行哈希变量长命名规范", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766895540.2793546, "duration_ms": 0}}

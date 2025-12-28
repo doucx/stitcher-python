@@ -50,8 +50,8 @@ def test_manager_save_and_load_composite_hashes(tmp_path: Path):
     module = ModuleDef(file_path="src/main.py", functions=[create_func(name="foo")])
 
     hashes_to_save = {
-        "foo": {"code_structure_hash": "abc", "yaml_content_hash": "def"},
-        "bar": {"code_structure_hash": "123", "yaml_content_hash": None},
+        "foo": {"baseline_code_structure_hash": "abc", "baseline_yaml_content_hash": "def"},
+        "bar": {"baseline_code_structure_hash": "123", "baseline_yaml_content_hash": None},
     }
 
     # Act: Save
@@ -63,10 +63,10 @@ def test_manager_save_and_load_composite_hashes(tmp_path: Path):
 
     with sig_path.open("r") as f:
         data = json.load(f)
-        assert data["foo"]["code_structure_hash"] == "abc"
-        assert data["foo"]["yaml_content_hash"] == "def"
-        assert data["bar"]["code_structure_hash"] == "123"
-        assert data["bar"]["yaml_content_hash"] is None
+        assert data["foo"]["baseline_code_structure_hash"] == "abc"
+        assert data["foo"]["baseline_yaml_content_hash"] == "def"
+        assert data["bar"]["baseline_code_structure_hash"] == "123"
+        assert data["bar"]["baseline_yaml_content_hash"] is None
 
     # Act: Load
     loaded = manager.load_composite_hashes(module)
