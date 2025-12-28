@@ -1,0 +1,3 @@
+"NoOpInteractionHandler": |-
+  A non-interactive handler that resolves conflicts based on CLI flags.
+  This preserves the original behavior for CI/CD environments.
