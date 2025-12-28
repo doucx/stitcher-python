@@ -12,7 +12,21 @@ from stitcher.scanner import (
     inject_docstrings,
 )
 from stitcher.io import StubGenerator
-from stitcher.spec import ModuleDef
+import copy
+from pathlib import Path
+from typing import Dict, List, Optional
+from collections import defaultdict
+from dataclasses import dataclass, field
+
+from stitcher.scanner import (
+    parse_source_code,
+    parse_plugin_entry,
+    InspectionError,
+    strip_docstrings,
+    inject_docstrings,
+)
+from stitcher.io import StubGenerator
+from stitcher.spec import ModuleDef, ConflictType, ResolutionAction
 from stitcher.common import bus
 from needle.pointer import L
 from stitcher.config import load_config_from_path, StitcherConfig
@@ -21,6 +35,8 @@ from stitcher.app.services import (
     SignatureManager,
     StubPackageManager,
 )
+from .protocols import InteractionHandler, InteractionContext
+from .handlers.noop_handler import NoOpInteractionHandler
 
 
 @dataclass
@@ -55,12 +71,17 @@ class FileCheckResult:
 
 
 class StitcherApp:
-    def __init__(self, root_path: Path):
+    def __init__(
+        self,
+        root_path: Path,
+        interaction_handler: Optional[InteractionHandler] = None,
+    ):
         self.root_path = root_path
         self.generator = StubGenerator()
         self.doc_manager = DocumentManager(root_path)
         self.sig_manager = SignatureManager(root_path)
         self.stub_pkg_manager = StubPackageManager()
+        self.interaction_handler = interaction_handler
 
     def _scan_files(self, files_to_scan: List[Path]) -> List[ModuleDef]:
         modules = []
@@ -255,7 +276,7 @@ class StitcherApp:
         return all_created_files
 
     def _analyze_file(
-        self, module: ModuleDef, force_relink: bool, reconcile: bool
+        self, module: ModuleDef, handler: InteractionHandler
     ) -> FileCheckResult:
         result = FileCheckResult(path=module.file_path)
 
@@ -295,13 +316,11 @@ class StitcherApp:
             baseline_code_structure_hash = stored.get("baseline_code_structure_hash")
             baseline_yaml_content_hash = stored.get("baseline_yaml_content_hash")
 
-            # Case: Extra (In Storage, Not in Code)
             if not current_code_structure_hash and baseline_code_structure_hash:
                 if fqn in new_hashes_map:
                     new_hashes_map.pop(fqn, None)
                 continue
 
-            # Case: New (In Code, Not in Storage)
             if current_code_structure_hash and not baseline_code_structure_hash:
                 if is_tracked:
                     new_hashes_map[fqn] = {
@@ -310,7 +329,6 @@ class StitcherApp:
                     }
                 continue
 
-            # Case: Existing
             code_structure_matches = (
                 current_code_structure_hash == baseline_code_structure_hash
             )
@@ -319,9 +337,8 @@ class StitcherApp:
             )
 
             if code_structure_matches and yaml_content_matches:
-                pass  # Synchronized
+                pass
             elif code_structure_matches and not yaml_content_matches:
-                # Doc Improvement: INFO, Auto-reconcile
                 result.infos["doc_improvement"].append(fqn)
                 if fqn in new_hashes_map:
                     new_hashes_map[fqn]["baseline_yaml_content_hash"] = (
@@ -329,8 +346,13 @@ class StitcherApp:
                     )
                 result.auto_reconciled_count += 1
             elif not code_structure_matches and yaml_content_matches:
-                # Signature Drift
-                if force_relink:
+                context = InteractionContext(
+                    file_path=module.file_path,
+                    fqn=fqn,
+                    conflict_type=ConflictType.SIGNATURE_DRIFT,
+                )
+                action = handler.ask_resolution(context)
+                if action == ResolutionAction.RELINK:
                     result.reconciled["force_relink"].append(fqn)
                     if fqn in new_hashes_map:
                         new_hashes_map[fqn]["baseline_code_structure_hash"] = (
@@ -339,8 +361,13 @@ class StitcherApp:
                 else:
                     result.errors["signature_drift"].append(fqn)
             elif not code_structure_matches and not yaml_content_matches:
-                # Co-evolution
-                if reconcile:
+                context = InteractionContext(
+                    file_path=module.file_path,
+                    fqn=fqn,
+                    conflict_type=ConflictType.CO_EVOLUTION,
+                )
+                action = handler.ask_resolution(context)
+                if action == ResolutionAction.RECONCILE:
                     result.reconciled["reconcile"].append(fqn)
                     new_hashes_map[fqn] = {
                         "baseline_code_structure_hash": current_code_structure_hash,
@@ -349,7 +376,6 @@ class StitcherApp:
                 else:
                     result.errors["co_evolution"].append(fqn)
 
-        # 3. Untracked File check
         if not is_tracked and module.is_documentable():
             undocumented = module.get_undocumented_public_keys()
             if undocumented:
@@ -357,13 +383,16 @@ class StitcherApp:
             else:
                 result.warnings["untracked"].append("all")
 
-        # Save hash updates if any
         if new_hashes_map != stored_hashes_map:
             self.sig_manager.save_composite_hashes(module, new_hashes_map)
 
         return result
 
     def run_check(self, force_relink: bool = False, reconcile: bool = False) -> bool:
+        handler = self.interaction_handler or NoOpInteractionHandler(
+            force_relink=force_relink, reconcile=reconcile
+        )
+
         configs, _ = load_config_from_path(self.root_path)
         global_failed_files = 0
         global_warnings_files = 0
@@ -375,7 +404,7 @@ class StitcherApp:
             if not modules:
                 continue
             for module in modules:
-                res = self._analyze_file(module, force_relink, reconcile)
+                res = self._analyze_file(module, handler)
                 if res.is_clean:
                     if res.auto_reconciled_count > 0:
                         bus.info(
@@ -383,7 +412,6 @@ class StitcherApp:
                             count=res.auto_reconciled_count,
                             path=res.path,
                         )
-                    # Even if clean, we might want to report info-level updates like doc improvements
                     for key in sorted(res.infos["doc_improvement"]):
                         bus.info(L.check.state.doc_updated, key=key)
                     continue
