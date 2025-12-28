@@ -1,148 +1,96 @@
-这是 `libcst` 的一个关键验证机制导致的错误，也揭示了我们在设计 `format_docstring` 时的一个细微但致命的误解。
+很好，测试失败证实了我们的重构已生效：代码现在生成的是新的 `ruff` 风格文档字符串，但现有的测试用例仍期望旧的紧凑格式。
 
-1.  **LibCST 的 `SimpleString` 规则**: `cst.SimpleString(value=...)` 接受的 `value` 必须是一个**合法的 Python 字符串字面量**。这意味着它必须以引号开头（如 `"""`）。它**不能**以空白（缩进）开头。LibCST 期望缩进由包含该字符串的语句节点（如 `SimpleStatementLine`）来管理。
-2.  **`format_docstring` 的当前实现**: 我们的函数目前返回的是 `    """doc"""`（包含起始缩进）。这对 `StubGenerator`（纯文本拼接）是方便的，但对 `InjectorTransformer`（AST 构建）是**非法**的。
+这正是我们预期的结果。这表明我们的“单一事实来源”策略正在发挥作用，现在 `eject`（通过 `InjectorTransformer`）和 `generate`（通过 `StubGenerator`）都在生成完全相同的、标准化的输出。
 
-我们需要调整 `format_docstring` 的语义：
-*   **它应该返回**: 文档字符串的**字面量内容**，其中包含**内部行**的正确缩进（因为这是字面量的一部分）。
-*   **它不应该返回**: **第一行**的起始缩进（因为这是代码结构的一部分，由调用者控制）。
+现在，我们需要做的就是更新这些旧的测试用例，让它们接受这个新的、更好的格式标准。
 
-**修正后的行为示例**:
-输入: `content="a\nb"`, `indent="    "`
-输出: `"""\na\n    b\n    """` (注意第一行 `"""` 前无空格)
-
-这样：
-1.  **对于 `InjectorTransformer`**: 直接将此输出传给 `SimpleString(value=...)` 是合法的。LibCST 会在打印 AST 时自动为第一行添加缩进。
-2.  **对于 `StubGenerator`**: 我们需要在拼接时手动加上起始缩进：`lines.append(f"{indent}{formatted_doc}")`。
-
-这在逻辑上更正确：`format_docstring` 负责生成一个符合格式的字符串对象，而“把它放在哪一行、缩进多少”是使用者的责任。
-
-我将生成一个计划，修改 `formatting.py` 并同步更新 `StubGenerator`。
-
-## [WIP] fix(common): 调整 format_docstring 以兼容 LibCST 节点规范
+## [WIP] test: 更新 scanner 测试以匹配 ruff 格式标准
 
 ### 用户需求
-修复 `stitcher-scanner` 测试中出现的 `CSTValidationError: Invalid string prefix` 错误。
+更新 `stitcher-scanner` 的测试用例，使其期望的输出符合新的、统一的 `ruff` 文档字符串格式标准（多行字符串的引号单独成行）。
 
 ### 评论
-这个修复不仅仅是为了消除错误，它纠正了我们对“格式化代理”职责的定义。代理应该产生合法的 Python 对象表示（字符串字面量），而不是特定于上下文的代码片段（带缩进的行）。这种职责分离使得我们的代理能同时完美服务于文本生成器（StubGenerator）和 AST 构建器（LibCST）。
+这是标准化的最后一步。我们已经不仅在代码层面实现了 DRY，还在测试层面建立了统一的“黄金标准”。现在，无论是生成的 `.pyi` 文件还是注入回 `.py` 文件的文档，都将遵循完全相同的、高质量的格式规范。
 
 ### 目标
-1.  修改 `packages/stitcher-common/src/stitcher/common/formatting.py` 中的 `format_docstring` 函数，使其返回的字符串**不再包含起始缩进**。
-2.  修改 `packages/stitcher-io/src/stitcher/io/stub_generator.py`，在调用 `format_docstring` 的所有地方，手动在其返回结果前添加缩进。
+1.  修改 `packages/stitcher-scanner/tests/test_transformer_multiline.py`。
+2.  更新 `test_inject_preserves_multiline_indentation` 和 `test_inject_preserves_indentation_nested_class` 中的 `expected_code` 字符串，使其匹配新的多行文档字符串格式。
 
 ### 基本原理
-LibCST 的 `SimpleString` 节点值不能包含前导空白。通过移除 `format_docstring` 返回值的前导空白，我们满足了 LibCST 的要求。同时，对于基于文本的 `StubGenerator`，我们只需在拼接时显式补上这个缩进即可保持原有行为不变。
+测试断言必须反映代码的预期行为。既然我们已经决定在全项目范围内采纳 `ruff` 风格，测试数据就必须随之更新，以验证代码是否正确执行了这一标准。
 
 ### 标签
-#intent/fix #flow/ready #priority/high
-#comp/common #comp/io #scope/dx
+#intent/tooling #flow/ready #priority/high
+#comp/scanner #comp/tests #scope/dx
 #ai/instruct
-#task/domain/testing #task/object/formatter #task/action/bug-fix
+#task/domain/testing #task/object/injector-transformer #task/action/update
 #task/state/continue
 
 ---
 ### Script
 
-#### Acts 1: 修正 `formatting.py` 去除起始缩进
+#### Acts 1: 更新 `test_transformer_multiline.py` 中的断言
 
-我们将修改 `format_docstring`，只负责内部行的缩进和引号包裹，不再添加第一行的缩进。
-
-~~~~~act
-patch_file
-packages/stitcher-common/src/stitcher/common/formatting.py
-~~~~~
-~~~~~python.old
-    if len(lines) == 1:
-        # Single line: keep it compact and escape internal quotes
-        processed_doc = content.replace('"""', '\\"\\"\\"')
-        return f'{indent_str}"""{processed_doc}"""'
-
-    # Multi-line: adopt the ruff/black style for readability
-    # Re-indent all lines to match the current level.
-    indented_body = "\n".join(f"{indent_str}{line}" for line in lines)
-    return f'{indent_str}"""\n{indented_body}\n{indent_str}"""'
-~~~~~
-~~~~~python.new
-    if len(lines) == 1:
-        # Single line: keep it compact and escape internal quotes
-        processed_doc = content.replace('"""', '\\"\\"\\"')
-        return f'"""{processed_doc}"""'
-
-    # Multi-line: adopt the ruff/black style for readability
-    # Re-indent all lines to match the current level.
-    # Note: The start quotes do NOT have indentation here, as that is handled
-    # by the caller (StubGenerator) or the AST wrapper (LibCST).
-    # However, internal lines MUST have the indentation.
-    indented_body = "\n".join(f"{indent_str}{line}" for line in lines)
-    return f'"""\n{indented_body}\n{indent_str}"""'
-~~~~~
-
-#### Acts 2: 更新 `StubGenerator` 以手动添加起始缩进
-
-由于 `format_docstring` 不再返回起始缩进，我们需要在 `stub_generator.py` 中手动拼接它。
+我们将更新这两个测试用例中的 `expected_code`，将原本紧凑的多行字符串改为新的展开格式。
 
 ~~~~~act
 patch_file
-packages/stitcher-io/src/stitcher/io/stub_generator.py
+packages/stitcher-scanner/tests/test_transformer_multiline.py
 ~~~~~
 ~~~~~python.old
-        # 1. Module Docstring
-        if module.docstring:
-            lines.append(format_docstring(module.docstring, self._indent(0)))
-            lines.append("")  # Empty line after docstring
+    # 3. The expected, correctly formatted output
+    expected_code = dedent("""
+    def my_func(arg1: int):
+        \"\"\"This is the first line.
+        This is the second line.\"\"\"
+        pass
+    """).strip()
 ~~~~~
 ~~~~~python.new
-        # 1. Module Docstring
-        if module.docstring:
-            # format_docstring returns the literal without starting indent, so we prepend it.
-            # For module level (level 0), indent is empty string, but consistent logic applies.
-            formatted = format_docstring(module.docstring, self._indent(0))
-            lines.append(f"{self._indent(0)}{formatted}")
-            lines.append("")  # Empty line after docstring
+    # 3. The expected, correctly formatted output
+    expected_code = dedent("""
+    def my_func(arg1: int):
+        \"\"\"
+        This is the first line.
+        This is the second line.
+        \"\"\"
+        pass
+    """).strip()
 ~~~~~
 
 ~~~~~act
 patch_file
-packages/stitcher-io/src/stitcher/io/stub_generator.py
+packages/stitcher-scanner/tests/test_transformer_multiline.py
 ~~~~~
 ~~~~~python.old
-        # Body
-        if func.docstring:
-            lines.append(def_line)
-            lines.append(format_docstring(func.docstring, self._indent(level + 1)))
-            lines.append(f"{self._indent(level + 1)}...")
+    # Expected: Line 2 should have 8 spaces indentation (4 for class + 4 for method)
+    expected_code = dedent("""
+    class MyClass:
+        def my_method(self):
+            \"\"\"Line 1.
+            Line 2.\"\"\"
+            pass
+    """).strip()
 ~~~~~
 ~~~~~python.new
-        # Body
-        if func.docstring:
-            lines.append(def_line)
-            formatted = format_docstring(func.docstring, self._indent(level + 1))
-            lines.append(f"{self._indent(level + 1)}{formatted}")
-            lines.append(f"{self._indent(level + 1)}...")
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-io/src/stitcher/io/stub_generator.py
-~~~~~
-~~~~~python.old
-        # Docstring
-        if cls.docstring:
-            lines.append(format_docstring(cls.docstring, self._indent(level + 1)))
-            has_content = True
-~~~~~
-~~~~~python.new
-        # Docstring
-        if cls.docstring:
-            formatted = format_docstring(cls.docstring, self._indent(level + 1))
-            lines.append(f"{self._indent(level + 1)}{formatted}")
-            has_content = True
+    # Expected: Line 2 should have 8 spaces indentation (4 for class + 4 for method)
+    expected_code = dedent("""
+    class MyClass:
+        def my_method(self):
+            \"\"\"
+            Line 1.
+            Line 2.
+            \"\"\"
+            pass
+    """).strip()
 ~~~~~
 ### 下一步建议
-我们已经修正了 `formatting.py` 和 `StubGenerator`。现在：
-1.  `format_docstring` 返回合法的、无起始缩进的字符串字面量。
-2.  `StubGenerator` 手动处理起始缩进，因此其输出保持不变（仍符合 ruff 风格）。
-3.  `InjectorTransformer`（未修改）直接使用 `format_docstring` 的返回值，现在这应该能通过 LibCST 的验证了。
+更新测试后，请再次运行完整的测试套件。此时，`stitcher-io` 和 `stitcher-scanner` 的所有相关测试都应该通过。
 
-请重新运行测试。现在所有的测试，包括 `stitcher-io` 的生成测试和 `stitcher-scanner` 的注入测试，都应该能通过。这将标志着我们彻底解决了文档字符串格式不一致和 DRY 违规的问题。
+这将标志着我们彻底完成了对“pyi 写回机制不正确”这一严重问题的修复：
+1.  我们消除了重复代码（DRY）。
+2.  我们建立了统一的格式化代理。
+3.  我们实施了高标准的格式规范（ruff style）。
+4.  我们确保了 `generate` 和 `eject` 的行为完全一致。
+
+一旦测试通过，您就可以放心地提交这些更改了。
