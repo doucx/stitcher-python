@@ -25,9 +25,6 @@ def main(
         False, "--verbose", "-v", help="Enable debug logging."
     ),
 ):
-    """
-    Stitcher CLI entry point.
-    """
     # The CLI is the composition root. It decides *which* renderer to use.
     # We configure it here to capture the global verbose flag.
     cli_renderer = CliRenderer(verbose=verbose)
