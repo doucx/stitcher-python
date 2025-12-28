@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[COMMIT] fix: 修复 check 持久化失效 Bug 并完善中文本地化", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766903018.3645399, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat: 泛化交互模型并集成至 hydrate 命令", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766903358.5179183, "duration_ms": 0}}

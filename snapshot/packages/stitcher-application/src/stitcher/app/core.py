@@ -500,8 +500,11 @@ class StitcherApp:
     ) -> bool:
         bus.info(L.hydrate.run.start)
         configs, _ = load_config_from_path(self.root_path)
-        total_updated = 0
-        total_conflicts = 0
+        
+        all_modules: List[ModuleDef] = []
+        all_conflicts: List[InteractionContext] = []
+        
+        # 1. Analysis Phase (Dry Run)
         for config in configs:
             if config.name != "default":
                 bus.info(L.generate.target.processing, name=config.name)
@@ -509,68 +512,118 @@ class StitcherApp:
             modules = self._scan_files(unique_files)
             if not modules:
                 continue
-            files_to_strip = []
+            all_modules.extend(modules)
+            
             for module in modules:
-                result = self.doc_manager.hydrate_module(
-                    module, force=force, reconcile=reconcile
+                # Dry run to detect conflicts
+                res = self.doc_manager.hydrate_module(
+                    module, force=force, reconcile=reconcile, dry_run=True
                 )
-                if not result["success"]:
-                    total_conflicts += 1
-                    for conflict_key in result["conflicts"]:
-                        bus.error(
-                            L.hydrate.error.conflict,
-                            path=module.file_path,
-                            key=conflict_key,
+                if not res["success"]:
+                    for key in res["conflicts"]:
+                        all_conflicts.append(
+                            InteractionContext(
+                                module.file_path, key, ConflictType.DOC_CONTENT_CONFLICT
+                            )
                         )
-                    continue
-                if result["reconciled_keys"]:
-                    bus.info(
-                        L.hydrate.info.reconciled,
+
+        # 2. Decision Phase
+        resolutions_by_file: Dict[str, Dict[str, ResolutionAction]] = defaultdict(dict)
+        
+        if all_conflicts:
+            if self.interaction_handler:
+                chosen_actions = self.interaction_handler.process_interactive_session(all_conflicts)
+            else:
+                handler = NoOpInteractionHandler(hydrate_force=force, hydrate_reconcile=reconcile)
+                chosen_actions = handler.process_interactive_session(all_conflicts)
+            
+            for i, context in enumerate(all_conflicts):
+                action = chosen_actions[i]
+                if action == ResolutionAction.ABORT:
+                    bus.warning(L.hydrate.run.conflict, count=len(all_conflicts)) # Reuse conflict msg as abort indicator?
+                    bus.error("Hydration aborted by user.")
+                    return False
+                resolutions_by_file[context.file_path][context.fqn] = action
+
+        # 3. Execution Phase
+        total_updated = 0
+        total_conflicts_remaining = 0
+        files_to_strip = []
+        
+        for module in all_modules:
+            resolution_map = resolutions_by_file.get(module.file_path, {})
+            
+            # Execute hydration with resolutions
+            result = self.doc_manager.hydrate_module(
+                module, force=force, reconcile=reconcile, resolution_map=resolution_map, dry_run=False
+            )
+            
+            if not result["success"]:
+                # If conflicts persist (e.g. user chose SKIP), verify failure
+                total_conflicts_remaining += len(result["conflicts"])
+                for conflict_key in result["conflicts"]:
+                    bus.error(
+                        L.hydrate.error.conflict,
                         path=module.file_path,
-                        count=len(result["reconciled_keys"]),
+                        key=conflict_key,
                     )
-                if result["updated_keys"]:
-                    total_updated += 1
-                    bus.success(
-                        L.hydrate.file.success,
-                        path=module.file_path,
-                        count=len(result["updated_keys"]),
-                    )
-                code_hashes = self.sig_manager.compute_code_structure_hashes(module)
-                yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
-                all_fqns = set(code_hashes.keys()) | set(yaml_hashes.keys())
-                combined = {
-                    fqn: {
-                        "code_structure_hash": code_hashes.get(fqn),
-                        "yaml_content_hash": yaml_hashes.get(fqn),
-                    }
-                    for fqn in all_fqns
+                continue
+            
+            if result["reconciled_keys"]:
+                bus.info(
+                    L.hydrate.info.reconciled,
+                    path=module.file_path,
+                    count=len(result["reconciled_keys"]),
+                )
+            if result["updated_keys"]:
+                total_updated += 1
+                bus.success(
+                    L.hydrate.file.success,
+                    path=module.file_path,
+                    count=len(result["updated_keys"]),
+                )
+            
+            # Update signatures if successful
+            code_hashes = self.sig_manager.compute_code_structure_hashes(module)
+            yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
+            all_fqns = set(code_hashes.keys()) | set(yaml_hashes.keys())
+            combined = {
+                fqn: {
+                    "baseline_code_structure_hash": code_hashes.get(fqn),
+                    "baseline_yaml_content_hash": yaml_hashes.get(fqn),
                 }
-                self.sig_manager.save_composite_hashes(module, combined)
-                files_to_strip.append(module)
-            if strip and files_to_strip:
-                stripped_count = 0
-                for module in files_to_strip:
-                    source_path = self.root_path / module.file_path
-                    try:
-                        original_content = source_path.read_text(encoding="utf-8")
-                        stripped_content = strip_docstrings(original_content)
-                        if original_content != stripped_content:
-                            source_path.write_text(stripped_content, encoding="utf-8")
-                            stripped_count += 1
-                            relative_path = source_path.relative_to(self.root_path)
-                            bus.success(L.strip.file.success, path=relative_path)
-                    except Exception as e:
-                        bus.error(L.error.generic, error=e)
-                if stripped_count > 0:
-                    bus.success(L.strip.run.complete, count=stripped_count)
-        if total_conflicts > 0:
-            bus.error(L.hydrate.run.conflict, count=total_conflicts)
+                for fqn in all_fqns
+            }
+            self.sig_manager.save_composite_hashes(module, combined)
+            files_to_strip.append(module)
+
+        # 4. Strip Phase (Optional)
+        if strip and files_to_strip:
+            stripped_count = 0
+            for module in files_to_strip:
+                source_path = self.root_path / module.file_path
+                try:
+                    original_content = source_path.read_text(encoding="utf-8")
+                    stripped_content = strip_docstrings(original_content)
+                    if original_content != stripped_content:
+                        source_path.write_text(stripped_content, encoding="utf-8")
+                        stripped_count += 1
+                        relative_path = source_path.relative_to(self.root_path)
+                        bus.success(L.strip.file.success, path=relative_path)
+                except Exception as e:
+                    bus.error(L.error.generic, error=e)
+            if stripped_count > 0:
+                bus.success(L.strip.run.complete, count=stripped_count)
+
+        if total_conflicts_remaining > 0:
+            bus.error(L.hydrate.run.conflict, count=total_conflicts_remaining)
             return False
+            
         if total_updated == 0:
             bus.info(L.hydrate.run.no_changes)
         else:
             bus.success(L.hydrate.run.complete, count=total_updated)
+            
         return True
 
     # ... rest of methods (run_strip, run_eject) remain same ...

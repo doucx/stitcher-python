@@ -46,7 +46,11 @@ class TyperInteractionHandler(InteractionHandler):
             elif context.conflict_type == ConflictType.CO_EVOLUTION:
                 typer.secho("  Reason: Both signature and docs have changed (Co-evolution).")
                 menu.append(("[R]econcile", ResolutionAction.RECONCILE, "Accept both changes as the new correct state."))
-            
+            elif context.conflict_type == ConflictType.DOC_CONTENT_CONFLICT:
+                typer.secho("  Reason: Source code docstring differs from YAML docstring.")
+                menu.append(("[F]orce-hydrate", ResolutionAction.HYDRATE_OVERWRITE, "Overwrite YAML with code docs (Code-first)."))
+                menu.append(("[R]econcile", ResolutionAction.HYDRATE_KEEP_EXISTING, "Keep existing YAML docs (YAML-first)."))
+
             menu.append(("[S]kip", ResolutionAction.SKIP, "Skip this conflict for now."))
             menu.append(("[A]bort", ResolutionAction.ABORT, "Abort the entire check process."))
             menu.append(("[Z]Undo", "UNDO", "Go back to the previous conflict."))
@@ -63,10 +67,16 @@ class TyperInteractionHandler(InteractionHandler):
             # --- Process Input ---
             if char == '\r' or char == '\n': # Enter
                 action = default_choice
-            elif char == 'f' and any(a == ResolutionAction.RELINK for _, a, _ in menu):
-                action = ResolutionAction.RELINK
-            elif char == 'r' and any(a == ResolutionAction.RECONCILE for _, a, _ in menu):
-                action = ResolutionAction.RECONCILE
+            elif char == 'f':
+                 if any(a == ResolutionAction.RELINK for _, a, _ in menu):
+                    action = ResolutionAction.RELINK
+                 elif any(a == ResolutionAction.HYDRATE_OVERWRITE for _, a, _ in menu):
+                    action = ResolutionAction.HYDRATE_OVERWRITE
+            elif char == 'r':
+                 if any(a == ResolutionAction.RECONCILE for _, a, _ in menu):
+                    action = ResolutionAction.RECONCILE
+                 elif any(a == ResolutionAction.HYDRATE_KEEP_EXISTING for _, a, _ in menu):
+                    action = ResolutionAction.HYDRATE_KEEP_EXISTING
             elif char == 's':
                 action = ResolutionAction.SKIP
             elif char == 'a':
