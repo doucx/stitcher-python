@@ -1,3 +1,4 @@
+import copy
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 from collections import defaultdict
@@ -281,7 +282,7 @@ class StitcherApp:
         current_code_structure_map = self.sig_manager.compute_code_structure_hashes(module)
         current_yaml_content_map = self.doc_manager.compute_yaml_content_hashes(module)
         stored_hashes_map = self.sig_manager.load_composite_hashes(module)
-        new_hashes_map = stored_hashes_map.copy()
+        new_hashes_map = copy.deepcopy(stored_hashes_map)
 
         all_fqns = set(current_code_structure_map.keys()) | set(stored_hashes_map.keys())
 
@@ -372,6 +373,9 @@ class StitcherApp:
                             count=res.auto_reconciled_count,
                             path=res.path
                         )
+                    # Even if clean, we might want to report info-level updates like doc improvements
+                    for key in sorted(res.infos["doc_improvement"]):
+                        bus.info(L.check.state.doc_updated, key=key)
                     continue
 
                 if res.reconciled_count > 0:
@@ -401,7 +405,7 @@ class StitcherApp:
 
                 # Report Specific Issues
                 for key in sorted(res.errors["extra"]):
-                    bus.error(L.check.state.extra_doc, key=key)
+                    bus.error(L.check.issue.extra, key=key)
                 for key in sorted(res.errors["signature_drift"]):
                     bus.error(L.check.state.signature_drift, key=key)
                 for key in sorted(res.errors["co_evolution"]):
