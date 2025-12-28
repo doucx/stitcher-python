@@ -59,16 +59,20 @@ class FileSystemLoader(BaseLoader, WritableResourceLoaderProtocol):
                 for handler in self.handlers:
                     if handler.match(file_path):
                         content = handler.load(file_path)
-                        str_content = {str(k): str(v) for k, v in content.items()}
-                        data.update(str_content)
+                        prefix = self._calculate_prefix(file_path, root_path)
+
+                        for k, v in content.items():
+                            str_k = str(k)
+                            full_key = f"{prefix}.{str_k}" if prefix else str_k
+                            data[full_key] = str(v)
                         break
         return data
 
     def _scan_directory(self, root_path: Path) -> List[Tuple[Path, Dict[str, str]]]:
         """
         Scans a directory for supported files.
-        Returns a list of layers. 
-        Note: The order of files within a directory is OS-dependent, 
+        Returns a list of layers.
+        Note: The order of files within a directory is OS-dependent,
         but we process them deterministically if needed.
         """
         layers = []
@@ -81,11 +85,27 @@ class FileSystemLoader(BaseLoader, WritableResourceLoaderProtocol):
                     if handler.match(file_path):
                         # Handler is responsible for flattening
                         content = handler.load(file_path)
-                        # Ensure content is strictly Dict[str, str]
-                        str_content = {str(k): str(v) for k, v in content.items()}
+                        prefix = self._calculate_prefix(file_path, root_path)
+
+                        # Ensure content is strictly Dict[str, str] and prepend prefix
+                        str_content = {}
+                        for k, v in content.items():
+                            str_k = str(k)
+                            full_key = f"{prefix}.{str_k}" if prefix else str_k
+                            str_content[full_key] = str(v)
+
                         layers.append((file_path, str_content))
-                        break # Only use the first matching handler per file
+                        break  # Only use the first matching handler per file
         return layers
+
+    def _calculate_prefix(self, file_path: Path, root_path: Path) -> str:
+        rel_path = file_path.relative_to(root_path)
+        # Remove suffix (e.g. .json)
+        parts = list(rel_path.with_suffix("").parts)
+        # Handle __init__ convention: remove it from prefix
+        if parts and parts[-1] == "__init__":
+            parts.pop()
+        return ".".join(parts)
 
     def fetch(
         self, pointer: str, domain: str, ignore_cache: bool = False
