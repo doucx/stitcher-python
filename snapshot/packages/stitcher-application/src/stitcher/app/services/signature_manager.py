@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict
 
 from stitcher.spec import ModuleDef, Fingerprint, InvalidFingerprintKeyError
 
@@ -51,7 +51,7 @@ class SignatureManager:
                 data = json.load(f)
                 if not isinstance(data, dict):
                     return {}
-                
+
                 # Deserialize into Fingerprint objects.
                 # If any key is invalid (e.g. legacy format), we catch the error
                 # and treat the whole file as corrupted/outdated -> return empty.

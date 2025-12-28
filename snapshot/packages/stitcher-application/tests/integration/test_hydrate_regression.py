@@ -5,9 +5,7 @@ from stitcher.test_utils import WorkspaceFactory, SpyBus
 from needle.pointer import L
 
 
-def test_hydrate_does_not_rewrite_synced_legacy_signatures(
-    tmp_path: Path, monkeypatch
-):
+def test_hydrate_does_not_rewrite_synced_legacy_signatures(tmp_path: Path, monkeypatch):
     """
     Regression Test: Verifies that `hydrate` does not rewrite signature files
     when they are in sync but use a legacy key schema.
@@ -30,9 +28,7 @@ def test_hydrate_does_not_rewrite_synced_legacy_signatures(
 
     # 2. Arrange: Manually convert the signature file to the legacy format.
     # This simulates the state of the project before the key name change.
-    sig_file_path = (
-        project_root / ".stitcher/signatures/src/main.json"
-    )
+    sig_file_path = project_root / ".stitcher/signatures/src/main.json"
     with sig_file_path.open("r") as f:
         data = json.load(f)
 
@@ -50,7 +46,6 @@ def test_hydrate_does_not_rewrite_synced_legacy_signatures(
     # We also strip the source docstring to ensure hydrate has nothing to do.
     (project_root / "src/main.py").write_text("def func(a: int): ...")
 
-    content_before = sig_file_path.read_text()
     spy_bus = SpyBus()
 
     # 3. Act: Run the hydrate command.
@@ -65,7 +60,7 @@ def test_hydrate_does_not_rewrite_synced_legacy_signatures(
     data_after = json.loads(sig_file_path.read_text())
 
     assert success is True
-    
+
     # Verify the new schema is present for the function
     fp_func = data_after.get("func", {})
     assert "baseline_code_structure_hash" in fp_func, (

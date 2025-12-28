@@ -5,13 +5,10 @@ from typing import Dict, Any, Optional
 # Axiom: [State]_[Source]_[Object]_hash
 # Example: baseline_code_structure_hash
 # We enforce 4 segments, starting with state, ending with hash.
-FINGERPRINT_KEY_PATTERN = re.compile(
-    r"^(baseline|current)_[a-z]+_[a-z]+_hash$"
-)
+FINGERPRINT_KEY_PATTERN = re.compile(r"^(baseline|current)_[a-z]+_[a-z]+_hash$")
 
 
 class InvalidFingerprintKeyError(KeyError):
-    """Raised when a key does not conform to the Fingerprint naming axiom."""
     def __init__(self, key: str):
         super().__init__(
             f"Key '{key}' does not conform to the Fingerprint naming axiom "
@@ -21,10 +18,6 @@ class InvalidFingerprintKeyError(KeyError):
 
 @dataclass
 class Fingerprint:
-    """
-    A dynamic, self-validating container for symbol fingerprints.
-    It enforces that all keys adhere to the strict naming axiom.
-    """
     _hashes: Dict[str, str] = field(default_factory=dict)
 
     @staticmethod
@@ -34,10 +27,6 @@ class Fingerprint:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Fingerprint":
-        """
-        Constructs a Fingerprint from a dictionary.
-        Validates all keys immediately. Any invalid key raises InvalidFingerprintKeyError.
-        """
         validated_hashes = {}
         for key, value in data.items():
             cls._validate_key(key)
@@ -46,7 +35,6 @@ class Fingerprint:
         return cls(_hashes=validated_hashes)
 
     def to_dict(self) -> Dict[str, str]:
-        """Returns a copy of the internal hashes."""
         return self._hashes.copy()
 
     def get(self, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -67,7 +55,7 @@ class Fingerprint:
 
     def items(self):
         return self._hashes.items()
-        
+
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, Fingerprint):
             return NotImplemented

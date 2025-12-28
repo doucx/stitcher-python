@@ -244,7 +244,7 @@ class StitcherApp:
                 output_path = self.doc_manager.save_docs_for_module(module)
                 code_hashes = self.sig_manager.compute_code_structure_hashes(module)
                 yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
-                
+
                 combined: Dict[str, Fingerprint] = {}
                 all_fqns = set(code_hashes.keys()) | set(yaml_hashes.keys())
                 for fqn in all_fqns:
@@ -254,7 +254,7 @@ class StitcherApp:
                     if fqn in yaml_hashes:
                         fp["baseline_yaml_content_hash"] = yaml_hashes[fqn]
                     combined[fqn] = fp
-                
+
                 self.sig_manager.save_composite_hashes(module, combined)
                 if output_path and output_path.name:
                     relative_path = output_path.relative_to(self.root_path)
@@ -294,10 +294,14 @@ class StitcherApp:
         for fqn in sorted(list(all_fqns)):
             code_hash = current_code_map.get(fqn)
             yaml_hash = current_yaml_map.get(fqn)
-            
+
             stored_fp = stored_hashes_map.get(fqn)
-            baseline_code_hash = stored_fp.get("baseline_code_structure_hash") if stored_fp else None
-            baseline_yaml_hash = stored_fp.get("baseline_yaml_content_hash") if stored_fp else None
+            baseline_code_hash = (
+                stored_fp.get("baseline_code_structure_hash") if stored_fp else None
+            )
+            baseline_yaml_hash = (
+                stored_fp.get("baseline_yaml_content_hash") if stored_fp else None
+            )
 
             if not code_hash and baseline_code_hash:  # Extra
                 continue
@@ -646,7 +650,7 @@ class StitcherApp:
             code_hashes = self.sig_manager.compute_code_structure_hashes(module)
             yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
             all_fqns = set(code_hashes.keys()) | set(yaml_hashes.keys())
-            
+
             combined: Dict[str, Fingerprint] = {}
             for fqn in all_fqns:
                 fp = Fingerprint()
@@ -655,7 +659,7 @@ class StitcherApp:
                 if fqn in yaml_hashes:
                     fp["baseline_yaml_content_hash"] = yaml_hashes[fqn]
                 combined[fqn] = fp
-                
+
             self.sig_manager.save_composite_hashes(module, combined)
             files_to_strip.append(module)
 

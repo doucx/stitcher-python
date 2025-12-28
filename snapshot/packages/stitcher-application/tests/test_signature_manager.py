@@ -51,14 +51,18 @@ def test_manager_save_and_load_composite_hashes(tmp_path: Path):
 
     # Data is now composed of Fingerprint objects
     hashes_to_save = {
-        "foo": Fingerprint.from_dict({
-            "baseline_code_structure_hash": "abc",
-            "baseline_yaml_content_hash": "def",
-        }),
-        "bar": Fingerprint.from_dict({
-            "baseline_code_structure_hash": "123",
-            "baseline_yaml_content_hash": None,
-        }),
+        "foo": Fingerprint.from_dict(
+            {
+                "baseline_code_structure_hash": "abc",
+                "baseline_yaml_content_hash": "def",
+            }
+        ),
+        "bar": Fingerprint.from_dict(
+            {
+                "baseline_code_structure_hash": "123",
+                "baseline_yaml_content_hash": None,
+            }
+        ),
     }
 
     # Act: Save

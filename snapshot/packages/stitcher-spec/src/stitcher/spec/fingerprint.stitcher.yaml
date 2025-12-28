@@ -1,0 +1,10 @@
+"Fingerprint": |-
+  A dynamic, self-validating container for symbol fingerprints.
+  It enforces that all keys adhere to the strict naming axiom.
+"Fingerprint.from_dict": |-
+  Constructs a Fingerprint from a dictionary.
+  Validates all keys immediately. Any invalid key raises InvalidFingerprintKeyError.
+"Fingerprint.to_dict": |-
+  Returns a copy of the internal hashes.
+"InvalidFingerprintKeyError": |-
+  Raised when a key does not conform to the Fingerprint naming axiom.
