@@ -1,3 +1,4 @@
+from typing import List
 from stitcher.app.protocols import InteractionHandler, InteractionContext
 from stitcher.spec import ResolutionAction, ConflictType
 
@@ -12,11 +13,17 @@ class NoOpInteractionHandler(InteractionHandler):
         self._force_relink = force_relink
         self._reconcile = reconcile
 
-    def ask_resolution(self, context: InteractionContext) -> ResolutionAction:
-        if context.conflict_type == ConflictType.SIGNATURE_DRIFT:
-            if self._force_relink:
-                return ResolutionAction.RELINK
-        elif context.conflict_type == ConflictType.CO_EVOLUTION:
-            if self._reconcile:
-                return ResolutionAction.RECONCILE
-        return ResolutionAction.SKIP
+    def process_interactive_session(
+        self, contexts: List[InteractionContext]
+    ) -> List[ResolutionAction]:
+        actions: List[ResolutionAction] = []
+        for context in contexts:
+            action = ResolutionAction.SKIP
+            if context.conflict_type == ConflictType.SIGNATURE_DRIFT:
+                if self._force_relink:
+                    action = ResolutionAction.RELINK
+            elif context.conflict_type == ConflictType.CO_EVOLUTION:
+                if self._reconcile:
+                    action = ResolutionAction.RECONCILE
+            actions.append(action)
+        return actions

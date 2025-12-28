@@ -19,8 +19,11 @@ class InteractionContext:
 class InteractionHandler(Protocol):
     """Protocol for handling user interactions during a check."""
 
-    def ask_resolution(self, context: InteractionContext) -> ResolutionAction:
+    def process_interactive_session(
+        self, contexts: List[InteractionContext]
+    ) -> List[ResolutionAction]:
         """
-        Asks the user (or a non-interactive policy) how to resolve a conflict.
+        Processes a list of conflicts, returning a list of chosen actions.
+        The length of the returned list MUST match the input list.
         """
         ...

@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 import typer
 
@@ -5,6 +6,7 @@ from stitcher.app import StitcherApp
 from stitcher.common import bus, stitcher_nexus as nexus
 from needle.pointer import L
 from .rendering import CliRenderer
+from .handlers import TyperInteractionHandler
 
 app = typer.Typer(
     name="stitcher",
@@ -38,12 +40,12 @@ def check(
     force_relink: bool = typer.Option(
         False,
         "--force-relink",
-        help="For 'Signature Drift' errors, forces the new signature to be linked with the existing, unchanged documentation.",
+        help="[Non-interactive] For 'Signature Drift' errors, forces relinking.",
     ),
     reconcile: bool = typer.Option(
         False,
         "--reconcile",
-        help="For 'Co-evolution' errors, accepts both signature and documentation changes as the new correct state.",
+        help="[Non-interactive] For 'Co-evolution' errors, accepts both changes.",
     ),
 ):
     if force_relink and reconcile:
@@ -51,7 +53,12 @@ def check(
         raise typer.Exit(code=1)
 
     project_root = Path.cwd()
-    app_instance = StitcherApp(root_path=project_root)
+    
+    handler = None
+    if sys.stdin.isatty() and not force_relink and not reconcile:
+        handler = TyperInteractionHandler()
+
+    app_instance = StitcherApp(root_path=project_root, interaction_handler=handler)
     success = app_instance.run_check(force_relink=force_relink, reconcile=reconcile)
     if not success:
         raise typer.Exit(code=1)
