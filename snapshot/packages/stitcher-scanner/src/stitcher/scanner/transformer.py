@@ -107,11 +107,12 @@ class InjectorTransformer(cst.CSTTransformer):
         level: int,
     ) -> HasBody:
         current_indent = self.indent_str * level
-        # format_docstring expects the indentation of the """ quotes themselves.
+        # format_docstring returns a complete, indented string literal statement.
         formatted_string = format_docstring(doc_content, current_indent)
-        new_doc_node = cst.SimpleStatementLine(
-            body=[cst.Expr(value=cst.SimpleString(value=formatted_string))]
-        )
+
+        # We parse this valid python snippet into a statement node directly.
+        # This avoids abstraction leaks and validation errors.
+        new_doc_node = cst.parse_statement(formatted_string)
 
         body = updated_node.body
         if isinstance(body, cst.SimpleStatementSuite):
@@ -182,10 +183,9 @@ class InjectorTransformer(cst.CSTTransformer):
     ) -> cst.Module:
         if "__doc__" in self.docs:
             formatted_string = format_docstring(self.docs["__doc__"], indent_str="")
-            new_doc_node = cst.SimpleStatementLine(
-                body=[cst.Expr(value=cst.SimpleString(value=formatted_string))]
-            )
+            new_doc_node = cst.parse_statement(formatted_string)
             new_body = []
+
             if updated_node.body:
                 first = updated_node.body[0]
                 if (
