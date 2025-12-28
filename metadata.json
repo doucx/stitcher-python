@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix(runtime): 修复 FileSystemLoader 缺失 FQN 路径合成逻辑的问题", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766914849.606209, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test(runtime): 验证 FileSystemLoader FQN 合成逻辑与 CLI 资源加载", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766914935.1058393, "duration_ms": 0}}
