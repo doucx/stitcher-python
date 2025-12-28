@@ -1,301 +1,280 @@
-好的，我们来正式实现这个“代理”。
+好的，我们来完成这次重构，将 `stitcher-scanner` 与我们新的格式化代理同步。
 
-我将生成一个计划，执行以下三个核心步骤：
-1.  在 `stitcher-common` 包中创建一个新的 `formatting.py` 模块，并在其中定义我们统一的 `format_docstring` 函数。
-2.  从 `stitcher.common` 的主 `__init__.py` 中导出这个新函数，使其成为包的公共 API。
-3.  重构 `stitcher-io` 中的 `StubGenerator`，移除其内部的格式化逻辑，转而调用我们刚刚创建的、位于 `stitcher-common` 中的公共函数。
+我将生成一个计划，用 `write_file` 来重写 `transformer.py`。这次重构将：
+1.  **导入新的代理函数**: `from stitcher.common import format_docstring`。
+2.  **移除冗余代码**: 删除 `InjectorTransformer` 内部复杂且重复的缩进和格式化逻辑。
+3.  **简化实现**: 让 `InjectorTransformer` 直接调用 `format_docstring` 来生成完美的、格式一致的文档字符串节点。
 
-这个计划将是解决 DRY 违规问题、实现行为一致性的关键一步。
+这将是我们解决 DRY 违规问题的最后一步，也是确保 `eject` 和 `generate` 命令输出完全一致的关键。
 
-## [WIP] refactor(common): 创建统一的 docstring 格式化代理
+## [WIP] refactor(scanner): 重构 InjectorTransformer 以使用统一代理
 
 ### 用户需求
-将文档字符串格式化逻辑提取到一个位于 `stitcher-common` 包中的、可重用的“代理”函数中，并重构 `stitcher-io` 的 `StubGenerator` 以使用此函数。
+修改 `stitcher-scanner` 包中的 `InjectorTransformer`，让它调用位于 `stitcher-common` 中的新 `format_docstring` 函数，从而与 `StubGenerator` 的输出格式保持完全一致。
 
 ### 评论
-这是对项目架构一次至关重要的重构。通过创建一个单一、权威的格式化函数，我们正在构建一个“单一事实来源”，从根本上解决 `generate` 和 `eject` 命令之间行为不一致的问题。此举将极大地提高代码的可维护性，并为未来所有与代码生成相关的任务提供一个稳定、可靠的基础。
+这次重构是实现架构一致性的收官之作。通过让 `InjectorTransformer` 依赖于我们创建的单一格式化代理，我们彻底消除了代码库中的重复逻辑。从现在开始，任何对文档字符串格式的调整都只需要在一个地方进行，`generate` 和 `eject` 命令的行为将得到根本性的统一。这是对项目长期健康和可维护性的一项重要投资。
 
 ### 目标
-1.  在 `stitcher-common/src/stitcher/common/` 目录下创建一个新的 `formatting.py` 文件。
-2.  在该文件中实现 `format_docstring(content: str, indent_str: str) -> str` 函数，其逻辑将基于我们之前验证过的、符合 `ruff` 风格的实现。
-3.  更新 `stitcher-common/src/stitcher/common/__init__.py`，导出新的 `format_docstring` 函数。
-4.  使用 `write_file` 重写 `stitcher-io/src/stitcher/io/stub_generator.py`，移除其本地的 `_format_docstring` 方法，并改为导入和调用 `stitcher.common.format_docstring`。
+1.  使用 `write_file` 重写 `packages/stitcher-scanner/src/stitcher/scanner/transformer.py` 文件。
+2.  在文件顶部添加 `from stitcher.common import format_docstring`。
+3.  大幅简化 `InjectorTransformer` 类，移除其内部的 `_create_docstring_node` 方法和 `_inject_into_body` 方法中的手动格式化代码。
+4.  确保 `InjectorTransformer` 现在使用 `format_docstring` 来生成最终的文档字符串表示，然后再将其转换为 LibCST 节点。
 
 ### 基本原理
-我们将遵循“单一职责原则”和“DRY”原则。格式化文档字符串是一个独立的、可复用的逻辑单元，它不应该被锁定在 `StubGenerator` 内部。通过将其提升到 `stitcher-common` 包中，我们使其可以被项目中的任何其他部分（例如，即将被重构的 `stitcher-scanner`）安全地复用。
+`InjectorTransformer` 当前的实现包含了一套复杂、脆弱且与 `StubGenerator` 不一致的字符串处理逻辑。这违反了 DRY 原则，是产生 bug 的温床。
 
-使用 `write_file` 来重构 `StubGenerator` 是最安全的选择，因为它涉及删除一个方法、添加一个导入并修改多个调用点，这使得 `patch_file` 变得复杂且容易出错。`write_file` 可以确保最终文件的状态是完全正确和一致的。
+我们将用一个更清晰、更简单的方法替换它。`InjectorTransformer` 的职责将被简化为：
+1.  确定注入文档字符串的**位置**（类、函数或模块体）。
+2.  计算该位置所需的**缩进级别**。
+3.  调用 `stitcher.common.format_docstring`，将纯文本内容和计算出的缩进级别作为参数，获取一个**预先格式化好的、完整的文档字符串字面量**。
+4.  将这个完美的字符串字面量包装成一个 LibCST 节点并注入 AST。
+
+这种方法将格式化的复杂性完全委托给了我们可信的中央代理，使 `InjectorTransformer` 的代码更易于理解和维护。
 
 ### 标签
 #intent/refine #flow/ready #priority/high
-#comp/common #comp/io #scope/dx
+#comp/scanner #comp/common #scope/dx
 #ai/instruct
-#task/domain/testing #task/object/stub-generator #task/action/refactor
+#task/domain/testing #task/object/injector-transformer #task/action/refactor
 #task/state/continue
 
 ---
 ### Script
 
-#### Acts 1: 创建并实现统一的格式化函数
+#### Acts 1: 重写 `transformer.py` 以使用格式化代理
 
-我们首先在 `stitcher-common` 包中创建新的 `formatting.py` 文件，并放入我们标准化的 `format_docstring` 函数。
-
-~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/formatting.py
-~~~~~
-~~~~~python
-def format_docstring(content: str, indent_str: str) -> str:
-    """Formats a docstring to be inserted into source code, following ruff/black style."""
-    # Strip leading/trailing whitespace from the docstring itself to handle
-    # potential formatting from YAML loader.
-    content = content.strip()
-    lines = content.split("\n")
-
-    if len(lines) == 1:
-        # Single line: keep it compact and escape internal quotes
-        processed_doc = content.replace('"""', '\\"\\"\\"')
-        return f'{indent_str}"""{processed_doc}"""'
-
-    # Multi-line: adopt the ruff/black style for readability
-    # Re-indent all lines to match the current level.
-    indented_body = "\n".join(f"{indent_str}{line}" for line in lines)
-    return f'{indent_str}"""\n{indented_body}\n{indent_str}"""'
-~~~~~
-
-#### Acts 2: 将新函数导出为公共 API
-
-现在，我们将 `format_docstring` 函数添加到 `stitcher.common` 的 `__all__` 中，使其易于被其他包导入。
-
-~~~~~act
-patch_file
-packages/stitcher-common/src/stitcher/common/__init__.py
-~~~~~
-~~~~~python.old
-# Public API for stitcher packages
-__all__ = ["bus", "stitcher_nexus", "stitcher_loader"]
-~~~~~
-~~~~~python.new
-from .formatting import format_docstring
-
-# Public API for stitcher packages
-__all__ = ["bus", "stitcher_nexus", "stitcher_loader", "format_docstring"]
-~~~~~
-
-#### Acts 3: 重构 `StubGenerator` 以使用代理函数
-
-最后，我们将重写 `StubGenerator`，移除旧的内部实现，并切换到调用新的、统一的 `format_docstring` 函数。
+我们将用一个精简后的版本替换整个 `transformer.py` 文件。新版本将移除所有本地的格式化逻辑，并转而调用 `stitcher.common.format_docstring`。
 
 ~~~~~act
 write_file
-packages/stitcher-io/src/stitcher/io/stub_generator.py
+packages/stitcher-scanner/src/stitcher/scanner/transformer.py
 ~~~~~
 ~~~~~python
-from typing import List
-from stitcher.spec import (
-    Argument,
-    ArgumentKind,
-    Attribute,
-    ClassDef,
-    FunctionDef,
-    ModuleDef,
-)
+import libcst as cst
+from typing import Dict, List, Optional, Union
 from stitcher.common import format_docstring
 
+# Type alias for nodes that have a body attribute
+HasBody = Union[cst.Module, cst.ClassDef, cst.FunctionDef]
 
-class StubGenerator:
-    def __init__(self, indent_spaces: int = 4):
-        self._indent_str = " " * indent_spaces
 
-    def generate(self, module: ModuleDef) -> str:
-        lines = []
+class StripperTransformer(cst.CSTTransformer):
+    def _is_docstring(self, node: cst.BaseSmallStatement) -> bool:
+        if isinstance(node, cst.Expr) and isinstance(node.value, cst.SimpleString):
+            return True
+        return False
 
-        # 1. Module Docstring
-        if module.docstring:
-            lines.append(format_docstring(module.docstring, self._indent(0)))
-            lines.append("")  # Empty line after docstring
+    def _process_body(
+        self, body: Union[cst.BaseSuite, cst.SimpleStatementSuite]
+    ) -> Union[cst.BaseSuite, cst.SimpleStatementSuite]:
+        if isinstance(body, cst.SimpleStatementSuite):
+            # One-liner: def foo(): "doc" -> def foo(): pass
+            # SimpleStatementSuite contains a list of small statements
+            new_body = []
+            for stmt in body.body:
+                if not self._is_docstring(stmt):
+                    new_body.append(stmt)
 
-        # 2. Imports (TODO: Pass these through from scanner later)
-        if module.imports:
-            for imp in module.imports:
-                lines.append(imp)
-            lines.append("")
+            if not new_body:
+                # If became empty, convert to a single 'pass'
+                return cst.SimpleStatementSuite(body=[cst.Pass()])
+            return body.with_changes(body=new_body)
 
-        # 2.5. __all__
-        if module.dunder_all:
-            lines.append(f"__all__ = {module.dunder_all}")
-            lines.append("")
+        elif isinstance(body, cst.IndentedBlock):
+            new_body = []
+            if body.body:
+                first_stmt = body.body[0]
+                # In an IndentedBlock, the statements are typically SimpleStatementLine
+                # which contain small statements.
+                # We check if the FIRST line is a docstring expression.
+                if isinstance(first_stmt, cst.SimpleStatementLine):
+                    if len(first_stmt.body) == 1 and self._is_docstring(
+                        first_stmt.body[0]
+                    ):
+                        # Skip this line (it's the docstring)
+                        new_body.extend(body.body[1:])
+                    else:
+                        new_body.extend(body.body)
+                else:
+                    new_body.extend(body.body)
 
-        # 3. Module Attributes
-        for attr in module.attributes:
-            lines.append(self._generate_attribute(attr, 0))
-        if module.attributes:
-            lines.append("")
-
-        # 4. Functions
-        for func in module.functions:
-            lines.append(self._generate_function(func, 0))
-            lines.append("")
-
-        # 5. Classes
-        for cls in module.classes:
-            lines.append(self._generate_class(cls, 0))
-            lines.append("")
-
-        return "\n".join(lines).strip()
-
-    def _indent(self, level: int) -> str:
-        return self._indent_str * level
-
-    def _generate_attribute(self, attr: Attribute, level: int) -> str:
-        indent = self._indent(level)
-        # In .pyi files, we prefer Type Hints:  name: type
-        # If value is present (constant), we might output: name: type = value
-        # But PEP 484 recommends name: type = ... for constants or just name: type
-        # Let's stick to name: type for now as per test expectation.
-
-        annotation = attr.annotation if attr.annotation else "Any"
-        line = f"{indent}{attr.name}: {annotation}"
-
-        if attr.value:
-            line += f" = {attr.value}"
-
-        return line
-
-    def _generate_args(self, args: List[Argument]) -> str:
-        # This is tricky because of POSITIONAL_ONLY (/) and KEYWORD_ONLY (*) markers.
-        # We need to detect transitions between kinds.
-
-        # Simplified approach for MVP:
-        # Just join them. Correctly handling / and * requires looking ahead/behind or state machine.
-        # Let's do a slightly better job:
-
-        parts = []
-
-        # Check if we have pos-only args
-        has_pos_only = any(a.kind == ArgumentKind.POSITIONAL_ONLY for a in args)
-        pos_only_emitted = False
-
-        kw_only_marker_emitted = False
-
-        for i, arg in enumerate(args):
-            # Handle POSITIONAL_ONLY end marker
-            if has_pos_only and not pos_only_emitted:
-                if arg.kind != ArgumentKind.POSITIONAL_ONLY:
-                    parts.append("/")
-                    pos_only_emitted = True
-
-            # Handle KEYWORD_ONLY start marker
-            if arg.kind == ArgumentKind.KEYWORD_ONLY and not kw_only_marker_emitted:
-                # If the previous arg was VAR_POSITIONAL (*args), we don't need a bare *
-                # Otherwise, we do.
-                prev_was_var_pos = (
-                    i > 0 and args[i - 1].kind == ArgumentKind.VAR_POSITIONAL
+            if not new_body:
+                # If empty, add pass
+                # We need to ensure we have a valid indentation block structure
+                return body.with_changes(
+                    body=[cst.SimpleStatementLine(body=[cst.Pass()])]
                 )
-                if not prev_was_var_pos:
-                    parts.append("*")
-                kw_only_marker_emitted = True
 
-            # Format the argument itself
-            arg_str = arg.name
-            if arg.kind == ArgumentKind.VAR_POSITIONAL:
-                arg_str = f"*{arg.name}"
-            elif arg.kind == ArgumentKind.VAR_KEYWORD:
-                arg_str = f"**{arg.name}"
+            return body.with_changes(body=new_body)
 
-            if arg.annotation:
-                arg_str += f": {arg.annotation}"
+        return body
 
-            if arg.default:
-                arg_str += f" = {arg.default}"
+    def leave_Module(
+        self, original_node: cst.Module, updated_node: cst.Module
+    ) -> cst.Module:
+        # Module body is just a sequence of statements, not wrapped in IndentedBlock
+        new_body = []
+        if updated_node.body:
+            first_stmt = updated_node.body[0]
+            if isinstance(first_stmt, cst.SimpleStatementLine):
+                if len(first_stmt.body) == 1 and self._is_docstring(first_stmt.body[0]):
+                    new_body.extend(updated_node.body[1:])
+                else:
+                    new_body.extend(updated_node.body)
+            else:
+                new_body.extend(updated_node.body)
 
-            parts.append(arg_str)
+        return updated_node.with_changes(body=new_body)
 
-        # Edge case: If all args were pos-only, we need to append / at the end
-        if has_pos_only and not pos_only_emitted:
-            parts.append("/")
+    def leave_FunctionDef(
+        self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
+    ) -> cst.FunctionDef:
+        return updated_node.with_changes(body=self._process_body(updated_node.body))
 
-        return ", ".join(parts)
+    def leave_ClassDef(
+        self, original_node: cst.ClassDef, updated_node: cst.ClassDef
+    ) -> cst.ClassDef:
+        return updated_node.with_changes(body=self._process_body(updated_node.body))
 
-    def _generate_function(self, func: FunctionDef, level: int) -> str:
-        indent = self._indent(level)
-        lines = []
 
-        # Decorators
-        for dec in func.decorators:
-            # dec is raw code like "staticmethod", we need to prepend @
-            # But wait, LibCST might or might not include @?
-            # In our scanner we did: code_for_node(dec.decorator). So it is just the name/call.
-            lines.append(f"{indent}@{dec}")
+class InjectorTransformer(cst.CSTTransformer):
+    def __init__(self, docs: Dict[str, str]):
+        self.docs = docs
+        self.scope_stack: List[str] = []
+        self.indent_str: str = " " * 4  # Default indent
 
-        # Async
-        prefix = "async " if func.is_async else ""
+    def _get_current_fqn(self, name: str) -> str:
+        if not self.scope_stack:
+            return name
+        return f"{'.'.join(self.scope_stack)}.{name}"
 
-        # Def
-        args_str = self._generate_args(func.args)
-        ret_str = f" -> {func.return_annotation}" if func.return_annotation else ""
+    def _is_docstring(self, node: cst.BaseSmallStatement) -> bool:
+        return isinstance(node, cst.Expr) and isinstance(node.value, cst.SimpleString)
 
-        def_line = f"{indent}{prefix}def {func.name}({args_str}){ret_str}:"
+    def _inject_into_body(
+        self,
+        node: HasBody,
+        updated_node: HasBody,
+        doc_content: str,
+        level: int,
+    ) -> HasBody:
+        current_indent = self.indent_str * level
+        # format_docstring expects the indentation of the """ quotes themselves.
+        formatted_string = format_docstring(doc_content, current_indent)
+        new_doc_node = cst.SimpleStatementLine(
+            body=[cst.Expr(value=cst.SimpleString(value=formatted_string))]
+        )
 
-        # Body
-        if func.docstring:
-            lines.append(def_line)
-            lines.append(format_docstring(func.docstring, self._indent(level + 1)))
-            lines.append(f"{self._indent(level + 1)}...")
-        else:
-            # For functions without docstrings, use a single line format.
-            lines.append(f"{def_line} ...")
+        body = updated_node.body
+        if isinstance(body, cst.SimpleStatementSuite):
+            # Convert "def f(): stmt" to:
+            # def f():
+            #     """doc"""
+            #     stmt
+            new_stmts = [new_doc_node]
+            for stmt in body.body:
+                if isinstance(stmt, cst.Pass):
+                    continue
+                new_stmts.append(cst.SimpleStatementLine(body=[stmt]))
+            return updated_node.with_changes(body=cst.IndentedBlock(body=new_stmts))
 
-        return "\n".join(lines)
+        elif isinstance(body, cst.IndentedBlock):
+            new_body_stmts = []
+            if body.body:
+                first = body.body[0]
+                if (
+                    isinstance(first, cst.SimpleStatementLine)
+                    and len(first.body) == 1
+                    and self._is_docstring(first.body[0])
+                ):
+                    # Replace existing docstring
+                    new_body_stmts.append(new_doc_node)
+                    new_body_stmts.extend(body.body[1:])
+                else:
+                    new_body_stmts.append(new_doc_node)
+                    new_body_stmts.extend(body.body)
+            else:
+                new_body_stmts.append(new_doc_node)
+            return updated_node.with_changes(body=body.with_changes(body=new_body_stmts))
 
-    def _generate_class(self, cls: ClassDef, level: int) -> str:
-        indent = self._indent(level)
-        lines = []
+        return updated_node
 
-        # Decorators
-        for dec in cls.decorators:
-            lines.append(f"{indent}@{dec}")
+    def visit_ClassDef(self, node: cst.ClassDef) -> Optional[bool]:
+        self.scope_stack.append(node.name.value)
+        return True
 
-        # Class Def
-        bases_str = ""
-        if cls.bases:
-            bases_str = f"({', '.join(cls.bases)})"
+    def leave_ClassDef(
+        self, original_node: cst.ClassDef, updated_node: cst.ClassDef
+    ) -> cst.ClassDef:
+        fqn = ".".join(self.scope_stack)
+        if fqn in self.docs:
+            updated_node = self._inject_into_body(
+                original_node, updated_node, self.docs[fqn], level=len(self.scope_stack)
+            )
+        self.scope_stack.pop()
+        return updated_node
 
-        lines.append(f"{indent}class {cls.name}{bases_str}:")
+    def visit_FunctionDef(self, node: cst.FunctionDef) -> Optional[bool]:
+        self.scope_stack.append(node.name.value)
+        return True
 
-        # Body
-        has_content = False
+    def leave_FunctionDef(
+        self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
+    ) -> cst.FunctionDef:
+        fqn = ".".join(self.scope_stack)
+        if fqn in self.docs:
+            updated_node = self._inject_into_body(
+                original_node, updated_node, self.docs[fqn], level=len(self.scope_stack)
+            )
+        self.scope_stack.pop()
+        return updated_node
 
-        # Docstring
-        if cls.docstring:
-            lines.append(format_docstring(cls.docstring, self._indent(level + 1)))
-            has_content = True
+    def leave_Module(
+        self, original_node: cst.Module, updated_node: cst.Module
+    ) -> cst.Module:
+        if "__doc__" in self.docs:
+            formatted_string = format_docstring(self.docs["__doc__"], indent_str="")
+            new_doc_node = cst.SimpleStatementLine(
+                body=[cst.Expr(value=cst.SimpleString(value=formatted_string))]
+            )
+            new_body = []
+            if updated_node.body:
+                first = updated_node.body[0]
+                if (
+                    isinstance(first, cst.SimpleStatementLine)
+                    and len(first.body) == 1
+                    and self._is_docstring(first.body[0])
+                ):
+                    new_body.append(new_doc_node)
+                    new_body.extend(updated_node.body[1:])
+                else:
+                    new_body.append(new_doc_node)
+                    new_body.extend(updated_node.body)
+            else:
+                new_body.append(new_doc_node)
+            return updated_node.with_changes(body=new_body)
+        return updated_node
 
-        # Attributes
-        for attr in cls.attributes:
-            lines.append(self._generate_attribute(attr, level + 1))
-            has_content = True
 
-        if has_content and cls.methods:
-            lines.append("")  # Spacer between attrs and methods
+def strip_docstrings(source_code: str) -> str:
+    module = cst.parse_module(source_code)
+    transformer = StripperTransformer()
+    modified = module.visit(transformer)
+    return modified.code
 
-        # Methods
-        for i, method in enumerate(cls.methods):
-            lines.append(self._generate_function(method, level + 1))
-            if i < len(cls.methods) - 1:
-                lines.append("")  # Spacer between methods
-            has_content = True
 
-        if not has_content:
-            lines.append(f"{self._indent(level + 1)}...")
-
-        return "\n".join(lines)
+def inject_docstrings(source_code: str, docs: Dict[str, str]) -> str:
+    module = cst.parse_module(source_code)
+    transformer = InjectorTransformer(docs)
+    modified = module.visit(transformer)
+    return modified.code
 ~~~~~
 ### 下一步建议
-我们已经成功地将格式化逻辑抽象并集中到了 `stitcher-common` 中，`stitcher-io` 现在是它的第一个“客户”。
+我们已经成功完成了对 `InjectorTransformer` 的重构。现在，`stitcher-io` 和 `stitcher-scanner` 都依赖于同一个 docstring 格式化代理，从根本上解决了行为不一致的问题。
 
-下一步是完成我们的重构，解决 DRY 违规的另一半问题：
-1.  **重构 `stitcher-scanner`**：修改 `transformer.py` 中的 `InjectorTransformer`，让它也调用这个新的 `format_docstring` 函数。
-2.  **创建测试**: 为 `InjectorTransformer` 创建一个测试，确保 `eject` 命令现在生成的文档字符串格式与 `generate` 完全一致。
+为了验证我们的工作并确保万无一失，下一步是：
+1.  **为 `InjectorTransformer` 添加测试**：在 `packages/stitcher-scanner/tests/` 目录下创建一个新的测试文件，例如 `test_transformer_eject.py`。
+2.  **编写黄金测试**：在这个文件中，编写一个测试用例，它调用 `inject_docstrings` 函数，并断言其输出与我们期望的、符合 `ruff` 风格的“黄金标准”字符串完全一致。这个测试将直接验证我们的重构是否成功。
 
-如果你同意，我将开始准备重构 `InjectorTransformer` 的计划。
+如果你同意，我将为您生成创建此测试的计划。
