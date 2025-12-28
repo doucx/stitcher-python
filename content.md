@@ -1,176 +1,77 @@
-好的，这是一个非常合理且重要的补充。
+好的，我们已经顺利完成了“交互式引导与调和模式”的所有开发环节，包括领域模型构建、应用层解耦重构、CLI 交互向导实现以及自动化修复逻辑的补回。现在，我们将这些改动作为一个完整的逻辑单元提交到 Git 仓库。
 
-引入一个明确的 `--non-interactive` 标志是 CLI 设计的最佳实践。它消除了行为的模糊性，让用户（尤其是编写脚本的用户）能够显式地控制程序的行为，而不是依赖于对 TTY 环境的隐式检测。
-
-我将为你生成一个计划来实现这个功能。
-
-## [WIP] feat: 为 `check` 命令添加 `--non-interactive` 标志
+## [COMMIT] feat(cli): 实现 'check' 命令的交互式调和模式
 
 ### 用户需求
-为 `stitcher check` 命令添加一个 `--non-interactive` 标志。当使用此标志时，即使在交互式终端（TTY）中，命令也应采取非交互式行为，即在遇到需要决策的冲突时直接报错退出，而不是启动交互式向导。
+用户需要一种高效、直观且容错性高的方式来处理 `stitcher check` 检测到的冲突。
 
 ### 评论
-这是一个出色的可用性改进。它将先前隐式的行为（依赖于 TTY 和其他标志）变为显式的用户选择，这对于自动化脚本和要求行为确定性的高级用户来说至关重要。这使得 `check` 命令的行为更加健壮和可预测。
+这是一次重大的开发者体验 (DX) 升级。通过引入交互式向导，我们将原来繁琐的“查看错误 -> 手动附加标志 -> 重新运行”循环简化为“一站式”决策过程。这种设计不仅提高了处理效率，更通过撤销支持和粘性默认值，极大地降低了误操作的风险和心智负担。
 
 ### 目标
-1.  在 `stitcher.cli.main` 的 `check` 命令定义中，添加一个新的 `typer.Option` 用于 `--non-interactive`。
-2.  更新 `check` 命令的逻辑，将此标志作为启动交互式处理器的首要否决条件。
-3.  更新相关的帮助文档（英文和中文），以反映新选项并阐明 `force-relink` 和 `reconcile` 标志主要用于非交互模式。
-4.  更新 `main.stitcher.yaml` 中的内部文档。
+1.  提交在 `stitcher-spec` 中定义的新领域模型。
+2.  提交在 `stitcher-application` 中实现的 `InteractionHandler` 协议及其自动执行/非交互式逻辑。
+3.  提交在 `stitcher-cli` 中实现的高级交互向导及其与核心逻辑的装配。
+4.  包含所有相关的文档更新和标志位增强。
 
 ### 基本原理
-我们将在 `check` 命令的入口处修改决策逻辑。启动 `TyperInteractionHandler` 的条件将从 `isatty()` 变为 `isatty() and not non_interactive`。这确保了用户可以通过一个简单的标志完全控制交互行为，而无需改变任何核心应用层的代码，完美体现了表现层与应用层解耦的优势。
+我们将这组横跨三个子包（Spec, Application, CLI）的修改合并为一个原子提交。这组修改在逻辑上是高度内聚的：Spec 定义了数据契约，Application 实现了执行逻辑，CLI 提供了用户入口。作为一个完整的特性交付，这样做有利于保持 Git 历史的清晰和特性的可追溯性。
 
 ### 标签
-#intent/build #flow/ready #priority/medium #comp/cli #scope/ux #scope/dx #ai/instruct #task/domain/cli #task/object/interactive-check #task/action/implementation #task/state/continue
+#intent/build #flow/ready #comp/cli #comp/application #comp/spec #concept/ui #scope/ux #ai/instruct #task/domain/cli #task/object/interactive-check #task/action/implementation #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 更新 `check` 命令以包含新标志和逻辑
+#### Acts 1: 提交变更
 
-我们将修改 `packages/stitcher-cli/src/stitcher/cli/main.py` 中的 `check` 函数。
+我们将所有涉及到的文件添加到暂存区，并创建一个详尽的提交记录。
 
 ~~~~~act
-patch_file
+git_add
+packages/stitcher-spec/src/stitcher/spec/models.py
+packages/stitcher-spec/src/stitcher/spec/__init__.py
+packages/stitcher-spec/src/stitcher/spec/models.stitcher.yaml
+packages/stitcher-application/src/stitcher/app/protocols.py
+packages/stitcher-application/src/stitcher/app/handlers/noop_handler.py
+packages/stitcher-application/src/stitcher/app/handlers/__init__.py
+packages/stitcher-application/src/stitcher/app/core.py
+packages/stitcher-cli/src/stitcher/cli/handlers.py
 packages/stitcher-cli/src/stitcher/cli/main.py
-~~~~~
-~~~~~python.old
-@app.command(help=nexus.get(L.cli.command.check.help))
-def check(
-    force_relink: bool = typer.Option(
-        False,
-        "--force-relink",
-        help="[Non-interactive] For 'Signature Drift' errors, forces relinking.",
-    ),
-    reconcile: bool = typer.Option(
-        False,
-        "--reconcile",
-        help="[Non-interactive] For 'Co-evolution' errors, accepts both changes.",
-    ),
-):
-    if force_relink and reconcile:
-        bus.error("Cannot use --force-relink and --reconcile simultaneously.")
-        raise typer.Exit(code=1)
-
-    project_root = Path.cwd()
-    
-    handler = None
-    if sys.stdin.isatty() and not force_relink and not reconcile:
-        handler = TyperInteractionHandler()
-
-    app_instance = StitcherApp(root_path=project_root, interaction_handler=handler)
-    success = app_instance.run_check(force_relink=force_relink, reconcile=reconcile)
-    if not success:
-        raise typer.Exit(code=1)
-~~~~~
-~~~~~python.new
-@app.command(help=nexus.get(L.cli.command.check.help))
-def check(
-    force_relink: bool = typer.Option(
-        False,
-        "--force-relink",
-        help="[Non-interactive] For 'Signature Drift' errors, forces relinking.",
-    ),
-    reconcile: bool = typer.Option(
-        False,
-        "--reconcile",
-        help="[Non-interactive] For 'Co-evolution' errors, accepts both changes.",
-    ),
-    non_interactive: bool = typer.Option(
-        False,
-        "--non-interactive",
-        help="Force non-interactive mode, failing on unresolved conflicts.",
-    ),
-):
-    if force_relink and reconcile:
-        bus.error("Cannot use --force-relink and --reconcile simultaneously.")
-        raise typer.Exit(code=1)
-
-    project_root = Path.cwd()
-    
-    handler = None
-    # Interactive mode is the default in a TTY, unless explicitly disabled.
-    if sys.stdin.isatty() and not non_interactive and not force_relink and not reconcile:
-        handler = TyperInteractionHandler()
-
-    app_instance = StitcherApp(root_path=project_root, interaction_handler=handler)
-    success = app_instance.run_check(force_relink=force_relink, reconcile=reconcile)
-    if not success:
-        raise typer.Exit(code=1)
-~~~~~
-
-#### Acts 2: 更新 CLI 的帮助文档
-
-##### 2.1: 英文帮助文档
-
-~~~~~act
-patch_file
 packages/stitcher-cli/src/stitcher/cli/assets/needle/en/commands.json
-~~~~~
-~~~~~json.old
-    "cli.option.strip.help": "Remove docstrings from source code after hydration.",
-    "cli.option.force.help": "Code-first: Overwrite YAML content if it differs from source code.",
-    "cli.option.reconcile.help": "YAML-first: Ignore source docstrings if they conflict with existing YAML.",
-    "cli.option.update_signatures.help": "Accept signature changes and update the stored fingerprints."
-}
-~~~~~
-~~~~~json.new
-    "cli.option.strip.help": "Remove docstrings from source code after hydration.",
-    "cli.option.force.help": "Code-first: Overwrite YAML content if it differs from source code.",
-    "cli.option.reconcile.help": "YAML-first: Ignore source docstrings if they conflict with existing YAML.",
-    "cli.option.update_signatures.help": "Accept signature changes and update the stored fingerprints.",
-    "cli.option.non_interactive.help": "Force non-interactive mode, failing on unresolved conflicts."
-}
-~~~~~
-
-##### 2.2: 中文帮助文档
-
-~~~~~act
-patch_file
 packages/stitcher-cli/src/stitcher/cli/assets/needle/zh/commands.json
-~~~~~
-~~~~~json.old
-    "cli.option.strip.help": "在补水后立即从源码中移除文档字符串。",
-    "cli.option.force.help": "代码优先：如果内容不一致，覆盖 YAML 内容。",
-    "cli.option.reconcile.help": "YAML 优先：忽略与现有 YAML 冲突的源码文档。",
-    "cli.option.update_signatures.help": "接受签名变更并更新存储的指纹。"
-}
-~~~~~
-~~~~~json.new
-    "cli.option.strip.help": "在补水后立即从源码中移除文档字符串。",
-    "cli.option.force.help": "代码优先：如果内容不一致，覆盖 YAML 内容。",
-    "cli.option.reconcile.help": "YAML 优先：忽略与现有 YAML 冲突的源码文档。",
-    "cli.option.update_signatures.help": "接受签名变更并更新存储的指纹。",
-    "cli.option.non_interactive.help": "强制使用非交互模式，在遇到无法解决的冲突时失败。"
-}
-~~~~~
-
-#### Acts 3: 更新内部文档 (`main.stitcher.yaml`)
-
-~~~~~act
-patch_file
 packages/stitcher-cli/src/stitcher/cli/main.stitcher.yaml
 ~~~~~
-~~~~~yaml.old
-"check": |-
-  Verify consistency between code and docs.
 
-  Args:
-    update_signatures: Accept and update signature changes in the stored fingerprints.
+~~~~~act
+git_commit
 ~~~~~
-~~~~~yaml.new
-"check": |-
-  Verify consistency between code and docs.
+~~~~~text
+feat(cli): implement interactive reconciliation mode for 'check' command
 
-  Args:
-    force_relink: [Non-interactive] For 'Signature Drift' errors, forces relinking.
-    reconcile: [Non-interactive] For 'Co-evolution' errors, accepts both changes.
-    non_interactive: Force non-interactive mode, failing on unresolved conflicts.
+This commit introduces a comprehensive interactive "Reconciliation Wizard"
+to resolve conflicts (Signature Drift and Co-evolution) during 'stitcher check'.
+
+Key improvements:
+- Decoupled application logic from UI via a new 'InteractionHandler' protocol.
+- Implemented 'TyperInteractionHandler' with support for:
+    - Single-key interaction (no Enter required for choices).
+    - Undo support ('z' key) to revisit and change previous decisions.
+    - Sticky defaults: the last choice becomes the default for next similar conflicts.
+    - Recorded defaults: when going back via Undo, the already chosen action is shown as default.
+- Redesigned 'StitcherApp.run_check' into a robust 4-phase model:
+    1. Analysis: Scan all files for conflicts.
+    2. Auto-Execution: Automatically reconcile doc improvements without user input.
+    3. Decision: Use the handler to gather user decisions for all conflicts.
+    4. Execution: Batch-apply all confirmed resolutions.
+- Added '--non-interactive' flag to explicitly disable interactivity in TTY environments.
+- Updated documentation and added i18n support for the new interactive features.
+
+This major DX upgrade makes conflict resolution much more efficient and less error-prone for developers during large-scale refactorings.
 ~~~~~
 
 ### 下一步建议
-我们已经成功地为 `check` 命令添加了 `--non-interactive` 标志，并更新了所有相关文档。这标志着“交互式引导”这个宏大功能的开发工作已全部完成。
-
-现在，我建议创建一个 `[COMMIT]` 计划，将自 `#task/state/begin` 以来的所有相关修改（领域模型、应用层重构、CLI 实现及修复）作为一个完整的、原子性的功能单元进行提交。
+- **回归测试**: 建议在各种环境下（交互式 TTY, 非交互式 TTY, `--non-interactive` 标志）运行 `stitcher check` 以确保行为符合预期。
+- **UI 优化**: 未来可以考虑在冲突展示中加入更详细的差异对比（Diff view），帮助用户做更明智的决策。
+- **CI 集成**: 检查 CI 流程是否能正确处理由于 `--non-interactive` 引起的静默失败。
