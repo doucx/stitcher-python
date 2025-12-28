@@ -10,8 +10,6 @@ requires-python = ">=3.10"
 dependencies = [
     "stitcher-spec",
     "stitcher-common",
-    "stitcher-scanner", # Temporary dependency for wrapping
-    "stitcher-io",      # Temporary dependency for wrapping
     "libcst",
 ]
 
@@ -21,5 +19,3 @@ packages = ["src/stitcher"]
 [tool.uv.sources]
 stitcher-spec = { workspace = true }
 stitcher-common = { workspace = true }
-stitcher-scanner = { workspace = true }
-stitcher-io = { workspace = true }

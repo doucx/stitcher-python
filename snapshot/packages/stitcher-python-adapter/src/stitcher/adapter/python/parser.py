@@ -1,5 +1,5 @@
 from stitcher.spec import ModuleDef
-from stitcher.scanner import parse_source_code
+from .internal.parser import parse_source_code
 
 class PythonParser:
     def parse(self, source_code: str, file_path: str = "") -> ModuleDef:

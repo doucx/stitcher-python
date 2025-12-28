@@ -1,5 +1,5 @@
 from stitcher.spec import ModuleDef
-from stitcher.io import StubGenerator
+from .internal.stub_generator import StubGenerator
 
 class PythonStubGenerator:
     def __init__(self):
