@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from stitcher.spec import ModuleDef, FunctionDef, Argument, ArgumentKind
+from stitcher.spec import ModuleDef, FunctionDef, Argument, ArgumentKind, Fingerprint
 from stitcher.app.services import SignatureManager
 
 
@@ -49,15 +49,16 @@ def test_manager_save_and_load_composite_hashes(tmp_path: Path):
     manager = SignatureManager(root_path=tmp_path)
     module = ModuleDef(file_path="src/main.py", functions=[create_func(name="foo")])
 
+    # Data is now composed of Fingerprint objects
     hashes_to_save = {
-        "foo": {
+        "foo": Fingerprint.from_dict({
             "baseline_code_structure_hash": "abc",
             "baseline_yaml_content_hash": "def",
-        },
-        "bar": {
+        }),
+        "bar": Fingerprint.from_dict({
             "baseline_code_structure_hash": "123",
             "baseline_yaml_content_hash": None,
-        },
+        }),
     }
 
     # Act: Save

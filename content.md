@@ -1,64 +1,97 @@
-这是一个经典的字符串匹配陷阱。由于 `"code_structure_hash"` 是 `"baseline_code_structure_hash"` 的子字符串，直接使用 `not in` 对 JSON 字符串进行断言会产生误报。
-
-我们需要解析 JSON 并在字典对象层面进行精确的键值检查。
+由于我们引入了严格的 `Fingerprint` 模型，旧的单元测试中直接使用字典（Dict）作为参数的代码现在会触发 `AttributeError`。我们需要更新这些测试用例，使其符合新的接口契约。
 
 ---
-## [WIP] test: 修正回归测试中的断言逻辑
+## [WIP] test: 更新 SignatureManager 单元测试以适配 Fingerprint 模型
 
 ### 错误分析
-在 `test_hydrate_regression.py` 中，断言 `assert "code_structure_hash" not in content_after` 失败了。这是因为新的键名 `"baseline_code_structure_hash"` 包含了被测试的子字符串。即使旧的键确实被移除了，字符串匹配依然会找到它。
+在重构 `SignatureManager` 后，其 `save_composite_hashes` 方法现在期望接收 `Dict[str, Fingerprint]`。然而，`test_signature_manager.py` 中的旧测试用例仍在传递原始字典，导致在尝试调用 `fp.to_dict()` 时抛出 `AttributeError: 'dict' object has no attribute 'to_dict'`。
 
 ### 用户需求
-修正测试脚本，通过解析 JSON 来验证键的精确存在性，而不是依赖模糊的字符串搜索。
+修复受影响的单元测试，确保测试数据使用 `Fingerprint` 对象。
 
 ### 评论
-在处理 JSON 或代码生成时，对原始字符串进行 `in` 断言通常是不够健壮的。解析为结构化数据后再进行断言是最佳实践。
+这是重构后的必然步骤。单元测试必须与它们所测试的组件的最新接口保持同步。
+
+### 目标
+1.  更新 `packages/stitcher-application/tests/test_signature_manager.py`。
+2.  将测试数据中的字典包装为 `Fingerprint` 对象。
 
 ### 标签
-#intent/tune #flow/ready #priority/low #comp/tests #ai/instruct #task/domain/testing #task/object/hydrate-regression-test #task/action/fix #task/state/continue
+#intent/tooling #flow/ready #priority/medium #comp/tests #concept/state #ai/instruct #task/domain/testing #task/object/signature-manager-test #task/action/fix #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 修正测试断言
+#### Acts 1: 更新 SignatureManager 单元测试
 
-我们将修改测试文件，解析 JSON 并检查字典中的键。
+我们将修改测试用例，使用 `Fingerprint.from_dict` 来转换测试数据。
 
 ~~~~~act
 patch_file
-packages/stitcher-application/tests/integration/test_hydrate_regression.py
+packages/stitcher-application/tests/test_signature_manager.py
 ~~~~~
 ~~~~~python
-    # 4. Assert
-    content_after = sig_file_path.read_text()
+import json
+from pathlib import Path
+from stitcher.spec import ModuleDef, FunctionDef, Argument, ArgumentKind
+from stitcher.app.services import SignatureManager
 
-    assert success is True
-    # The file content MUST change, because we are migrating from legacy to new schema.
-    assert content_after != content_before, (
-        "Hydrate command failed to migrate legacy signature file."
-    )
-    
-    # Verify the new schema is present
-    assert "baseline_code_structure_hash" in content_after
-    assert "code_structure_hash" not in content_after
 
-    # Even though we migrated signatures, no docs were hydrated, so user sees "no changes"
+def create_func(name="func", args=None, ret=None):
 ~~~~~
 ~~~~~python
-    # 4. Assert
-    data_after = json.loads(sig_file_path.read_text())
+import json
+from pathlib import Path
+from stitcher.spec import ModuleDef, FunctionDef, Argument, ArgumentKind, Fingerprint
+from stitcher.app.services import SignatureManager
 
-    assert success is True
-    
-    # Verify the new schema is present for the function
-    fp_func = data_after.get("func", {})
-    assert "baseline_code_structure_hash" in fp_func, (
-        "New schema key 'baseline_code_structure_hash' missing."
-    )
-    assert "code_structure_hash" not in fp_func, (
-        "Legacy schema key 'code_structure_hash' was not removed."
-    )
 
-    # Even though we migrated signatures, no docs were hydrated, so user sees "no changes"
+def create_func(name="func", args=None, ret=None):
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/tests/test_signature_manager.py
+~~~~~
+~~~~~python
+def test_manager_save_and_load_composite_hashes(tmp_path: Path):
+    # Arrange
+    manager = SignatureManager(root_path=tmp_path)
+    module = ModuleDef(file_path="src/main.py", functions=[create_func(name="foo")])
+
+    hashes_to_save = {
+        "foo": {
+            "baseline_code_structure_hash": "abc",
+            "baseline_yaml_content_hash": "def",
+        },
+        "bar": {
+            "baseline_code_structure_hash": "123",
+            "baseline_yaml_content_hash": None,
+        },
+    }
+
+    # Act: Save
+    manager.save_composite_hashes(module, hashes_to_save)
+~~~~~
+~~~~~python
+def test_manager_save_and_load_composite_hashes(tmp_path: Path):
+    # Arrange
+    manager = SignatureManager(root_path=tmp_path)
+    module = ModuleDef(file_path="src/main.py", functions=[create_func(name="foo")])
+
+    # Data is now composed of Fingerprint objects
+    hashes_to_save = {
+        "foo": Fingerprint.from_dict({
+            "baseline_code_structure_hash": "abc",
+            "baseline_yaml_content_hash": "def",
+        }),
+        "bar": Fingerprint.from_dict({
+            "baseline_code_structure_hash": "123",
+            "baseline_yaml_content_hash": None,
+        }),
+    }
+
+    # Act: Save
+    manager.save_composite_hashes(module, hashes_to_save)
 ~~~~~
