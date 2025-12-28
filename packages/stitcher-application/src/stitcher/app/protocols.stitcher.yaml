@@ -1,0 +1,7 @@
+"InteractionContext": |-
+  Data packet passed to the handler to request a user decision.
+"InteractionHandler": |-
+  Protocol for handling user interactions during a check.
+"InteractionHandler.process_interactive_session": |-
+  Processes a list of conflicts, returning a list of chosen actions.
+  The length of the returned list MUST match the input list.

@@ -4,10 +4,6 @@ from stitcher.spec import ResolutionAction, ConflictType
 
 
 class NoOpInteractionHandler(InteractionHandler):
-    """
-    A non-interactive handler that resolves conflicts based on CLI flags.
-    This preserves the original behavior for CI/CD environments.
-    """
 
     def __init__(self, force_relink: bool = False, reconcile: bool = False):
         self._force_relink = force_relink

@@ -7,7 +7,6 @@ from stitcher.app.protocols import InteractionHandler, InteractionContext
 from stitcher.spec import ResolutionAction, ConflictType
 
 class TyperInteractionHandler(InteractionHandler):
-    """An interactive handler using Typer/Click for user prompts."""
 
     def process_interactive_session(
         self, contexts: List[InteractionContext]
