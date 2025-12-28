@@ -17,10 +17,6 @@ def make_interaction_handler(
     non_interactive: bool = False,
     auto_resolve_mode: bool = False,
 ) -> Optional[InteractionHandler]:
-    """
-    Creates an interactive handler if the environment allows it (TTY)
-    and the user hasn't explicitly disabled it or chosen an auto-resolve flag.
-    """
     if sys.stdin.isatty() and not non_interactive and not auto_resolve_mode:
         renderer = TyperInteractiveRenderer(nexus)
         return TyperInteractionHandler(renderer)
@@ -28,7 +24,4 @@ def make_interaction_handler(
 
 
 def make_app(handler: Optional[InteractionHandler] = None) -> StitcherApp:
-    """
-    Creates a StitcherApp instance rooted at the current working directory.
-    """
     return StitcherApp(root_path=get_project_root(), interaction_handler=handler)

@@ -65,10 +65,6 @@ class FunctionDef:
         return hashlib.sha256(sig_str.encode("utf-8")).hexdigest()
 
     def get_signature_string(self) -> str:
-        """
-        Reconstructs the function signature as a string.
-        Example: async def foo(a: int, b: str = 'default') -> bool:
-        """
         parts = []
         if self.is_async:
             parts.append("async")
