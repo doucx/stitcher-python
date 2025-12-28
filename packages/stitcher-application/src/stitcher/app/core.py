@@ -361,6 +361,7 @@ class StitcherApp:
         
         all_results: list[FileCheckResult] = []
         all_conflicts: list[InteractionContext] = []
+        all_modules: list[ModuleDef] = []
 
         # 1. Analysis Phase
         for config in configs:
@@ -368,6 +369,7 @@ class StitcherApp:
                 bus.info(L.generate.target.processing, name=config.name)
             unique_files = self._get_files_from_config(config)
             modules = self._scan_files(unique_files)
+            all_modules.extend(modules)
             for module in modules:
                 result, conflicts = self._analyze_file(module)
                 all_results.append(result)
@@ -376,7 +378,7 @@ class StitcherApp:
         # 2. Execution Phase (Auto-reconciliation for doc improvements)
         for res in all_results:
             if res.infos["doc_improvement"]:
-                module_def = next((m for m in modules if m.file_path == res.path), None)
+                module_def = next((m for m in all_modules if m.file_path == res.path), None)
                 if not module_def: continue
                 
                 stored_hashes = self.sig_manager.load_composite_hashes(module_def)
