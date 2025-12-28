@@ -22,10 +22,12 @@
     "baseline_yaml_content_hash": "e60affe8a4742ccdb9637619f4f2acd0830cdf30021b49c5691a7796bcd9722c"
   },
   "Fingerprint.get": {
-    "baseline_code_structure_hash": "bf23c68ed4d574fcbdebba689eb070834cd39ac7c580ef9cbf5990022540acd2"
+    "baseline_code_structure_hash": "bf23c68ed4d574fcbdebba689eb070834cd39ac7c580ef9cbf5990022540acd2",
+    "baseline_yaml_content_hash": "5c350e2ee5889881cca4243ee62176dfa6994c64a9050fecceb8565b248c9500"
   },
   "Fingerprint.items": {
-    "baseline_code_structure_hash": "6b207798d4fe20e542229d8ca7ba8ffb92cf5e93466b9036835a010d63df50ee"
+    "baseline_code_structure_hash": "6b207798d4fe20e542229d8ca7ba8ffb92cf5e93466b9036835a010d63df50ee",
+    "baseline_yaml_content_hash": "a7f6dd8787c7cefd397b6a08106f01bce0f114089b57abc641f5f20cc6e114c6"
   },
   "Fingerprint.to_dict": {
     "baseline_code_structure_hash": "04864d4adc26ef2280c51038a7736afaef6b76aed932886f061d495e3a450b72",

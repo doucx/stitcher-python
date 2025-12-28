@@ -20,7 +20,8 @@
     "baseline_yaml_content_hash": "754ad6a507787d665272a8fe4525c37bd61c8599d8969e54604079c1b3424d19"
   },
   "FileCheckResult.reconciled_count": {
-    "baseline_code_structure_hash": "b12338953fd7de35f28579324fb6415d37d81b4d4583bbd628d868dde4149325"
+    "baseline_code_structure_hash": "b12338953fd7de35f28579324fb6415d37d81b4d4583bbd628d868dde4149325",
+    "baseline_yaml_content_hash": "7b093098a9e65368339a0ef312a8afd21a9a65c0fb43d1f51dad748d9895d079"
   },
   "FileCheckResult.warning_count": {
     "baseline_code_structure_hash": "3d88c9e03c32f49ff962be694c31e49542220a026d43f907574ac2d8f293789f",
@@ -30,7 +31,7 @@
     "baseline_yaml_content_hash": "2ceea22d286f22daccf3682179b063e2a0c7fae75a7c4586020f349875dabe52"
   },
   "StitcherApp": {
-    "baseline_yaml_content_hash": "9dc3e02aa9bfded82c4f7035fe0f25f7e3281a748e33dbedb7818022859ed686"
+    "baseline_yaml_content_hash": "56ba56645ae8bc442c435ee789bb3cfbddd0eaefc0e0a33b11b20ba6d391dc55"
   },
   "StitcherApp.__init__": {
     "baseline_code_structure_hash": "02fb98d263c87406ff30ff04f5fb786e78eafb92c11a2652d35276e5e00568f9"
@@ -61,7 +62,7 @@
   },
   "StitcherApp.run_check": {
     "baseline_code_structure_hash": "4cfe338208fefaf498e609a386a62469c06faddfb7d8cb43fbc915fd2d672ac8",
-    "baseline_yaml_content_hash": "f6407935fe4b7b41cc6f08475caa85ccff232febf5c31ce1b763c8f4bb5450a4"
+    "baseline_yaml_content_hash": "39108ece98b238c3d8ca1a5d9fa0f66ebf78bd720f4a21221ba7cf558b0045af"
   },
   "StitcherApp.run_eject": {
     "baseline_code_structure_hash": "326d269e307921bbac3e523c49542f39eed0773d486c83920cc297ad5f3388af",
@@ -80,7 +81,7 @@
     "baseline_yaml_content_hash": "013f787d7bb1c9ea65c00d15ed54e57d1117496a37a7418128fcb3b6f063a07e"
   },
   "StitcherApp.run_strip": {
-    "baseline_code_structure_hash": "74d36401cc2bddfebf8a7fee03a1af709f05c55ea2e30b5187111b8322fb3bf2",
-    "baseline_yaml_content_hash": "5390d41d75a4d7ede5cc3ec32c2cc3d064f0852993fc387a0860033c1ea7a337"
+    "baseline_code_structure_hash": "bda2820f9698db31dce2dee53b15d50409bed5407bd167b2c7e252a2a1c35392",
+    "baseline_yaml_content_hash": "14c8ff8d578021db2d09829ff2f435a87bfae34896a5bb8340a117bf2baec81c"
   }
 }

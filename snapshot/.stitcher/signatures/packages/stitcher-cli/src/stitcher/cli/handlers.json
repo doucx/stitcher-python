@@ -3,6 +3,7 @@
     "baseline_yaml_content_hash": "6420f1db09b70cf040706006dc6843f8c4a510f5d8670ea9ceea0aa48d3e5b83"
   },
   "TyperInteractionHandler.process_interactive_session": {
-    "baseline_code_structure_hash": "72ab2928cd87e4ba0ccc8358dc09f0186a38a90654abd80ff66a8358659e5a1b"
+    "baseline_code_structure_hash": "72ab2928cd87e4ba0ccc8358dc09f0186a38a90654abd80ff66a8358659e5a1b",
+    "baseline_yaml_content_hash": "8021e46a800e7ba05d78e2020df940946829bf0c14440a0cbcc780b44b846f63"
   }
 }
