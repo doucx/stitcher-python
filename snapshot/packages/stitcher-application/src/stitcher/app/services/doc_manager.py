@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 from typing import Dict, Optional, Any
 
@@ -291,3 +292,14 @@ class DocumentManager:
                 keys.add(attr.name)
 
         return keys
+
+    def _hash_content(self, content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def compute_document_hashes(self, module: ModuleDef) -> Dict[str, str]:
+        """Computes hashes for each docstring in the corresponding YAML."""
+        docs = self.load_docs_for_module(module)
+        return {
+            fqn: self._hash_content(doc_content)
+            for fqn, doc_content in docs.items()
+        }
