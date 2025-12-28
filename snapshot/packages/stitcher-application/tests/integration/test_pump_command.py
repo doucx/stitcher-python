@@ -4,8 +4,8 @@ from needle.pointer import L
 from stitcher.test_utils import SpyBus, WorkspaceFactory
 
 
-def test_hydrate_adds_new_docs_to_yaml(tmp_path, monkeypatch):
-    """Scenario 1: Normal Hydration"""
+def test_pump_adds_new_docs_to_yaml(tmp_path, monkeypatch):
+    """Scenario 1: Normal Pumping"""
     # Arrange
     factory = WorkspaceFactory(tmp_path)
     project_root = (
@@ -19,12 +19,12 @@ def test_hydrate_adds_new_docs_to_yaml(tmp_path, monkeypatch):
 
     # Act
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_hydrate()
+        result = app.run_pump()
 
     # Assert
-    assert success is True
-    spy_bus.assert_id_called(L.hydrate.file.success, level="success")
-    spy_bus.assert_id_called(L.hydrate.run.complete, level="success")
+    assert result.success is True
+    spy_bus.assert_id_called(L.pump.file.success, level="success")
+    spy_bus.assert_id_called(L.pump.run.complete, level="success")
 
     doc_path = project_root / "src/main.stitcher.yaml"
     assert doc_path.exists()
@@ -33,7 +33,7 @@ def test_hydrate_adds_new_docs_to_yaml(tmp_path, monkeypatch):
         assert data["func"] == "New doc."
 
 
-def test_hydrate_fails_on_conflict(tmp_path, monkeypatch):
+def test_pump_fails_on_conflict(tmp_path, monkeypatch):
     """Scenario 2: Conflict Detection"""
     # Arrange
     factory = WorkspaceFactory(tmp_path)
@@ -49,12 +49,12 @@ def test_hydrate_fails_on_conflict(tmp_path, monkeypatch):
 
     # Act
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_hydrate()
+        result = app.run_pump()
 
     # Assert
-    assert success is False
-    spy_bus.assert_id_called(L.hydrate.error.conflict, level="error")
-    spy_bus.assert_id_called(L.hydrate.run.conflict, level="error")
+    assert result.success is False
+    spy_bus.assert_id_called(L.pump.error.conflict, level="error")
+    spy_bus.assert_id_called(L.pump.run.conflict, level="error")
 
     # Verify YAML was NOT changed
     doc_path = project_root / "src/main.stitcher.yaml"
@@ -63,7 +63,7 @@ def test_hydrate_fails_on_conflict(tmp_path, monkeypatch):
         assert data["func"] == "YAML doc"
 
 
-def test_hydrate_force_overwrites_conflict(tmp_path, monkeypatch):
+def test_pump_force_overwrites_conflict(tmp_path, monkeypatch):
     """Scenario 3: Force Overwrite"""
     # Arrange (same as conflict test)
     factory = WorkspaceFactory(tmp_path)
@@ -79,11 +79,11 @@ def test_hydrate_force_overwrites_conflict(tmp_path, monkeypatch):
 
     # Act
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_hydrate(force=True)
+        result = app.run_pump(force=True)
 
     # Assert
-    assert success is True
-    spy_bus.assert_id_called(L.hydrate.file.success, level="success")
+    assert result.success is True
+    spy_bus.assert_id_called(L.pump.file.success, level="success")
 
     # Verify YAML was changed
     doc_path = project_root / "src/main.stitcher.yaml"
@@ -92,7 +92,7 @@ def test_hydrate_force_overwrites_conflict(tmp_path, monkeypatch):
         assert data["func"] == "Code doc."
 
 
-def test_hydrate_with_strip_removes_source_doc(tmp_path, monkeypatch):
+def test_pump_with_strip_removes_source_doc(tmp_path, monkeypatch):
     """Scenario 4: Strip Integration"""
     # Arrange
     factory = WorkspaceFactory(tmp_path)
@@ -108,11 +108,11 @@ def test_hydrate_with_strip_removes_source_doc(tmp_path, monkeypatch):
 
     # Act
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_hydrate(strip=True)
+        result = app.run_pump(strip=True)
 
     # Assert
-    assert success is True
-    spy_bus.assert_id_called(L.hydrate.file.success)
+    assert result.success is True
+    spy_bus.assert_id_called(L.pump.file.success)
     spy_bus.assert_id_called(L.strip.file.success)
     spy_bus.assert_id_called(L.strip.run.complete)
 
@@ -121,7 +121,7 @@ def test_hydrate_with_strip_removes_source_doc(tmp_path, monkeypatch):
     assert '"""' not in final_code
 
 
-def test_hydrate_reconcile_ignores_source_conflict(tmp_path, monkeypatch):
+def test_pump_reconcile_ignores_source_conflict(tmp_path, monkeypatch):
     """Scenario 5: Reconcile (YAML-first) Mode"""
     # Arrange (same as conflict test)
     factory = WorkspaceFactory(tmp_path)
@@ -137,11 +137,11 @@ def test_hydrate_reconcile_ignores_source_conflict(tmp_path, monkeypatch):
 
     # Act
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_hydrate(reconcile=True)
+        result = app.run_pump(reconcile=True)
 
     # Assert
-    assert success is True
-    spy_bus.assert_id_called(L.hydrate.info.reconciled, level="info")
+    assert result.success is True
+    spy_bus.assert_id_called(L.pump.info.reconciled, level="info")
 
     # Verify no errors were raised
     error_msgs = [m for m in spy_bus.get_messages() if m["level"] == "error"]

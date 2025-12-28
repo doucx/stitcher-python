@@ -37,7 +37,7 @@ def test_strip_command_removes_docstrings(tmp_path, monkeypatch):
     spy_bus.assert_id_called(L.strip.run.complete)
 
 
-def test_eject_command_injects_docstrings(tmp_path, monkeypatch):
+def test_inject_command_injects_docstrings(tmp_path, monkeypatch):
     # Arrange
     factory = WorkspaceFactory(tmp_path)
     source_path = "src/main.py"
@@ -56,11 +56,11 @@ def test_eject_command_injects_docstrings(tmp_path, monkeypatch):
 
     # Act
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        app.run_eject()
+        app.run_inject()
 
     # Assert
     final_code = (project_root / source_path).read_text()
     assert '"""Injected docstring."""' in final_code
 
-    spy_bus.assert_id_called(L.eject.file.success)
-    spy_bus.assert_id_called(L.eject.run.complete)
+    spy_bus.assert_id_called(L.inject.file.success)
+    spy_bus.assert_id_called(L.inject.run.complete)

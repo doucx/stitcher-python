@@ -5,9 +5,9 @@ from stitcher.test_utils import WorkspaceFactory, SpyBus
 from needle.pointer import L
 
 
-def test_hydrate_does_not_rewrite_synced_legacy_signatures(tmp_path: Path, monkeypatch):
+def test_pump_does_not_rewrite_synced_legacy_signatures(tmp_path: Path, monkeypatch):
     """
-    Regression Test: Verifies that `hydrate` does not rewrite signature files
+    Regression Test: Verifies that `pump` does not rewrite signature files
     when they are in sync but use a legacy key schema.
 
     Problem: `hydrate` was rewriting files because it didn't recognize the old
@@ -43,23 +43,23 @@ def test_hydrate_does_not_rewrite_synced_legacy_signatures(tmp_path: Path, monke
         json.dump(legacy_data, f)
 
     # The project is now in a "synchronized" state, but with a legacy signature file.
-    # We also strip the source docstring to ensure hydrate has nothing to do.
+    # We also strip the source docstring to ensure pump has nothing to do.
     (project_root / "src/main.py").write_text("def func(a: int): ...")
 
     spy_bus = SpyBus()
 
-    # 3. Act: Run the hydrate command.
+    # 3. Act: Run the pump command.
     # Because the signature file contains legacy keys ('code_structure_hash'),
     # the strict Fingerprint validation should fail, treating the file as corrupted/empty.
-    # Hydrate will then treat the code as "new" and regenerate the signatures with
+    # Pump will then treat the code as "new" and regenerate the signatures with
     # correct keys ('baseline_code_structure_hash').
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_hydrate()
+        result = app.run_pump()
 
     # 4. Assert
     data_after = json.loads(sig_file_path.read_text())
 
-    assert success is True
+    assert result.success is True
 
     # Verify the new schema is present for the function
     fp_func = data_after.get("func", {})
@@ -70,6 +70,6 @@ def test_hydrate_does_not_rewrite_synced_legacy_signatures(tmp_path: Path, monke
         "Legacy schema key 'code_structure_hash' was not removed."
     )
 
-    # Even though we migrated signatures, no docs were hydrated, so user sees "no changes"
+    # Even though we migrated signatures, no docs were pumped, so user sees "no changes"
     # in terms of docstring updates.
-    spy_bus.assert_id_called(L.hydrate.run.no_changes, level="info")
+    spy_bus.assert_id_called(L.pump.run.no_changes, level="info")
