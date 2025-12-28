@@ -1,57 +1,105 @@
-好的，重构工作已经圆满完成。我们成功将 `Nexus` 提升为 `Loader`，引入了读写分离的协议，并完成了所有术语的“升维”同步。
+好的，收到指令。
 
-我将生成一个 `[COMMIT]` 计划，将这些变更作为一个完整的逻辑单元提交到仓库。
+我们将遵循测试驱动开发（TDD）的最佳实践，首先创建一个捕获 `stitcher generate` 命令中 `.pyi` 文件文档字符串格式错误的回归测试。这个测试目前应该会失败，从而验证问题的存在，并为我们后续的修复提供明确的目标。
 
-## [COMMIT] refactor(core): implement Nexus as a Loader and CQRS protocols
+根据问题描述，我们需要测试两点：
+1.  多行文档字符串在 `.pyi` 文件中是否保持了正确的相对缩进。
+2.  包含引号的文档字符串是否被正确处理，没有添加多余的引号。
+
+我将生成一个计划，在 `stitcher-io` 包的测试文件 `test_stub_generator.py` 中添加一个新的测试用例来覆盖这些场景。
+
+## [WIP] test: 为 pyi 生成中的 docstring 格式错误添加回归测试
 
 ### 用户需求
-将当前的重构成果（Nexus Loader 化、写协议引入、文档同步）提交到 Git 仓库，使用 `git add .`。
+为 `stitcher generate` 流程中 `.pyi` 文件生成时出现的两个文档字符串格式错误，创建一个失败的回归测试。
+1.  多行文档字符串的缩进不正确。
+2.  包含引号的文档字符串末尾会多出一个额外的引号。
 
 ### 评论
-这次重构为 `Needle` 奠定了工业级的架构基础。通过将 `Nexus` 自身视为一个 `Loader`，我们释放了递归组合的潜力；通过引入 `domain` 概念，我们使系统具备了超越 i18n 的通用能力。
+这是一个关键且标准的步骤。通过测试先行，我们能确保：
+1.  清晰地复现并隔离问题。
+2.  为后续的修复工作提供一个明确的成功标准。
+3.  防止未来对相关代码的修改无意中再次引入此缺陷。
 
 ### 目标
-1.  暂存所有变更。
-2.  创建一个详尽的提交记录，说明重构的核心变动。
+1.  在 `packages/stitcher-io/tests/test_stub_generator.py` 文件中添加一个新的测试函数 `test_generate_pyi_with_correct_docstring_formatting`。
+2.  该测试将构造一个包含特殊文档字符串（多行、含引号）的 `ModuleDef` IR。
+3.  断言由 `StubGenerator` 生成的 `.pyi` 内容与预期的、正确格式化的“黄金标准”字符串完全一致。
 
 ### 基本原理
-按照 Git 最佳实践，在完成一个逻辑闭环（功能重构 + 修复错误 + 同步文档）后，应及时进行提交。
+我们将直接与 `stitcher-io` 包中的 `StubGenerator` 交互，因为它直接负责将 IR 转换为 `.pyi` 文件的字符串内容。通过为它提供一个精心构造的、包含问题场景的 `ModuleDef` 对象，我们可以精确地测试其 `_format_docstring` 方法（或相关逻辑）的行为。新的测试用例将与现有的 `test_generate_simple_pyi` 并存，专门用于验证这些棘手的边缘情况。
 
 ### 标签
-#intent/refine #flow/ready #priority/medium #comp/runtime #comp/interfaces #concept/state #ai/instruct #task/domain/core-runtime #task/object/nexus-loader #task/action/refactor #task/state/end
+#intent/tooling #flow/ready #priority/high
+#comp/io #comp/tests #scope/dx
+#ai/instruct
+#task/domain/testing #task/object/stub-generator #task/action/bug-fix
+#task/state/begin
 
 ---
-
 ### Script
 
-#### Acts 1: 提交重构成果
+#### Acts 1: 在 `test_stub_generator.py` 中添加回归测试
+
+我们将向 `packages/stitcher-io/tests/test_stub_generator.py` 文件追加一个新的测试函数，该函数专门用于验证多行和带引号的文档字符串能否被正确格式化。
 
 ~~~~~act
-run_command
+patch_file
+packages/stitcher-io/tests/test_stub_generator.py
 ~~~~~
+~~~~~python.old
+    # 3. Act
+    generator = StubGenerator()
+    generated_code = generator.generate(module_def).strip()
+
+    # 4. Assert
+    assert generated_code == expected_pyi
 ~~~~~
-git add .
+~~~~~python.new
+    # 3. Act
+    generator = StubGenerator()
+    generated_code = generator.generate(module_def).strip()
+
+    # 4. Assert
+    assert generated_code == expected_pyi
+
+
+def test_generate_pyi_with_correct_docstring_formatting():
+    # Arrange: Create an IR with problematic docstrings
+    module_def = ModuleDef(
+        file_path="formatter_test.py",
+        functions=[
+            FunctionDef(
+                name="multiline_doc",
+                docstring="First line.\nSecond line should be indented.",
+            ),
+            FunctionDef(
+                name="quotes_doc",
+                docstring='This docstring contains "quotes".',
+            ),
+        ],
+    )
+
+    # The "golden" output with correct formatting
+    expected_pyi = dedent("""
+        def multiline_doc():
+            \"\"\"First line.
+            Second line should be indented.\"\"\"
+            ...
+
+        def quotes_doc():
+            \"\"\"This docstring contains "quotes".\"\"\"
+            ...
+    """).strip()
+
+    # Act
+    generator = StubGenerator()
+    generated_code = generator.generate(module_def).strip()
+
+    # Assert
+    assert generated_code == expected_pyi
 ~~~~~
-
-~~~~~act
-git_commit
-~~~~~
-~~~~~text
-refactor(core): implement Nexus as a Loader and CQRS protocols
-
-This major refactoring evolves the Needle architecture by treating the Nexus itself as a ResourceLoader, enabling recursive composition.
-
-Core changes:
-- Refactored `NexusProtocol` to inherit from `ResourceLoaderProtocol`.
-- Introduced `WritableResourceLoaderProtocol` to implement a CQRS-inspired write-back strategy.
-- Updated `OverlayNexus` to implement both reading (layering) and writing (delegation) protocols.
-- Renamed the core concept of `lang` to `domain` across all layers to support broader resource contexts (themes, config, etc.).
-- Fixed namespace package issues by adding explicit `pkgutil` declarations in `pyneedle-runtime` and `pyneedle-nexus`.
-- Implemented `put` and `locate` in `FileSystemLoader` with a deterministic FQN-to-Path mapping strategy.
-- Synchronized all internal documentation (.stitcher.yaml) with the new terminology and signatures.
-
-This change turns Needle into a universal semantic resource mesh, bridging the gap between static pointers and diverse, layered data sources.
-~~~~~
-
 ### 下一步建议
-架构已经就绪。接下来的一个好方向是利用 `OverlayNexus` 的新能力，尝试实现一个 `HttpLoader` 或 `SqliteLoader`，验证系统对非文件数据源的扩展性。
+我们已经成功创建了用于捕获错误的测试用例。执行此计划后，下一步是在 `stitcher-io` 包中运行测试，并预期看到 `test_generate_pyi_with_correct_docstring_formatting` 测试失败。
+
+一旦失败被确认，我将为您生成修复 `stitcher-io/src/stitcher/io/stub_generator.py` 中相关逻辑的计划。
