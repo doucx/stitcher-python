@@ -62,17 +62,18 @@ def test_hydrate_does_not_rewrite_synced_legacy_signatures(
         success = app.run_hydrate()
 
     # 4. Assert
-    content_after = sig_file_path.read_text()
+    data_after = json.loads(sig_file_path.read_text())
 
     assert success is True
-    # The file content MUST change, because we are migrating from legacy to new schema.
-    assert content_after != content_before, (
-        "Hydrate command failed to migrate legacy signature file."
-    )
     
-    # Verify the new schema is present
-    assert "baseline_code_structure_hash" in content_after
-    assert "code_structure_hash" not in content_after
+    # Verify the new schema is present for the function
+    fp_func = data_after.get("func", {})
+    assert "baseline_code_structure_hash" in fp_func, (
+        "New schema key 'baseline_code_structure_hash' missing."
+    )
+    assert "code_structure_hash" not in fp_func, (
+        "Legacy schema key 'code_structure_hash' was not removed."
+    )
 
     # Even though we migrated signatures, no docs were hydrated, so user sees "no changes"
     # in terms of docstring updates.
