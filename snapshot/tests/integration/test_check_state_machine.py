@@ -1,10 +1,8 @@
-from textwrap import dedent
 from pathlib import Path
 import json
 from stitcher.app import StitcherApp
 from needle.pointer import L
 from stitcher.test_utils import SpyBus, WorkspaceFactory
-from stitcher.app.services import DocumentManager, SignatureManager
 
 
 def _get_stored_hashes(project_root: Path, file_path: str) -> dict:

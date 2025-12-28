@@ -1,6 +1,6 @@
 import copy
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional
 from collections import defaultdict
 from dataclasses import dataclass, field
 
