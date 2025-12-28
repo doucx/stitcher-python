@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] chore(repo): 将所有 Needle 资源迁移到 SST v2.2 物理存储规范", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766914465.3108628, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix(pyneedle): 移除对已废弃的 _default_loader 的引用", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766914534.9643679, "duration_ms": 0}}
