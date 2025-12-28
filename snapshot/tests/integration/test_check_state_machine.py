@@ -1,52 +1,3 @@
-好的，我已经了解了现有的测试结构，特别是 `tests/integration/test_check_command.py`、`test_check_conflict.py`、`test_check_file_tracking.py`、`test_check_policy.py` 和 `test_check_signatures.py` 文件。这些文件为 `stitcher check` 命令的不同方面提供了集成测试，为我接下来编写新的状态机测试提供了宝贵的上下文。
-
-现在，我将创建一个新的测试文件 `tests/integration/test_check_state_machine.py`，专门用于验证“签名与文档哈希校验状态机模型”的各种状态和行为。这个文件将包含：
-1.  **同步状态 (Synchronized)**: 验证在代码和文档完全同步时 `check` 命令的静默通过。
-2.  **文档改进 (Documentation Improvement)**: 验证仅文档更新时，`check` 命令的自动调和行为。
-3.  **签名漂移 (Signature Drift)**: 验证签名变更但文档未变时，`check` 命令的错误报告以及 `force_relink` 标志的纠正作用。
-4.  **协同演进 (Co-evolution)**: 验证签名和文档同时变更时，`check` 命令的错误报告以及 `reconcile` 标志的纠正作用。
-5.  **边缘情况**: 考虑 FQN 增删改等情况。
-
-我将利用 `WorkspaceFactory` 和 `SpyBus` 来构建隔离的测试环境并验证消息传递，确保测试的健壮性和可读性。
-
-## [WIP] feat: 为 `check` 状态机编写集成测试
-
-### 用户需求
-为 `stitcher check` 命令新实现的状态机模型编写全面的集成测试，确保在各种代码和文档同步状态下，工具的行为符合“签名与文档哈希校验状态机模型”提案的预期。
-
-### 评论
-这些集成测试是验证状态机逻辑正确性的关键。通过模拟不同场景并断言预期的输出和状态变更，我们可以确保新架构的稳定性和可靠性。这将显著提升 `stitcher` 工具的质量保证。
-
-### 目标
-1.  创建一个新文件 `tests/integration/test_check_state_machine.py`。
-2.  编写测试用例，覆盖提案中定义的所有四种状态：
-    *   `test_state_synchronized`
-    *   `test_state_doc_improvement_auto_reconciled`
-    *   `test_state_signature_drift_error`
-    *   `test_state_signature_drift_force_relink`
-    *   `test_state_co_evolution_error`
-    *   `test_state_co_evolution_reconcile`
-3.  确保每个测试用例都能通过 `SpyBus` 准确断言预期消息（包括级别和 FQN）。
-4.  利用 `WorkspaceFactory` 动态构建测试项目，以实现测试环境的自包含性和隔离性。
-
-### 基本原理
-我们将遵循集成测试的最佳实践，为每个状态场景构建一个独立的、声明式的测试工作区。每个测试都将首先使用 `run_init` 建立一个基线状态，然后修改文件以触发特定的状态转换，最后运行 `run_check` 并通过 `SpyBus` 验证输出和 `SignatureManager` 的持久化状态。这将确保我们对状态机的行为有全面的信心。
-
-### 标签
-#intent/build #flow/ready #priority/high #comp/tests #concept/state #scope/core #ai/instruct #task/domain/validation #task/object/state-machine #task/action/implementation #task/state/continue
-
----
-### Script
-
-#### Acts 1: 创建 `tests/integration/test_check_state_machine.py` 文件
-
-现在，我将创建 `test_check_state_machine.py` 文件并填充其内容。
-
-~~~~~act
-write_file
-tests/integration/test_check_state_machine.py
-~~~~~
-~~~~~python
 from textwrap import dedent
 from stitcher.app import StitcherApp
 from needle.pointer import L
@@ -288,4 +239,3 @@ def test_state_co_evolution_reconcile(tmp_path, monkeypatch):
     assert final_hashes["func"]["document_hash"] == hashlib.sha256("New YAML Doc.".encode("utf-8")).hexdigest()
 
 import hashlib # Import hash for docstring content comparisons
-~~~~~
