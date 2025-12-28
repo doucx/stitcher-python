@@ -1,5 +1,6 @@
 {
   "NexusProtocol": {
+    "baseline_yaml_content_hash": "bdfe001689e9ef268e6bfa7a419fceca7ab36b89979e84711d285ea0e99cfce3",
     "code_structure_hash": null,
     "yaml_content_hash": "bdfe001689e9ef268e6bfa7a419fceca7ab36b89979e84711d285ea0e99cfce3"
   },
@@ -12,6 +13,7 @@
     "yaml_content_hash": "1887671f5b899bd31793e7319baec93b7ddce92a91a37e0c1f81e5164ce3fae7"
   },
   "PointerSetProtocol": {
+    "baseline_yaml_content_hash": "b6f0af339ba8423e0a07c96f30c47de7d9cbb55a371f6bf2fae7bc253904226d",
     "code_structure_hash": null,
     "yaml_content_hash": "b6f0af339ba8423e0a07c96f30c47de7d9cbb55a371f6bf2fae7bc253904226d"
   },
@@ -36,6 +38,7 @@
     "yaml_content_hash": "56333dd4fb587a9da49dad8c84b9a80bfa1aa081d27094464635803b0d206e30"
   },
   "ResourceLoaderProtocol": {
+    "baseline_yaml_content_hash": "6a6daa0d81128149a26e82e43172e0a2b64705c608ade58fc9f6b15fcc161d60",
     "code_structure_hash": null,
     "yaml_content_hash": "6a6daa0d81128149a26e82e43172e0a2b64705c608ade58fc9f6b15fcc161d60"
   },
@@ -44,6 +47,7 @@
     "yaml_content_hash": "b5218fdbe23c53f85706c5e5baa4a748393d028ee92d794dd1d98f2d29117f49"
   },
   "SemanticPointerProtocol": {
+    "baseline_yaml_content_hash": "fe18d37498b223e7d7233845204c765d67b3235a8196a6a9c7f1a86d85a3087f",
     "code_structure_hash": null,
     "yaml_content_hash": "fe18d37498b223e7d7233845204c765d67b3235a8196a6a9c7f1a86d85a3087f"
   },
@@ -76,10 +80,12 @@
     "yaml_content_hash": "e84d274a7b36a798faa41aa599c7d22608cf00b8fd28cc0c68a679f6346f29f8"
   },
   "T_Pointer": {
+    "baseline_yaml_content_hash": "c6ee5ff8814e8f607c56860162bca85d5d04015d82257889192138c1d4fde1b8",
     "code_structure_hash": null,
     "yaml_content_hash": "c6ee5ff8814e8f607c56860162bca85d5d04015d82257889192138c1d4fde1b8"
   },
   "WritableResourceLoaderProtocol": {
+    "baseline_yaml_content_hash": "c2b3271f5952f43dddae8eeeed9eb93565aea603d3746acd1b58d75fa7a4df2b",
     "code_structure_hash": null,
     "yaml_content_hash": "c2b3271f5952f43dddae8eeeed9eb93565aea603d3746acd1b58d75fa7a4df2b"
   },
