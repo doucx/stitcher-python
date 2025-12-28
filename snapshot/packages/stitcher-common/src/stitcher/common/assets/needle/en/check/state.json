@@ -1,0 +1,10 @@
+{
+  "relinked": "Re-linked signature for '{key}' in {path}",
+  "reconciled": "Reconciled changes for '{key}' in {path}",
+  "auto_reconciled": "Automatically updated {count} documentation hash(es) in {path}",
+  "extra_doc": "Extra Doc: '{key}' is in docs but not in code.",
+  "signature_drift": "Signature Drift: '{key}' code changed, docs may be stale.",
+  "co_evolution": "Co-evolution: '{key}' both code and docs changed; intent unclear.",
+  "doc_updated": "Doc Updated: '{key}' documentation was improved.",
+  "untracked_code": "Untracked Code: '{key}' new public API without documentation."
+}

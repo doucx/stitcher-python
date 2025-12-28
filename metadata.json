@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 修正集成测试中的哈希计算与断言", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766894808.6850548, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] refactor: 全面重构哈希命名与校验逻辑", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766895086.4546254, "duration_ms": 0}}

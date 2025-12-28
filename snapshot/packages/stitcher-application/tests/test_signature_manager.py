@@ -50,12 +50,12 @@ def test_manager_save_and_load_composite_hashes(tmp_path: Path):
     module = ModuleDef(file_path="src/main.py", functions=[create_func(name="foo")])
 
     hashes_to_save = {
-        "foo": {"signature_hash": "abc", "document_hash": "def"},
-        "bar": {"signature_hash": "123", "document_hash": None},
+        "foo": {"code_structure_hash": "abc", "yaml_content_hash": "def"},
+        "bar": {"code_structure_hash": "123", "yaml_content_hash": None},
     }
 
     # Act: Save
-    manager.save_hashes(module, hashes_to_save)
+    manager.save_composite_hashes(module, hashes_to_save)
 
     # Assert: File exists and has correct structure
     sig_path = tmp_path / ".stitcher/signatures/src/main.json"
@@ -63,16 +63,11 @@ def test_manager_save_and_load_composite_hashes(tmp_path: Path):
 
     with sig_path.open("r") as f:
         data = json.load(f)
-        assert data["foo"]["signature_hash"] == "abc"
-        assert data["foo"]["document_hash"] == "def"
-        assert data["bar"]["signature_hash"] == "123"
-        assert data["bar"]["document_hash"] is None
+        assert data["foo"]["code_structure_hash"] == "abc"
+        assert data["foo"]["yaml_content_hash"] == "def"
+        assert data["bar"]["code_structure_hash"] == "123"
+        assert data["bar"]["yaml_content_hash"] is None
 
     # Act: Load
-    loaded = manager.load_hashes(module)
+    loaded = manager.load_composite_hashes(module)
     assert loaded == hashes_to_save
-
-
-# The test 'test_manager_check_detects_mismatch' was removed because
-# the 'check_signatures' method was removed from SignatureManager.
-# This logic is now handled in StitcherApp and will be tested at the integration level.

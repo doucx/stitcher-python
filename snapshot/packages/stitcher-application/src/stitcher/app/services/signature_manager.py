@@ -16,8 +16,8 @@ class SignatureManager:
         rel_path = Path(module.file_path)
         return self.sig_root / rel_path.with_suffix(".json")
 
-    def compute_signature_hashes(self, module: ModuleDef) -> Dict[str, str]:
-        """Computes signature hashes for all addressable functions/methods."""
+    def compute_code_structure_hashes(self, module: ModuleDef) -> Dict[str, str]:
+        """Computes structural fingerprints for all addressable functions/methods."""
         hashes = {}
         for func in module.functions:
             hashes[func.name] = func.compute_fingerprint()
@@ -27,11 +27,12 @@ class SignatureManager:
                 hashes[fqn] = method.compute_fingerprint()
         return hashes
 
-    def save_hashes(self, module: ModuleDef, hashes: Dict[str, Any]) -> None:
-        """Saves the composite hash map for a module."""
+    def save_composite_hashes(self, module: ModuleDef, hashes: Dict[str, Any]) -> None:
+        """
+        Saves the composite hash map for a module.
+        Expected format: { "FQN": { "code_structure_hash": "...", "yaml_content_hash": "..." } }
+        """
         if not hashes:
-            # If no hashes, we might want to clean up any old file.
-            # For now, let's remove it to avoid stale state.
             sig_path = self._get_sig_path(module)
             if sig_path.exists():
                 sig_path.unlink()
@@ -43,7 +44,7 @@ class SignatureManager:
         with sig_path.open("w", encoding="utf-8") as f:
             json.dump(hashes, f, indent=2, sort_keys=True)
 
-    def load_hashes(self, module: ModuleDef) -> Dict[str, Any]:
+    def load_composite_hashes(self, module: ModuleDef) -> Dict[str, Any]:
         """Loads the composite hash map for a module."""
         sig_path = self._get_sig_path(module)
         if not sig_path.exists():

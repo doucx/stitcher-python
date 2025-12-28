@@ -51,7 +51,7 @@ class FileCheckResult:
             self.error_count == 0
             and self.warning_count == 0
             and self.reconciled_count == 0
-            and self.auto_reconciled_count == 0
+            # Auto-reconciled (infos) do not affect cleanliness
         )
 
 
@@ -235,16 +235,16 @@ class StitcherApp:
                 continue
             for module in modules:
                 output_path = self.doc_manager.save_docs_for_module(module)
-                s_hashes = self.sig_manager.compute_signature_hashes(module)
-                d_hashes = self.doc_manager.compute_document_hashes(module)
+                code_hashes = self.sig_manager.compute_code_structure_hashes(module)
+                yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
                 combined = {}
-                all_fqns = set(s_hashes.keys()) | set(d_hashes.keys())
+                all_fqns = set(code_hashes.keys()) | set(yaml_hashes.keys())
                 for fqn in all_fqns:
                     combined[fqn] = {
-                        "signature_hash": s_hashes.get(fqn),
-                        "document_hash": d_hashes.get(fqn),
+                        "code_structure_hash": code_hashes.get(fqn),
+                        "yaml_content_hash": yaml_hashes.get(fqn),
                     }
-                self.sig_manager.save_hashes(module, combined)
+                self.sig_manager.save_composite_hashes(module, combined)
                 if output_path and output_path.name:
                     relative_path = output_path.relative_to(self.root_path)
                     bus.success(L.init.file.created, path=relative_path)
@@ -260,8 +260,7 @@ class StitcherApp:
     ) -> FileCheckResult:
         result = FileCheckResult(path=module.file_path)
 
-        # 1. Content Checks (Missing, Extra, Conflict, Pending)
-        # This populates errors/warnings for content-level issues.
+        # 1. Content Checks
         if (self.root_path / module.file_path).with_suffix(".stitcher.yaml").exists():
             doc_issues = self.doc_manager.check_module(module)
             if doc_issues["missing"]:
@@ -272,77 +271,69 @@ class StitcherApp:
                 result.errors["pending"].extend(doc_issues["pending"])
             if doc_issues["conflict"]:
                 result.errors["conflict"].extend(doc_issues["conflict"])
-            # 'extra' from check_module refers to keys in YAML not in Code.
-            # We will handle 'extra' in the state machine loop below to be consistent
-            # with hash checking, or merge them. check_module's extra is accurate for keys.
             if doc_issues["extra"]:
                 result.errors["extra"].extend(doc_issues["extra"])
 
-        # 2. State Machine Checks (Signature Drift, Co-evolution, Doc Improvement)
+        # 2. State Machine Checks
         doc_path = (self.root_path / module.file_path).with_suffix(".stitcher.yaml")
         is_tracked = doc_path.exists()
 
-        s_current_map = self.sig_manager.compute_signature_hashes(module)
-        d_current_map = self.doc_manager.compute_document_hashes(module)
-        stored_hashes_map = self.sig_manager.load_hashes(module)
+        current_code_structure_map = self.sig_manager.compute_code_structure_hashes(module)
+        current_yaml_content_map = self.doc_manager.compute_yaml_content_hashes(module)
+        stored_hashes_map = self.sig_manager.load_composite_hashes(module)
         new_hashes_map = stored_hashes_map.copy()
 
-        all_fqns = set(s_current_map.keys()) | set(stored_hashes_map.keys())
+        all_fqns = set(current_code_structure_map.keys()) | set(stored_hashes_map.keys())
 
         for fqn in sorted(list(all_fqns)):
-            s_current = s_current_map.get(fqn)
-            d_current = d_current_map.get(fqn)
+            current_code_structure_hash = current_code_structure_map.get(fqn)
+            current_yaml_content_hash = current_yaml_content_map.get(fqn)
             stored = stored_hashes_map.get(fqn, {})
-            s_stored = stored.get("signature_hash")
-            d_stored = stored.get("document_hash")
+            stored_code_structure_hash = stored.get("code_structure_hash")
+            stored_yaml_content_hash = stored.get("yaml_content_hash")
 
             # Case: Extra (In Storage, Not in Code)
-            if not s_current and s_stored:
-                # doc_manager.check_module already reports 'extra' for keys in YAML.
-                # Here we ensure it's removed from hash storage.
-                # We don't need to report it again if doc_manager did, but cleaning up is good.
+            if not current_code_structure_hash and stored_code_structure_hash:
                 if fqn in new_hashes_map:
                     new_hashes_map.pop(fqn, None)
                 continue
 
             # Case: New (In Code, Not in Storage)
-            if s_current and not s_stored:
+            if current_code_structure_hash and not stored_code_structure_hash:
                 if is_tracked:
-                    # If it's a new function in a tracked file, check_module reports 'missing' or 'pending'.
-                    # We just need to initialize its hash.
                     new_hashes_map[fqn] = {
-                        "signature_hash": s_current,
-                        "document_hash": d_current,
+                        "code_structure_hash": current_code_structure_hash,
+                        "yaml_content_hash": current_yaml_content_hash,
                     }
                 continue
 
-            # Case: Existing (In Code and Storage)
-            s_match = s_current == s_stored
-            d_match = d_current == d_stored
+            # Case: Existing
+            code_structure_matches = current_code_structure_hash == stored_code_structure_hash
+            yaml_content_matches = current_yaml_content_hash == stored_yaml_content_hash
 
-            if s_match and d_match:
+            if code_structure_matches and yaml_content_matches:
                 pass  # Synchronized
-            elif s_match and not d_match:
+            elif code_structure_matches and not yaml_content_matches:
                 # Doc Improvement: INFO, Auto-reconcile
                 result.infos["doc_improvement"].append(fqn)
                 if fqn in new_hashes_map:
-                    new_hashes_map[fqn]["document_hash"] = d_current
+                    new_hashes_map[fqn]["yaml_content_hash"] = current_yaml_content_hash
                 result.auto_reconciled_count += 1
-            elif not s_match and d_match:
+            elif not code_structure_matches and yaml_content_matches:
                 # Signature Drift
                 if force_relink:
                     result.reconciled["force_relink"].append(fqn)
                     if fqn in new_hashes_map:
-                        new_hashes_map[fqn]["signature_hash"] = s_current
+                        new_hashes_map[fqn]["code_structure_hash"] = current_code_structure_hash
                 else:
                     result.errors["signature_drift"].append(fqn)
-            elif not s_match and not d_match:
+            elif not code_structure_matches and not yaml_content_matches:
                 # Co-evolution
                 if reconcile:
                     result.reconciled["reconcile"].append(fqn)
                     new_hashes_map[fqn] = {
-                        "signature_hash": s_current,
-                        "document_hash": d_current,
+                        "code_structure_hash": current_code_structure_hash,
+                        "yaml_content_hash": current_yaml_content_hash,
                     }
                 else:
                     result.errors["co_evolution"].append(fqn)
@@ -357,7 +348,7 @@ class StitcherApp:
 
         # Save hash updates if any
         if new_hashes_map != stored_hashes_map:
-            self.sig_manager.save_hashes(module, new_hashes_map)
+            self.sig_manager.save_composite_hashes(module, new_hashes_map)
 
         return result
 
@@ -375,27 +366,28 @@ class StitcherApp:
             for module in modules:
                 res = self._analyze_file(module, force_relink, reconcile)
                 if res.is_clean:
-                    # Even if clean, report Auto-reconciled (INFO)
                     if res.auto_reconciled_count > 0:
                         bus.info(
-                            f"[INFO] Automatically updated {res.auto_reconciled_count} documentation hash(es) in {res.path}"
+                            L.check.state.auto_reconciled,
+                            count=res.auto_reconciled_count,
+                            path=res.path
                         )
                     continue
 
-                # Report Reconciled Actions (Success)
                 if res.reconciled_count > 0:
                     for key in res.reconciled.get("force_relink", []):
                         bus.success(
-                            f"[OK] Re-linked signature for '{key}' in {res.path}"
+                            L.check.state.relinked, key=key, path=res.path
                         )
                     for key in res.reconciled.get("reconcile", []):
                         bus.success(
-                            f"[OK] Reconciled changes for '{key}' in {res.path}"
+                            L.check.state.reconciled, key=key, path=res.path
                         )
-                # Report Auto-reconciled (INFO) - also here if file had other issues
                 if res.auto_reconciled_count > 0:
                     bus.info(
-                        f"[INFO] Automatically updated {res.auto_reconciled_count} documentation hash(es) in {res.path}"
+                        L.check.state.auto_reconciled,
+                        count=res.auto_reconciled_count,
+                        path=res.path
                     )
 
                 if res.error_count > 0:
@@ -409,15 +401,11 @@ class StitcherApp:
 
                 # Report Specific Issues
                 for key in sorted(res.errors["extra"]):
-                    bus.error(L.check.issue.extra, key=key)
+                    bus.error(L.check.state.extra_doc, key=key)
                 for key in sorted(res.errors["signature_drift"]):
-                    bus.error(
-                        f"[Signature Drift] '{key}': Code changed, docs may be stale."
-                    )
+                    bus.error(L.check.state.signature_drift, key=key)
                 for key in sorted(res.errors["co_evolution"]):
-                    bus.error(
-                        f"[Co-evolution] '{key}': Both code and docs changed; intent unclear."
-                    )
+                    bus.error(L.check.state.co_evolution, key=key)
                 for key in sorted(res.errors["conflict"]):
                     bus.error(L.check.issue.conflict, key=key)
                 for key in sorted(res.errors["pending"]):
@@ -428,13 +416,10 @@ class StitcherApp:
                 for key in sorted(res.warnings["redundant"]):
                     bus.warning(L.check.issue.redundant, key=key)
                 for key in sorted(res.warnings["untracked_key"]):
-                    bus.warning(
-                        f"[Untracked Code] '{key}': New public API without documentation."
-                    )
+                    bus.warning(L.check.state.untracked_code, key=key)
                 
-                # Infos are just printed, usually
                 for key in sorted(res.infos["doc_improvement"]):
-                    bus.info(f"[Doc Updated] '{key}': Documentation was improved.")
+                    bus.info(L.check.state.doc_updated, key=key)
 
                 if "untracked_detailed" in res.warnings:
                     keys = res.warnings["untracked_detailed"]
@@ -498,17 +483,17 @@ class StitcherApp:
                         path=module.file_path,
                         count=len(result["updated_keys"]),
                     )
-                s_hashes = self.sig_manager.compute_signature_hashes(module)
-                d_hashes = self.doc_manager.compute_document_hashes(module)
-                all_fqns = set(s_hashes.keys()) | set(d_hashes.keys())
+                code_hashes = self.sig_manager.compute_code_structure_hashes(module)
+                yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
+                all_fqns = set(code_hashes.keys()) | set(yaml_hashes.keys())
                 combined = {
                     fqn: {
-                        "signature_hash": s_hashes.get(fqn),
-                        "document_hash": d_hashes.get(fqn),
+                        "code_structure_hash": code_hashes.get(fqn),
+                        "yaml_content_hash": yaml_hashes.get(fqn),
                     }
                     for fqn in all_fqns
                 }
-                self.sig_manager.save_hashes(module, combined)
+                self.sig_manager.save_composite_hashes(module, combined)
                 files_to_strip.append(module)
             if strip and files_to_strip:
                 stripped_count = 0
@@ -534,7 +519,8 @@ class StitcherApp:
         else:
             bus.success(L.hydrate.run.complete, count=total_updated)
         return True
-
+    
+    # ... rest of methods (run_strip, run_eject) remain same ...
     def run_strip(self) -> List[Path]:
         configs, _ = load_config_from_path(self.root_path)
         all_modified_files: List[Path] = []
