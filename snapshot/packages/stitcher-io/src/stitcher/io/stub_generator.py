@@ -55,12 +55,22 @@ class StubGenerator:
 
     def _format_docstring(self, doc: str, level: int) -> str:
         indent = self._indent(level)
-        # Simplified handling: always use triple quotes
         # In a robust implementation, we might handle escaping quotes inside docstring
-        if "\n" in doc:
-            # multiline
-            return f'{indent}"""\n{indent}{doc}\n{indent}"""'
-        return f'{indent}"""{doc}"""'
+
+        # Strip leading/trailing whitespace from the docstring itself to handle
+        # potential formatting from YAML loader.
+        doc = doc.strip()
+        lines = doc.split("\n")
+
+        if len(lines) == 1:
+            # Single line: keep it compact and escape internal quotes
+            processed_doc = doc.replace('"""', '\\"\\"\\"')
+            return f'{indent}"""{processed_doc}"""'
+
+        # Multi-line: adopt the ruff/black style for readability
+        # Re-indent all lines to match the current level.
+        indented_body = "\n".join(f"{indent}{line}" for line in lines)
+        return f'{indent}"""\n{indented_body}\n{indent}"""'
 
     def _generate_attribute(self, attr: Attribute, level: int) -> str:
         indent = self._indent(level)

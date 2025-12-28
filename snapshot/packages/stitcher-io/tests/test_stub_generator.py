@@ -124,11 +124,13 @@ def test_generate_pyi_with_correct_docstring_formatting():
         ],
     )
 
-    # The "golden" output with correct formatting
+    # The "golden" output with correct formatting, following ruff/black style
     expected_pyi = dedent("""
         def multiline_doc():
-            \"\"\"First line.
-            Second line should be indented.\"\"\"
+            \"\"\"
+            First line.
+            Second line should be indented.
+            \"\"\"
             ...
 
         def quotes_doc():
