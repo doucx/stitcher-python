@@ -7,16 +7,19 @@ from .json_handler import JsonHandler
 
 
 from needle.spec import WritableResourceLoaderProtocol
+from needle.nexus import BaseLoader
 
 # ... imports ...
 
 
-class FileSystemLoader(WritableResourceLoaderProtocol):
+class FileSystemLoader(BaseLoader, WritableResourceLoaderProtocol):
     def __init__(
         self,
         roots: Optional[List[Path]] = None,
         handlers: Optional[List[FileHandlerProtocol]] = None,
+        default_domain: str = "en",
     ):
+        super().__init__(default_domain)
         self.handlers = handlers or [JsonHandler()]
         self.roots = roots or [self._find_project_root()]
 
@@ -35,7 +38,17 @@ class FileSystemLoader(WritableResourceLoaderProtocol):
         if path not in self.roots:
             self.roots.insert(0, path)
 
-    def load(self, domain: str) -> Dict[str, Any]:
+    def fetch(
+        self, pointer: str, domain: str, ignore_cache: bool = False
+    ) -> Optional[str]:
+        # TODO: Implement optimized physical probing based on SST v2 relative keys.
+        # For now, we rely on the full load() method to maintain backward compatibility
+        # and correctness during the architectural migration.
+        registry = self.load(domain, ignore_cache)
+        val = registry.get(pointer)
+        return str(val) if val is not None else None
+
+    def load(self, domain: str, ignore_cache: bool = False) -> Dict[str, Any]:
         merged_registry: Dict[str, str] = {}
 
         for root in self.roots:
