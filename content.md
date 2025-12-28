@@ -1,178 +1,145 @@
-好的，我们已经完成了核心逻辑的实现。现在，最关键的一步是创建集成测试，以确保新的交互式 `hydrate` 流程按预期工作，并且不会破坏现有的非交互式行为。
+**简要回答**
 
-我将创建一个新的测试文件 `tests/integration/test_hydrate_interactive_flow.py` 来专门验证这些场景。
+你发现了一个非常好的问题，这暴露了我的测试实现中的一个缺陷，同时也揭示了应用层代码中的一个不一致之处。你的分析完全正确。
 
-## [WIP] test: 为 hydrate 命令添加交互式流程的集成测试
+`SpyBus` 的设计原则是捕获**语义意图**（即 `L` 指针和参数），而不是最终渲染的**UI字符串** (`message`)。我的测试错误地试图断言一个不存在于捕-获数据中的 `"message"` 键。
+
+为了解决这个问题并提升代码质量，我将执行一个两步修复：
+1.  **修复应用代码**: 我会将 `core.py` 中硬编码的 `"Hydration aborted by user."` 错误消息替换为一个标准的、可测试的语义指针 `L.hydrate.run.aborted`。
+2.  **修复测试代码**: 我会更新测试用例，使用 `spy_bus.assert_id_called()` 来断言正确的**语义ID**，而不是脆弱的UI字符串。
+
+这将使代码和测试都更加健壮和一致。
+
+## [WIP] fix(testing): 修正 hydrate 交互测试并统一 abort 消息
+
+### 错误分析
+测试 `test_hydrate_interactive_abort_stops_process` 失败，因为 `SpyBus` 捕获的消息字典结构为 `{"level": ..., "id": ..., "params": ...}`，它并不包含最终渲染的 `"message"` 字符串键。测试代码错误地假设了 `SpyBus` 的内部数据结构，并违反了“验证意图而非呈现”的测试原则。
+
+此外，`StitcherApp.run_hydrate` 在处理中止逻辑时使用了硬编码的英文字符串 `bus.error("Hydration aborted by user.")`，这使得它无法被 `SpyBus` 进行语义捕获，也无法进行国际化。
 
 ### 用户需求
-为 `hydrate` 命令的新交互式引导模型编写集成测试，确保：
-1.  当用户在交互式会话中选择“覆盖”（Force-hydrate）时，YAML 文件被正确更新。
-2.  当用户选择“调和”（Reconcile）时，YAML 文件保持不变。
-3.  当用户选择“跳过”（Skip）时，命令最终会失败并报告未解决的冲突。
-4.  当用户选择“中止”（Abort）时，命令会立即停止。
+修正集成测试 `test_hydrate_interactive_abort_stops_process` 使其能够正确验证当用户选择 `[A]bort` 时，系统发出了一个表示“中止”的语义消息。
 
 ### 评论
-创建健壮的测试是确保功能正确性和防止未来回归的关键。通过使用 `MockResolutionHandler`，我们可以精确地模拟用户输入，而无需处理真实的 `stdin`，使测试变得稳定且可重复。
+这是一个重要的修复，它不仅纠正了测试中的一个直接错误，还通过移除硬编码字符串和引入语义指针，提升了核心应用代码的可维护性和可测试性。这是一个典范的“由测试驱动改进”的例子。
 
 ### 目标
-1.  创建一个新的测试文件 `tests/integration/test_hydrate_interactive_flow.py`。
-2.  实现一个 `MockResolutionHandler`，用于在测试中模拟用户的交互选择。
-3.  编写四个独立的测试用例，分别覆盖 `HYDRATE_OVERWRITE`、`HYDRATE_KEEP_EXISTING`、`SKIP` 和 `ABORT` 四种解决动作。
-4.  在每个测试用例中，断言命令的最终成功/失败状态、总线发出的语义消息以及磁盘上 YAML 文件的最终内容。
+1.  在 `en` 和 `zh` 的 `needle` 资源文件中为 `hydrate` 命令添加 `aborted` 消息。
+2.  修改 `StitcherApp.run_hydrate`，在用户中止时调用 `bus.error(L.hydrate.run.aborted)`。
+3.  修改 `test_hydrate_interactive_flow.py`，使用 `spy_bus.assert_id_called(L.hydrate.run.aborted)` 进行断言。
+4.  将此修复作为一个完整的提交。
 
 ### 基本原理
-我们将复用 `test_check_interactive_flow.py` 中 `MockResolutionHandler` 的设计模式。测试的核心是依赖注入：我们在创建 `StitcherApp` 实例时，将一个预设了返回动作的 Mock Handler 注入进去。这样，当 `run_hydrate` 调用 `interaction_handler` 时，它会得到我们预设的响应，从而驱动后续的执行逻辑。最后，我们通过检查文件系统和 `SpyBus` 的记录来验证结果是否符合预期。
+我们将首先扩充我们的国际化（i18n）资源，为“补水中止”这一事件定义一个标准的语义指针。然后，我们将重构应用代码以使用此指针，确保所有用户反馈都通过统一的消息总线进行。最后，我们将修正测试代码，使其遵循最佳实践，通过断言语义指针（意图）而非具体文本（呈现）来验证行为的正确性。
 
 ### 标签
-#intent/tooling #flow/ready #priority/high #comp/tests #concept/ui #scope/dx #task/domain/cli #task/object/interactive-mode #task/action/integration #task/state/continue
+#intent/fix #intent/tooling #flow/ready #priority/high #comp/tests #comp/runtime #concept/ui #scope/dx #task/domain/cli #task/object/interactive-mode #task/action/integration #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建集成测试文件
+#### Acts 1: 添加新的本地化消息键
 
-我们将创建一个新的测试文件，并添加完整的测试用例来覆盖所有交互场景。
+我们首先在 `en` 和 `zh` 的资源文件中添加新的 `hydrate.run.aborted` 消息。
 
 ~~~~~act
-write_file
+patch_file
+packages/stitcher-common/src/stitcher/common/assets/needle/en/hydrate/main.json
+~~~~~
+~~~~~json.old
+{
+    "hydrate.run.start": "💧 Starting hydration process...",
+    "hydrate.file.success": "💧 Hydrated {count} new docstrings from: {path}",
+    "hydrate.run.complete": "✨ Hydration complete. {count} files updated.",
+    "hydrate.run.no_changes": "🤔 No new docstrings found in source code to hydrate.",
+    "hydrate.error.conflict": "❌ Conflict in {path} for '{key}': Docstrings differ. Use --force (code-first) or --reconcile (YAML-first) to resolve.",
+    "hydrate.run.conflict": "🚫 Hydration aborted due to conflicts in {count} files.",
+    "hydrate.info.reconciled": "ℹ️  Ignored {count} conflicts in {path} due to --reconcile mode."
+}
+~~~~~
+~~~~~json.new
+{
+    "hydrate.run.start": "💧 Starting hydration process...",
+    "hydrate.file.success": "💧 Hydrated {count} new docstrings from: {path}",
+    "hydrate.run.complete": "✨ Hydration complete. {count} files updated.",
+    "hydrate.run.no_changes": "🤔 No new docstrings found in source code to hydrate.",
+    "hydrate.error.conflict": "❌ Conflict in {path} for '{key}': Docstrings differ. Use --force (code-first) or --reconcile (YAML-first) to resolve.",
+    "hydrate.run.conflict": "🚫 Hydration aborted due to conflicts in {count} files.",
+    "hydrate.info.reconciled": "ℹ️  Ignored {count} conflicts in {path} due to --reconcile mode.",
+    "hydrate.run.aborted": "Hydration aborted by user."
+}
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-common/src/stitcher/common/assets/needle/zh/hydrate/main.json
+~~~~~
+~~~~~json.old
+{
+    "hydrate.run.start": "💧 开始补水过程...",
+    "hydrate.file.success": "💧 从 {path} 补水了 {count} 个新的文档字符串",
+    "hydrate.run.complete": "✨ 补水完成。{count} 个文件已更新。",
+    "hydrate.run.no_changes": "🤔 在源代码中未找到可供补水的新文档字符串。",
+    "hydrate.error.conflict": "❌ {path} 中 '{key}' 存在内容冲突。请使用 --force (代码优先) 或 --reconcile (YAML优先) 来解决。",
+    "hydrate.run.conflict": "🚫 因在 {count} 个文件中存在冲突，补水操作已中止。",
+    "hydrate.info.reconciled": "ℹ️  因处于 --reconcile 模式，已忽略 {path} 中的 {count} 个冲突。"
+}
+~~~~~
+~~~~~json.new
+{
+    "hydrate.run.start": "💧 开始补水过程...",
+    "hydrate.file.success": "💧 从 {path} 补水了 {count} 个新的文档字符串",
+    "hydrate.run.complete": "✨ 补水完成。{count} 个文件已更新。",
+    "hydrate.run.no_changes": "🤔 在源代码中未找到可供补水的新文档字符串。",
+    "hydrate.error.conflict": "❌ {path} 中 '{key}' 存在内容冲突。请使用 --force (代码优先) 或 --reconcile (YAML优先) 来解决。",
+    "hydrate.run.conflict": "🚫 因在 {count} 个文件中存在冲突，补水操作已中止。",
+    "hydrate.info.reconciled": "ℹ️  因处于 --reconcile 模式，已忽略 {path} 中的 {count} 个冲突。",
+    "hydrate.run.aborted": "用户中止了补水操作。"
+}
+~~~~~
+
+#### Acts 2: 修正应用与测试代码
+
+现在，我们更新 `core.py` 以使用新的语义指针，并修正测试用例以正确断言该指针。
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/core.py
+~~~~~
+~~~~~python.old
+                action = chosen_actions[i]
+                if action == ResolutionAction.ABORT:
+                    bus.warning(L.hydrate.run.conflict, count=len(all_conflicts)) # Reuse conflict msg as abort indicator?
+                    bus.error("Hydration aborted by user.")
+                    return False
+                resolutions_by_file[context.file_path][context.fqn] = action
+~~~~~
+~~~~~python.new
+                action = chosen_actions[i]
+                if action == ResolutionAction.ABORT:
+                    bus.error(L.hydrate.run.aborted)
+                    return False
+                resolutions_by_file[context.file_path][context.fqn] = action
+~~~~~
+
+~~~~~act
+patch_file
 packages/stitcher-application/tests/integration/test_hydrate_interactive_flow.py
 ~~~~~
-~~~~~python
-import pytest
-from typing import List
-from stitcher.app import StitcherApp
-from stitcher.app.protocols import InteractionHandler, InteractionContext
-from stitcher.spec import ResolutionAction
-from stitcher.test_utils import WorkspaceFactory, SpyBus
-from needle.pointer import L
-
-
-class MockResolutionHandler(InteractionHandler):
-    """A handler that returns a pre-defined sequence of actions for testing."""
-
-    def __init__(self, actions: List[ResolutionAction]):
-        self.actions = actions
-        self.called_with: List[InteractionContext] = []
-
-    def process_interactive_session(
-        self, contexts: List[InteractionContext]
-    ) -> List[ResolutionAction]:
-        self.called_with = contexts
-        # Return the same action for all conflicts if only one is provided
-        if len(self.actions) == 1:
-            return self.actions * len(contexts)
-        return self.actions
-
-
-@pytest.fixture
-def conflicting_workspace(tmp_path):
-    """Creates a workspace with a doc content conflict."""
-    factory = WorkspaceFactory(tmp_path)
-    return (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source('src/app.py', 'def func():\n    """Code Doc"""')
-        .with_docs('src/app.stitcher.yaml', {'func': 'YAML Doc'})
-        .build()
-    )
-
-
-def test_hydrate_interactive_overwrite(conflicting_workspace, monkeypatch):
-    """
-    Verify that choosing [F]orce-hydrate (HYDRATE_OVERWRITE) correctly
-    updates the YAML file with the content from the source code.
-    """
-    # 1. Arrange: Inject a handler that simulates choosing 'Force-hydrate'
-    handler = MockResolutionHandler([ResolutionAction.HYDRATE_OVERWRITE])
-    app = StitcherApp(root_path=conflicting_workspace, interaction_handler=handler)
-    spy_bus = SpyBus()
-
-    # 2. Act
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_hydrate()
-
-    # 3. Assert
-    assert success is True, "Hydration should succeed after interactive resolution."
-    spy_bus.assert_id_called(L.hydrate.file.success, level="success")
-
-    # Verify file content was updated
-    doc_file = conflicting_workspace / "src/app.stitcher.yaml"
-    content = doc_file.read_text(encoding="utf-8")
-    assert "Code Doc" in content
-    assert "YAML Doc" not in content
-
-
-def test_hydrate_interactive_reconcile(conflicting_workspace, monkeypatch):
-    """
-    Verify that choosing [R]econcile (HYDRATE_KEEP_EXISTING) preserves
-    the existing content in the YAML file.
-    """
-    # 1. Arrange: Inject a handler that simulates choosing 'Reconcile'
-    handler = MockResolutionHandler([ResolutionAction.HYDRATE_KEEP_EXISTING])
-    app = StitcherApp(root_path=conflicting_workspace, interaction_handler=handler)
-    spy_bus = SpyBus()
-
-    # 2. Act
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_hydrate()
-
-    # 3. Assert
-    assert success is True
-    spy_bus.assert_id_called(L.hydrate.info.reconciled, level="info")
-    spy_bus.assert_id_called(L.hydrate.run.no_changes, level="info")
-
-    # Verify file content was NOT changed
-    doc_file = conflicting_workspace / "src/app.stitcher.yaml"
-    content = doc_file.read_text(encoding="utf-8")
-    assert "YAML Doc" in content
-    assert "Code Doc" not in content
-
-
-def test_hydrate_interactive_skip_leads_to_failure(conflicting_workspace, monkeypatch):
-    """
-    Verify that choosing [S]kip leaves the conflict unresolved and causes
-    the command to fail.
-    """
-    # 1. Arrange: Inject a handler that simulates choosing 'Skip'
-    handler = MockResolutionHandler([ResolutionAction.SKIP])
-    app = StitcherApp(root_path=conflicting_workspace, interaction_handler=handler)
-    spy_bus = SpyBus()
-
-    # 2. Act
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_hydrate()
-
-    # 3. Assert
-    assert success is False, "Hydration should fail if conflicts are skipped."
-    spy_bus.assert_id_called(L.hydrate.error.conflict, level="error")
-    spy_bus.assert_id_called(L.hydrate.run.conflict, level="error")
-
-    # Verify file content was NOT changed
-    doc_file = conflicting_workspace / "src/app.stitcher.yaml"
-    content = doc_file.read_text(encoding="utf-8")
-    assert "YAML Doc" in content
-
-
-def test_hydrate_interactive_abort_stops_process(conflicting_workspace, monkeypatch):
-    """
-    Verify that choosing [A]bort stops the hydration and fails the command.
-    """
-    # 1. Arrange: Inject a handler that simulates choosing 'Abort'
-    handler = MockResolutionHandler([ResolutionAction.ABORT])
-    app = StitcherApp(root_path=conflicting_workspace, interaction_handler=handler)
-    spy_bus = SpyBus()
-
-    # 2. Act
-    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
-        success = app.run_hydrate()
-
+~~~~~python.old
     # 3. Assert
     assert success is False
     # A specific "aborted" message would be better, but for now we check for conflict error
     assert "aborted" in spy_bus.get_messages()[-1]["message"].lower()
 
     # Verify file content was NOT changed
-    doc_file = conflicting_workspace / "src/app.stitcher.yaml"
-    content = doc_file.read_text(encoding="utf-8")
-    assert "YAML Doc" in content
+~~~~~
+~~~~~python.new
+    # 3. Assert
+    assert success is False
+    # Assert that the correct semantic 'aborted' message was sent.
+    spy_bus.assert_id_called(L.hydrate.run.aborted, level="error")
+
+    # Verify file content was NOT changed
 ~~~~~

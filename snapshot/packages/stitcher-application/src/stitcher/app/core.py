@@ -540,8 +540,7 @@ class StitcherApp:
             for i, context in enumerate(all_conflicts):
                 action = chosen_actions[i]
                 if action == ResolutionAction.ABORT:
-                    bus.warning(L.hydrate.run.conflict, count=len(all_conflicts)) # Reuse conflict msg as abort indicator?
-                    bus.error("Hydration aborted by user.")
+                    bus.error(L.hydrate.run.aborted)
                     return False
                 resolutions_by_file[context.file_path][context.fqn] = action
 

@@ -127,8 +127,8 @@ def test_hydrate_interactive_abort_stops_process(conflicting_workspace, monkeypa
 
     # 3. Assert
     assert success is False
-    # A specific "aborted" message would be better, but for now we check for conflict error
-    assert "aborted" in spy_bus.get_messages()[-1]["message"].lower()
+    # Assert that the correct semantic 'aborted' message was sent.
+    spy_bus.assert_id_called(L.hydrate.run.aborted, level="error")
 
     # Verify file content was NOT changed
     doc_file = conflicting_workspace / "src/app.stitcher.yaml"
