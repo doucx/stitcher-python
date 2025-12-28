@@ -26,7 +26,7 @@ except NameError:
 # ---------------------------------------------
 
 
-from .formatting import format_docstring
+from .formatting import format_docstring, parse_docstring
 
 # Public API for stitcher packages
-__all__ = ["bus", "stitcher_nexus", "stitcher_loader", "format_docstring"]
+__all__ = ["bus", "stitcher_nexus", "stitcher_loader", "format_docstring", "parse_docstring"]

@@ -1,5 +1,51 @@
+import textwrap
+
+
+def parse_docstring(raw_docstring: str) -> str:
+    """
+    Parses a raw docstring from source code into its clean, canonical form.
+
+    This is the inverse of `format_docstring`. It removes outer quotes and
+    common leading whitespace from multiline strings.
+
+    Args:
+        raw_docstring: The raw string literal, including quotes.
+
+    Returns:
+        The clean, dedented content of the docstring.
+    """
+    # This logic assumes the input is a valid docstring literal string.
+    # It's not a full Python parser, but handles common cases from CST/AST.
+    content = raw_docstring.strip()
+
+    # Naively strip matching triple quotes
+    if content.startswith('"""') and content.endswith('"""'):
+        content = content[3:-3]
+    elif content.startswith("'''") and content.endswith("'''"):
+        content = content[3:-3]
+    # Naively strip matching single quotes
+    elif content.startswith('"') and content.endswith('"'):
+        content = content[1:-1]
+    elif content.startswith("'") and content.endswith("'"):
+        content = content[1:-1]
+
+    # Dedent and strip any leading/trailing blank lines that result
+    return textwrap.dedent(content).strip()
+
+
 def format_docstring(content: str, indent_str: str) -> str:
-    """Formats a docstring to be inserted into source code, following ruff/black style."""
+    """
+    Formats a clean docstring into a raw string literal for source code insertion.
+
+    This is the inverse of `parse_docstring`. It follows ruff/black style.
+
+    Args:
+        content: The clean, canonical content of the docstring.
+        indent_str: The indentation string to apply to the docstring block.
+
+    Returns:
+        The formatted, quoted, and indented docstring literal.
+    """
     # Strip leading/trailing whitespace from the docstring itself to handle
     # potential formatting from YAML loader.
     content = content.strip()
