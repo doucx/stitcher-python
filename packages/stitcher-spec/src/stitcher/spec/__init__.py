@@ -9,6 +9,10 @@ from .models import (
     ClassDef,
     FunctionDef,
     ModuleDef,
+    ConflictType,
+    ResolutionAction,
+    Resolution,
+    ResolutionPlan,
 )
 
 __all__ = [
@@ -18,4 +22,9 @@ __all__ = [
     "ClassDef",
     "FunctionDef",
     "ModuleDef",
+    # Reconciliation Models
+    "ConflictType",
+    "ResolutionAction",
+    "Resolution",
+    "ResolutionPlan",
 ]

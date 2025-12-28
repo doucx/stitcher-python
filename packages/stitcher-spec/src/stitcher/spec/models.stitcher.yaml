@@ -86,3 +86,32 @@
   A list of import statements found in the module.
 "ModuleDef.is_documentable": |-
   Checks if the module contains any content that would warrant a doc file.
+"ConflictType": |-
+  Enumeration of possible conflict types detected by `check`.
+"ConflictType.CO_EVOLUTION": |-
+  Both the code signature and the documentation content have changed.
+"ConflictType.SIGNATURE_DRIFT": |-
+  The code signature has changed, but the documentation content has not.
+"ResolutionAction": |-
+  Enumeration of actions a user can take to resolve a conflict.
+"ResolutionAction.ABORT": |-
+  Abort the entire operation.
+"ResolutionAction.RECONCILE": |-
+  Accept both the new signature and new documentation as the correct baseline.
+"ResolutionAction.RELINK": |-
+  Accept the new signature but keep the existing (unchanged) documentation.
+"ResolutionAction.SKIP": |-
+  Skip resolving this conflict for now.
+"Resolution": |-
+  Represents a single, atomic resolution decision made by the user.
+"Resolution.action": |-
+  The action chosen by the user to resolve the conflict.
+"Resolution.conflict_type": |-
+  The type of conflict that was detected.
+"Resolution.fqn": |-
+  The fully qualified name of the symbol that has a conflict.
+"ResolutionPlan": |-
+  A container for a list of resolution decisions, representing the complete plan
+  to be executed.
+"ResolutionPlan.resolutions": |-
+  The list of atomic resolution decisions.
