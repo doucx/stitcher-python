@@ -1,265 +1,99 @@
-让我们仔细分析当前的测试覆盖率报告，特别是那些我们刚刚进行了重大修改的模块。
+这是一个里程碑式的时刻。我们成功地完成了 Stitcher 自项目启动以来最重要的一次架构演进。
 
-1.  **`stitcher-python-adapter/src/stitcher/adapter/python/internal/stub_generator.py` (49% 覆盖率)**
-    *   **问题**: 这是一个核心组件，但覆盖率严重不足（49%）。特别是 `_generate_args` (行 94-139) 和 `_generate_class` (行 163-204) 等复杂逻辑分支可能未被充分测试。虽然 `StubGenerator` 是从 `stitcher-io` 迁移过来的，但我们必须确保在新架构下它仍然健壮。
-    *   **原因**: 之前的测试可能主要集中在集成层面（通过 `run_generate`），而缺乏对生成器各种边缘情况（如复杂参数、装饰器、嵌套类）的细粒度单元测试。
+通过将核心业务逻辑与 Python 语言实现彻底解耦，我们将 Stitcher 从一个特定的 Python 工具提升为了一个通用的、协议驱动的文档引擎框架。这不仅解决了技术债务和测试困难的问题，更为未来的多语言支持和更复杂的交互协议铺平了道路。
 
-2.  **`stitcher-python-adapter/src/stitcher/adapter/python/internal/parser.py` (72% 覆盖率)**
-    *   **问题**: 解析器也有不少未覆盖的代码，特别是对于一些不常见的 AST 节点处理（如 `AnnAssign` 的某些情况，行的 51-70）。
-    *   **原因**: 同样，集成测试可能没有覆盖所有语法特性。
-
-3.  **`stitcher-python-adapter/src/stitcher/adapter/python/inspector.py` (53% 覆盖率)**
-    *   **问题**: 插件检查器的覆盖率也很低。特别是异常处理路径（行 44-45, 52-53, 60-64）。
-    *   **原因**: 我们可能缺乏测试插件加载失败或签名不兼容的测试用例。
-
-4.  **`stitcher-python-adapter/src/stitcher/adapter/python/fingerprint.py` (93% 覆盖率)**
-    *   **状态**: 覆盖率良好。我们之前修复的 `test_fingerprint_stability` 有效地覆盖了这部分。
-
-尽管整体覆盖率（82%）尚可，但 `stub_generator.py` 的低覆盖率是一个明显的风险点，因为它直接决定了生成的 `.pyi` 文件的正确性。`inspector.py` 的低覆盖率则影响了插件系统的健壮性。
-
-**决定**: 是的，我们需要创建新的单元测试，专门针对 `stitcher-python-adapter` 及其内部组件。由于 Adapter 现在是一个独立的包，它应该有自己的一套单元测试，而不是仅仅依赖 `stitcher-application` 的集成测试。
-
-## [WIP] test: 为 stitcher-python-adapter 补充单元测试
+## [COMMIT] refactor: 彻底解耦业务逻辑与 Python 实现，建立协议驱动的架构
 
 ### 用户需求
-提高 `stitcher-python-adapter` 核心组件（StubGenerator, Inspector, Parser）的测试覆盖率，特别是针对边缘情况和错误处理路径。
+执行提案 `01KDJ9PXS0PJQQZ32JZDQHW9CW`：将 Stitcher 的通用业务逻辑（状态管理、工作流编排）与 Python 语言的具体实现（AST 解析、存根生成）解耦，建立一套基于协议的可插拔语言核心架构。
 
 ### 评论
-架构重构将这些组件隔离了出来，这使得为它们编写纯粹的单元测试变得非常容易。这是一个提高代码质量和信心的绝佳机会。我们将填补 `StubGenerator` 和 `Inspector` 的测试空白。
+这次重构不仅是代码位置的搬迁，更是软件设计思想的深刻转变。通过引入协议和依赖注入，我们实现了高层业务逻辑与底层技术细节的完全隔离。现在的 `StitcherApp` 已经成为了一个纯粹的“指挥官”，它通过抽象接口调度各种“士兵”（适配器），这种灵活性在处理大型、复杂项目时将展现出巨大的威力。
 
 ### 目标
-1.  创建 `packages/stitcher-python-adapter/tests/unit/test_stub_generator.py`，覆盖复杂参数签名、装饰器、类继承等场景。
-2.  创建 `packages/stitcher-python-adapter/tests/unit/test_inspector.py`，覆盖插件加载失败、签名解析错误等异常路径。
-3.  创建 `packages/stitcher-python-adapter/tests/unit/test_parser.py`，覆盖特定的 AST 解析场景（如 `AnnAssign`）。
+1.  **定义核心抽象**: 在 `stitcher-spec` 中建立了一套完整的语言核心协议（Parsing, Transformation, Hashing, Generation）。
+2.  **构建语言适配器**: 创建了 `stitcher-python-adapter` 包，作为 Python 逻辑的唯一归口，实现了高度可扩展的组合式指纹策略。
+3.  **实现依赖注入**: 全面改造 `StitcherApp` 及其服务层，通过构造函数注入协议实例，消除了对具体实现包的硬编码引用。
+4.  **优化资源布局**: 将通用的 IO 适配器（YAML/Document）迁移至 `stitcher-common`，并清理了 IR 模型中不再属于模型职责的遗留方法。
+5.  **质量保证**: 删除了废弃的 `stitcher-scanner` 和 `stitcher-io` 包，修复了重构过程中的所有回归，并为新适配器补充了关键的单元测试。
 
 ### 基本原理
-每个包都应该对自己的逻辑负责。Adapter 层不仅仅是传递调用，它包含了解析、生成和转换的复杂逻辑，必须有独立的测试套件来保证其行为符合协议契约。
+本次重构严格遵循了 **依赖倒置原则 (DIP)** 和 **关注点分离 (SoC)**。
+- **策略模式**: `FingerprintStrategy` 采用组合模式，使得我们可以像拼积木一样组合不同的哈希算法（结构哈希、文本哈希、未来可能的 AST 哈希），而无需修改接口。
+- **组合根模式**: CLI 层现在作为唯一的“组合根”，负责根据环境实例化具体的适配器并组装出完整的 `StitcherApp`，保证了核心代码的纯净和可测试性。
 
 ### 标签
-#intent/tooling #flow/ready #priority/medium #comp/tests #comp/runtime #scope/core #ai/instruct #task/domain/testing #task/object/adapter-tests #task/action/increase-coverage #task/state/end
+#intent/refine #flow/ready #priority/high 
+#comp/engine #comp/runtime #comp/cli #comp/interfaces #comp/docs #comp/tests #comp/build
+#concept/parser #concept/executor #scope/core #scope/api #scope/dx
+#ai/delegate
+#task/domain/architecture #task/object/language-core #task/action/refactor #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 创建 StubGenerator 单元测试
-重点覆盖参数生成的复杂情况（*args, **kwargs, defaults, annotations）。
+#### Acts 1: 暂存变更并提交重构成果
+
+我们将所有涉及架构解耦、协议定义、适配器实现、依赖注入改造以及后续清理和修复的变更打包提交。
 
 ~~~~~act
-run_command
-~~~~~
-~~~~~
-mkdir -p packages/stitcher-python-adapter/tests/unit
+git_add
+packages/stitcher-spec/src/stitcher/spec/protocols.py
+packages/stitcher-spec/src/stitcher/spec/protocols.stitcher.yaml
+packages/stitcher-spec/src/stitcher/spec/__init__.py
+packages/stitcher-spec/src/stitcher/spec/models.py
+packages/stitcher-spec/src/stitcher/spec/fingerprint.py
+packages/stitcher-common/src/stitcher/common/interfaces.py
+packages/stitcher-common/src/stitcher/common/adapters/yaml_adapter.py
+packages/stitcher-common/src/stitcher/common/__init__.py
+packages/stitcher-python-adapter
+packages/stitcher-application/src/stitcher/app/core.py
+packages/stitcher-application/src/stitcher/app/services/signature_manager.py
+packages/stitcher-application/src/stitcher/app/services/doc_manager.py
+packages/stitcher-application/pyproject.toml
+packages/stitcher-application/tests/unit/test_signature_extraction.py
+packages/stitcher-application/tests/unit/test_signature_manager.py
+packages/stitcher-application/tests/unit/test_doc_manager.py
+packages/stitcher-application/tests/unit/test_doc_overlay.py
+packages/stitcher-cli/src/stitcher/cli/factories.py
+packages/stitcher-cli/pyproject.toml
+packages/stitcher-test-utils/src/stitcher/test_utils/helpers.py
+packages/stitcher-test-utils/src/stitcher/test_utils/helpers.stitcher.yaml
+packages/stitcher-test-utils/src/stitcher/test_utils/__init__.py
+packages/stitcher-test-utils/pyproject.toml
+pyproject.toml
+tests
 ~~~~~
 
 ~~~~~act
-write_file
-packages/stitcher-python-adapter/tests/unit/test_stub_generator.py
+git_commit
 ~~~~~
-~~~~~python
-import pytest
-from stitcher.spec import (
-    ModuleDef, FunctionDef, ClassDef, Argument, ArgumentKind, Attribute
-)
-from stitcher.adapter.python.internal.stub_generator import StubGenerator
+~~~~~text
+refactor: decouple business logic from Python implementation
 
+Implemented the strategic architectural refactoring to separate language-agnostic 
+business logic from Python-specific implementations.
 
-class TestStubGenerator:
-    @pytest.fixture
-    def generator(self):
-        return StubGenerator()
+Key Changes:
+- Introduced LanguageParser, LanguageTransformer, FingerprintStrategy, and 
+  StubGenerator protocols in `stitcher-spec`.
+- Created `stitcher-python-adapter` as the standard implementation of these 
+  protocols for Python.
+- Refactored `StitcherApp` and its services to use Dependency Injection via 
+  protocols, enabling true isolation and testability.
+- Implemented a composite `FingerprintStrategy` that allows plugging in 
+  multiple hashing algorithms (Structure, Signature Text, etc.).
+- Relocated shared IO adapters (YAML/Document) to `stitcher-common`.
+- Removed deprecated `stitcher-scanner` and `stitcher-io` packages.
+- Fixed regressions in IR models and updated the test suite to use a new 
+  `create_test_app` factory.
+- Added comprehensive unit tests for the Python adapter components.
 
-    def test_generate_complex_args(self, generator):
-        # def func(a: int, b: str = "default", *args, kw_only: bool, **kwargs) -> None:
-        func = FunctionDef(
-            name="complex_func",
-            args=[
-                Argument(name="a", kind=ArgumentKind.POSITIONAL_OR_KEYWORD, annotation="int"),
-                Argument(name="b", kind=ArgumentKind.POSITIONAL_OR_KEYWORD, annotation="str", default='"default"'),
-                Argument(name="args", kind=ArgumentKind.VAR_POSITIONAL),
-                Argument(name="kw_only", kind=ArgumentKind.KEYWORD_ONLY, annotation="bool"),
-                Argument(name="kwargs", kind=ArgumentKind.VAR_KEYWORD),
-            ],
-            return_annotation="None"
-        )
-        module = ModuleDef(file_path="test.py", functions=[func])
-        
-        output = generator.generate(module)
-        
-        expected_sig = 'def complex_func(a: int, b: str = "default", *args, kw_only: bool, **kwargs) -> None: ...'
-        assert expected_sig in output
-
-    def test_generate_positional_only_args(self, generator):
-        # def func(a, /, b):
-        func = FunctionDef(
-            name="pos_only",
-            args=[
-                Argument(name="a", kind=ArgumentKind.POSITIONAL_ONLY),
-                Argument(name="b", kind=ArgumentKind.POSITIONAL_OR_KEYWORD),
-            ],
-            return_annotation="None"
-        )
-        module = ModuleDef(file_path="test.py", functions=[func])
-        
-        output = generator.generate(module)
-        assert 'def pos_only(a, /, b) -> None: ...' in output
-
-    def test_generate_bare_star(self, generator):
-        # def func(*, a):
-        func = FunctionDef(
-            name="bare_star",
-            args=[
-                Argument(name="a", kind=ArgumentKind.KEYWORD_ONLY),
-            ],
-            return_annotation="None"
-        )
-        module = ModuleDef(file_path="test.py", functions=[func])
-        
-        output = generator.generate(module)
-        assert 'def bare_star(*, a) -> None: ...' in output
-
-    def test_generate_class_with_decorators_and_bases(self, generator):
-        # @decorator
-        # class MyClass(Base1, Base2):
-        cls = ClassDef(
-            name="MyClass",
-            bases=["Base1", "Base2"],
-            decorators=["decorator"],
-            attributes=[
-                Attribute(name="x", annotation="int", value="1")
-            ],
-            methods=[
-                FunctionDef(name="method", args=[Argument(name="self", kind=ArgumentKind.POSITIONAL_OR_KEYWORD)])
-            ]
-        )
-        module = ModuleDef(file_path="test.py", classes=[cls])
-        
-        output = generator.generate(module)
-        
-        assert "@decorator" in output
-        assert "class MyClass(Base1, Base2):" in output
-        assert "    x: int = 1" in output
-        assert "    def method(self): ..." in output
-~~~~~
-
-#### Acts 2: 创建 Inspector 单元测试
-覆盖异常路径。
-
-~~~~~act
-write_file
-packages/stitcher-python-adapter/tests/unit/test_inspector.py
-~~~~~
-~~~~~python
-import pytest
-from stitcher.adapter.python.inspector import parse_plugin_entry, InspectionError
-
-# Mock module for testing
-import sys
-from types import ModuleType
-
-def setup_mock_module(monkeypatch):
-    mock_mod = ModuleType("my_plugin")
-    
-    def valid_func(a: int) -> str:
-        """My Docstring"""
-        return str(a)
-    
-    async def async_func():
-        pass
-
-    mock_mod.valid_func = valid_func
-    mock_mod.async_func = async_func
-    mock_mod.not_callable = "I am a string"
-    
-    monkeypatch.setitem(sys.modules, "my_plugin", mock_mod)
-
-class TestInspector:
-    def test_parse_valid_entry(self, monkeypatch):
-        setup_mock_module(monkeypatch)
-        func_def = parse_plugin_entry("my_plugin:valid_func")
-        
-        assert func_def.name == "valid_func"
-        assert func_def.docstring == "My Docstring"
-        assert func_def.return_annotation == "str"
-        assert len(func_def.args) == 1
-        assert func_def.args[0].name == "a"
-        assert func_def.args[0].annotation == "int"
-
-    def test_parse_async_entry(self, monkeypatch):
-        setup_mock_module(monkeypatch)
-        func_def = parse_plugin_entry("my_plugin:async_func")
-        assert func_def.is_async
-
-    def test_module_not_found(self):
-        with pytest.raises(InspectionError, match="Could not load entry point"):
-            parse_plugin_entry("non_existent_module:func")
-
-    def test_attribute_not_found(self, monkeypatch):
-        setup_mock_module(monkeypatch)
-        with pytest.raises(InspectionError, match="Could not load entry point"):
-            parse_plugin_entry("my_plugin:non_existent_func")
-
-    def test_target_not_callable(self, monkeypatch):
-        setup_mock_module(monkeypatch)
-        # inspect.signature raises TypeError if not callable
-        with pytest.raises(InspectionError, match="Could not inspect signature"):
-            parse_plugin_entry("my_plugin:not_callable")
-~~~~~
-
-#### Acts 3: 创建 Parser 单元测试
-覆盖 `AnnAssign` 和 `Assign`。
-
-~~~~~act
-write_file
-packages/stitcher-python-adapter/tests/unit/test_parser.py
-~~~~~
-~~~~~python
-import pytest
-from stitcher.adapter.python.internal.parser import parse_source_code
-
-class TestParser:
-    def test_parse_ann_assign(self):
-        code = """
-x: int = 1
-y: str
-__all__: list = ["x"]
-        """
-        module = parse_source_code(code)
-        
-        assert len(module.attributes) == 2
-        
-        attr_x = next(a for a in module.attributes if a.name == "x")
-        assert attr_x.annotation == "int"
-        assert attr_x.value == "1"
-        
-        attr_y = next(a for a in module.attributes if a.name == "y")
-        assert attr_y.annotation == "str"
-        assert attr_y.value is None
-
-        assert module.dunder_all == '["x"]'
-
-    def test_parse_assign(self):
-        code = """
-x = 1
-__all__ = ["x"]
-        """
-        module = parse_source_code(code)
-        
-        attr_x = next(a for a in module.attributes if a.name == "x")
-        assert attr_x.value == "1"
-        assert attr_x.annotation is None
-        
-        assert module.dunder_all == '["x"]'
-
-    def test_parse_imports(self):
-        code = """
-import os
-from sys import path
-        """
-        module = parse_source_code(code)
-        assert "import os" in module.imports
-        assert "from sys import path" in module.imports
+This establishes a clean, extensible, and professional foundation for the 
+Stitcher project's future growth.
 ~~~~~
 
 ### 下一步建议
-运行新添加的测试用例，并观察覆盖率是否有所提升。如果一切顺利，我们就可以提交这次的代码。这将显著提高我们对底层适配器逻辑的信心。
+- **业务逻辑深度测试**: 利用当前可 Mock 适配器的优势，针对 `StitcherApp` 复杂的冲突解决逻辑编写纯单元测试。
+- **多目标语言预研**: 尝试定义一个简单的伪语言适配器，验证架构在处理非 Python 语言时的适应性。
