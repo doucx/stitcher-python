@@ -73,7 +73,8 @@ def test_manager_save_and_load_composite_hashes(tmp_path: Path):
         assert data["foo"]["baseline_code_structure_hash"] == "abc"
         assert data["foo"]["baseline_yaml_content_hash"] == "def"
         assert data["bar"]["baseline_code_structure_hash"] == "123"
-        assert data["bar"]["baseline_yaml_content_hash"] is None
+        # Since it was None, the key should be absent in the serialized JSON
+        assert "baseline_yaml_content_hash" not in data["bar"]
 
     # Act: Load
     loaded = manager.load_composite_hashes(module)

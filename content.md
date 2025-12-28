@@ -1,97 +1,50 @@
-由于我们引入了严格的 `Fingerprint` 模型，旧的单元测试中直接使用字典（Dict）作为参数的代码现在会触发 `AttributeError`。我们需要更新这些测试用例，使其符合新的接口契约。
+由于 `Fingerprint` 容器在加载数据时会过滤掉 `None` 值，因此在序列化为 JSON 后，这些键将完全不存在，而不是存储为 `null`。我们需要修正测试中的断言逻辑，改为检查键的缺失。
 
 ---
-## [WIP] test: 更新 SignatureManager 单元测试以适配 Fingerprint 模型
+## [WIP] test: 修正 SignatureManager 测试中的空值断言
 
 ### 错误分析
-在重构 `SignatureManager` 后，其 `save_composite_hashes` 方法现在期望接收 `Dict[str, Fingerprint]`。然而，`test_signature_manager.py` 中的旧测试用例仍在传递原始字典，导致在尝试调用 `fp.to_dict()` 时抛出 `AttributeError: 'dict' object has no attribute 'to_dict'`。
+在 `Fingerprint.from_dict` 的实现中，如果输入字典的值为 `None`，该键将不会被添加到内部存储中。因此，在 `SignatureManager.save_composite_hashes` 序列化数据时，这些键不会出现在生成的 JSON 中。旧的测试用例尝试访问 `data["bar"]["baseline_yaml_content_hash"]` 并预期得到 `None`，但这在 Python 字典中会触发 `KeyError`。
 
 ### 用户需求
-修复受影响的单元测试，确保测试数据使用 `Fingerprint` 对象。
+修正测试断言，准确反映 `Fingerprint` 容器对空值的处理行为（即不存储、不序列化）。
 
 ### 评论
-这是重构后的必然步骤。单元测试必须与它们所测试的组件的最新接口保持同步。
-
-### 目标
-1.  更新 `packages/stitcher-application/tests/test_signature_manager.py`。
-2.  将测试数据中的字典包装为 `Fingerprint` 对象。
+这是对“稀疏存储”特性的正确验证。不存储空键可以减小指纹文件的大小，并使状态表示更加清晰。
 
 ### 标签
-#intent/tooling #flow/ready #priority/medium #comp/tests #concept/state #ai/instruct #task/domain/testing #task/object/signature-manager-test #task/action/fix #task/state/end
+#intent/tune #flow/ready #priority/low #comp/tests #ai/instruct #task/domain/testing #task/object/signature-manager-test #task/action/fix #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 更新 SignatureManager 单元测试
+#### Acts 1: 修正断言逻辑
 
-我们将修改测试用例，使用 `Fingerprint.from_dict` 来转换测试数据。
-
-~~~~~act
-patch_file
-packages/stitcher-application/tests/test_signature_manager.py
-~~~~~
-~~~~~python
-import json
-from pathlib import Path
-from stitcher.spec import ModuleDef, FunctionDef, Argument, ArgumentKind
-from stitcher.app.services import SignatureManager
-
-
-def create_func(name="func", args=None, ret=None):
-~~~~~
-~~~~~python
-import json
-from pathlib import Path
-from stitcher.spec import ModuleDef, FunctionDef, Argument, ArgumentKind, Fingerprint
-from stitcher.app.services import SignatureManager
-
-
-def create_func(name="func", args=None, ret=None):
-~~~~~
+我们将修改 `test_signature_manager.py`，使用 `not in` 来验证空键的缺失。
 
 ~~~~~act
 patch_file
 packages/stitcher-application/tests/test_signature_manager.py
 ~~~~~
 ~~~~~python
-def test_manager_save_and_load_composite_hashes(tmp_path: Path):
-    # Arrange
-    manager = SignatureManager(root_path=tmp_path)
-    module = ModuleDef(file_path="src/main.py", functions=[create_func(name="foo")])
+    with sig_path.open("r") as f:
+        data = json.load(f)
+        assert data["foo"]["baseline_code_structure_hash"] == "abc"
+        assert data["foo"]["baseline_yaml_content_hash"] == "def"
+        assert data["bar"]["baseline_code_structure_hash"] == "123"
+        assert data["bar"]["baseline_yaml_content_hash"] is None
 
-    hashes_to_save = {
-        "foo": {
-            "baseline_code_structure_hash": "abc",
-            "baseline_yaml_content_hash": "def",
-        },
-        "bar": {
-            "baseline_code_structure_hash": "123",
-            "baseline_yaml_content_hash": None,
-        },
-    }
-
-    # Act: Save
-    manager.save_composite_hashes(module, hashes_to_save)
+    # Act: Load
 ~~~~~
 ~~~~~python
-def test_manager_save_and_load_composite_hashes(tmp_path: Path):
-    # Arrange
-    manager = SignatureManager(root_path=tmp_path)
-    module = ModuleDef(file_path="src/main.py", functions=[create_func(name="foo")])
+    with sig_path.open("r") as f:
+        data = json.load(f)
+        assert data["foo"]["baseline_code_structure_hash"] == "abc"
+        assert data["foo"]["baseline_yaml_content_hash"] == "def"
+        assert data["bar"]["baseline_code_structure_hash"] == "123"
+        # Since it was None, the key should be absent in the serialized JSON
+        assert "baseline_yaml_content_hash" not in data["bar"]
 
-    # Data is now composed of Fingerprint objects
-    hashes_to_save = {
-        "foo": Fingerprint.from_dict({
-            "baseline_code_structure_hash": "abc",
-            "baseline_yaml_content_hash": "def",
-        }),
-        "bar": Fingerprint.from_dict({
-            "baseline_code_structure_hash": "123",
-            "baseline_yaml_content_hash": None,
-        }),
-    }
-
-    # Act: Save
-    manager.save_composite_hashes(module, hashes_to_save)
+    # Act: Load
 ~~~~~
