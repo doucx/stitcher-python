@@ -1,3 +1,5 @@
 "NoOpInteractionHandler": |-
   A non-interactive handler that resolves conflicts based on CLI flags.
   This preserves the original behavior for CI/CD environments.
+"NoOpInteractionHandler.process_interactive_session": |-
+  Processes a list of conflicts non-interactively based on the handler's configuration.
