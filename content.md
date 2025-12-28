@@ -1,374 +1,135 @@
-## [WIP] feat: 交互式 CLI 本地化重构
+好的，我注意到了这两个测试失败。你的判断是正确的，这些测试确实与 `FileSystemLoader` 的最新实现（特别是基于文件路径合成 FQN 的逻辑）脱节了。同时，这也暴露了 `put` 方法中一个关于键处理的逻辑缺陷。
+
+这是一个典型的“代码演进后，测试未同步”的问题。我们将一次性修复它们。
+
+1.  **`test_nexus_with_fs_loader_handles_overrides` 失败原因**:
+    *   **现状**: 测试用例在一个名为 `main.json` 的文件中，使用了 `cli.default` 这样的**完整 FQN** 作为键。
+    *   **问题**: 当前的 `FileSystemLoader` 实现遵循 SST 规范，它会从文件路径中推断出 FQN 的第一部分。例如，它期望 `cli.json` 文件包含 `default` 键，然后将它们组合成 `cli.default`。测试中的数据结构不再有效，导致加载器无法找到预期的键。
+
+2.  **`test_fs_loader_put_writes_to_correct_location` 失败原因**:
+    *   **现状**: `FileSystemLoader.put` 方法在更新数据时，直接使用了完整的 FQN（例如 `app.title`）作为字典的键写入 `file_data`。
+    *   **问题**: 当 `handler.save` 被调用时，`JsonHandler` 的 `_inflate_dict` 方法会将这个带点的键错误地展开成一个嵌套对象（例如，`{"app": {"title": ...}}`）。当这个文件被重新加载时，`FileSystemLoader` 会再次加上文件名前缀 `app`，最终导致 FQN 变成了错误的 `app.app.title`。正确的行为应该是 `put` 方法将**相对键**（`title`）写入 `file_data`。
+
+我将执行一个计划来修正这两个问题：
+
+1.  **更新测试数据**: 我会修改 `test_assembly.py` 中的 `multi_root_workspace` fixture，使其创建的文件结构和内容与 SST 规范保持一致。
+2.  **修复 `put` 方法**: 我会修改 `FileSystemLoader.put` 的实现，确保它在写入文件时使用相对键，而不是完整的 FQN。
+
+这将使测试恢复正常，并增强 `FileSystemLoader` 的健壮性。
+
+我将生成一个计划来实现这个修复。
+
+## [WIP] fix: 修复过时的 FileSystemLoader 测试并修正 put 方法
+
+### 错误分析
+`pyneedle-runtime` 包中的两个测试用例 `test_nexus_with_fs_loader_handles_overrides` 和 `test_fs_loader_put_writes_to_correct_location` 失败。
+
+1.  **测试数据过时**: 第一个测试用例使用的数据结构（在 `main.json` 和 `overrides.json` 中使用完整 FQN）与 `FileSystemLoader` 当前基于 SST（从文件路径合成 FQN 前缀）的实现不匹配。
+2.  **`put` 方法缺陷**: 第二个测试用例暴露了 `FileSystemLoader.put` 方法的一个 bug。它错误地将完整的 FQN（如 `app.title`）作为键写入文件，而不是使用相对键（`title`），这导致在重新加载时 FQN 被错误地构造为 `app.app.title`。
 
 ### 用户需求
-目前的 CLI 交互（如冲突解决菜单）中的文本是硬编码的英文，无法享受到系统的本地化（Needle/L）机制。需要重构这一部分，使其支持通过 L 指针动态加载本地化文本。
+修复这两个失败的测试，确保 Needle 的文件系统加载器行为正确且测试覆盖有效。
 
 ### 评论
-这是一个必要的重构，使得 Stitcher 的用户界面在多语言环境下表现一致。
+这是一个重要的修复，它使核心的 `FileSystemLoader` 的行为（特别是写入操作）与其设计规范（SST）保持一致，并更新了关键的集成测试以防止未来的回归。
 
 ### 目标
-1.  在 `stitcher-common` 中定义交互相关的 Needle 资源（`interactive.json`）。
-2.  在 `stitcher-cli` 中实现 `SemanticMenuOption` 模型和 `TyperInteractiveRenderer`。
-3.  重构 `TyperInteractionHandler` 以使用上述组件，替代硬编码字符串。
-4.  在 `main.py` 中正确装配这些组件。
+1.  修改 `packages/pyneedle-runtime/tests/test_assembly.py`，更新 `multi_root_workspace` fixture 以使用符合 SST 规范的文件名和键。
+2.  修改 `packages/pyneedle-runtime/src/needle/loaders/fs_loader.py` 中的 `put` 方法，使其在写入数据时使用相对键。
 
 ### 基本原理
-通过引入“语义渲染器”模式，将业务逻辑（决定显示哪些选项）与表现层（如何显示选项文本）分离。`InteractionHandler` 负责逻辑，`Renderer` 负责 IO 和通过 Nexus 获取本地化文本。这不仅解决了本地化问题，也提高了代码的可测试性和整洁度。
+通过将测试用例与 `FileSystemLoader` 的既定规范对齐，并修复 `put` 方法中 FQN 到相对键的转换逻辑，我们可以确保 `load` 和 `put` 操作的对称性和正确性。
 
 ### 标签
-#intent/refine #flow/ready #priority/medium #comp/cli #concept/ui #scope/ux #ai/instruct #task/domain/ui #task/object/interactive-prompt #task/action/localize #task/state/begin
+#intent/fix #flow/ready #priority/high #comp/runtime #concept/state #scope/core #ai/instruct #task/domain/testing #task/object/fs-loader #task/action/bug-fix #task.state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 定义 Needle 资源 (Data Layer)
+#### Acts 1: 更新过时的测试用例
 
-首先，我们在 `stitcher-common` 中定义交互所需的文本资源。
-
-~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/assets/needle/en/interactive.json
-~~~~~
-~~~~~json
-{
-  "header": {
-    "title": "Conflict {current}/{total} in {path}",
-    "symbol": "Symbol: {fqn}"
-  },
-  "reason": {
-    "signature_drift": "Reason: Signature has changed, but docs have not (Signature Drift).",
-    "co_evolution": "Reason: Both signature and docs have changed (Co-evolution).",
-    "doc_content_conflict": "Reason: Source code docstring differs from YAML docstring."
-  },
-  "option": {
-    "relink": { "label": "[F]orce-relink", "desc": "Force-relink new signature with old docs." },
-    "reconcile": { "label": "[R]econcile", "desc": "Accept both changes as the new correct state." },
-    "overwrite": { "label": "[F]orce overwrite", "desc": "Overwrite YAML with code docs (Code-first)." },
-    "keep": { "label": "[R]econcile", "desc": "Keep existing YAML docs (YAML-first)." },
-    "skip": { "label": "[S]kip", "desc": "Skip this conflict for now." },
-    "abort": { "label": "[A]bort", "desc": "Abort the entire check process." },
-    "undo": { "label": "[Z]Undo", "desc": "Go back to the previous conflict." }
-  },
-  "prompt": "Please choose an action:",
-  "summary": "Found {count} conflicts. Please review them one by one.",
-  "invalid_choice": "Invalid choice, please try again.",
-  "already_at_start": "Already at the first conflict."
-}
-~~~~~
+我们将 `main.json` 和 `overrides.json` 重命名为 `cli.json`，并移除键中的 `cli.` 前缀，使其符合 SST 规范。
 
 ~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/interactive.json
+patch_file
+packages/pyneedle-runtime/tests/test_assembly.py
 ~~~~~
-~~~~~json
-{
-  "header": {
-    "title": "冲突 {current}/{total} 位于 {path}",
-    "symbol": "符号: {fqn}"
-  },
-  "reason": {
-    "signature_drift": "原因: 签名已变更，但文档未变 (签名漂移)。",
-    "co_evolution": "原因: 签名和文档均已变更 (协同演进)。",
-    "doc_content_conflict": "原因: 源代码文档字符串与 YAML 文档字符串不一致。"
-  },
-  "option": {
-    "relink": { "label": "[F]强制重链 (Force-relink)", "desc": "强制将新签名关联到旧文档。" },
-    "reconcile": { "label": "[R]调和 (Reconcile)", "desc": "接受双方变更作为新的正确状态。" },
-    "overwrite": { "label": "[F]强制覆盖 (Force overwrite)", "desc": "使用代码文档覆盖 YAML (代码优先)。" },
-    "keep": { "label": "[R]保留 (Reconcile)", "desc": "保留现有 YAML 文档 (YAML优先)。" },
-    "skip": { "label": "[S]跳过 (Skip)", "desc": "暂不处理此冲突。" },
-    "abort": { "label": "[A]中止 (Abort)", "desc": "中止整个检查过程。" },
-    "undo": { "label": "[Z]撤销 (Undo)", "desc": "返回上一个冲突。" }
-  },
-  "prompt": "请选择操作:",
-  "summary": "发现 {count} 个冲突。请逐一审查。",
-  "invalid_choice": "无效选择，请重试。",
-  "already_at_start": "已经是第一个冲突。"
-}
-~~~~~
-
-#### Acts 2: 实现交互式渲染器 (Presentation Layer)
-
-在 CLI 包中创建一个新的模块 `interactive.py`，用于定义语义选项模型和渲染器。
-
-~~~~~act
-write_file
-packages/stitcher-cli/src/stitcher/cli/interactive.py
-~~~~~
-~~~~~python
-from dataclasses import dataclass
-from typing import List, Any, Union
-from needle.pointer import SemanticPointer, L
-from stitcher.spec import ResolutionAction, ConflictType
-from stitcher.app.protocols import InteractionContext
-import typer
-import click
-
-@dataclass
-class SemanticMenuOption:
-    key: str
-    action: Union[ResolutionAction, str]  # str allowed for "UNDO"
-    label_id: SemanticPointer
-    desc_id: SemanticPointer
-
-class TyperInteractiveRenderer:
-    def __init__(self, nexus):
-        self.nexus = nexus
-
-    def show_summary(self, count: int) -> None:
-        msg = self.nexus.get(L.interactive.summary).format(count=count)
-        typer.echo(msg)
-
-    def show_message(self, msg_id: SemanticPointer, color=None, **kwargs) -> None:
-        msg = self.nexus.get(msg_id).format(**kwargs)
-        typer.secho(msg, fg=color)
-
-    def prompt(
-        self,
-        context: InteractionContext,
-        current_idx: int,
-        total: int,
-        options: List[SemanticMenuOption],
-        default_action: Any
-    ) -> Any:
-        # Header
-        header_fmt = self.nexus.get(L.interactive.header.title)
-        typer.echo("\n" + ("-" * 20))
-        typer.secho(
-            header_fmt.format(current=current_idx + 1, total=total, path=context.file_path),
-            fg=typer.colors.CYAN,
-        )
-        
-        symbol_fmt = self.nexus.get(L.interactive.header.symbol)
-        typer.secho("  " + symbol_fmt.format(fqn=context.fqn), bold=True)
-
-        # Reason
-        reason_map = {
-            ConflictType.SIGNATURE_DRIFT: L.interactive.reason.signature_drift,
-            ConflictType.CO_EVOLUTION: L.interactive.reason.co_evolution,
-            ConflictType.DOC_CONTENT_CONFLICT: L.interactive.reason.doc_content_conflict,
+~~~~~python.old
+    # 1. Define package assets (low priority)
+    pkg_root = tmp_path / "pkg_assets"
+    factory.with_source(
+        f"{pkg_root.name}/needle/en/main.json",
+        """
+        {
+            "cli.default": "I am a default",
+            "cli.override_me": "Default Value"
         }
-        reason_l = reason_map.get(context.conflict_type)
-        if reason_l:
-             typer.secho("  " + self.nexus.get(reason_l), fg=typer.colors.YELLOW)
+        """,
+    )
 
-        # Prompt
-        typer.echo("  " + self.nexus.get(L.interactive.prompt))
+    # 2. Define user project assets (high priority)
+    project_root = tmp_path / "my_project"
+    factory.with_source(
+        f"{project_root.name}/pyproject.toml", "[project]\nname='my-project'"
+    ).with_source(
+        f"{project_root.name}/.stitcher/needle/en/overrides.json",
+        """
+        {
+            "cli.override_me": "User Override!",
+            "cli.user_only": "I am from the user"
+        }
+        """,
+    )
+~~~~~
+~~~~~python.new
+    # 1. Define package assets (low priority)
+    pkg_root = tmp_path / "pkg_assets"
+    factory.with_source(
+        f"{pkg_root.name}/needle/en/cli.json",
+        """
+        {
+            "default": "I am a default",
+            "override_me": "Default Value"
+        }
+        """,
+    )
 
-        # Options
-        for opt in options:
-            label = self.nexus.get(opt.label_id)
-            desc = self.nexus.get(opt.desc_id)
-            is_default = opt.action == default_action
-            prefix = "> " if is_default else "  "
-            # Label format assumes "[K]Label" style roughly
-            typer.secho(f"  {prefix}{label:<25} - {desc}", bold=is_default)
-
-        # Input loop
-        while True:
-            char = click.getchar().lower()
-            
-            if char == "\r" or char == "\n":
-                return default_action
-            
-            for opt in options:
-                if char == opt.key.lower():
-                    return opt.action
-            
-            self.show_message(L.interactive.invalid_choice, color=typer.colors.RED)
+    # 2. Define user project assets (high priority)
+    project_root = tmp_path / "my_project"
+    factory.with_source(
+        f"{project_root.name}/pyproject.toml", "[project]\nname='my-project'"
+    ).with_source(
+        f"{project_root.name}/.stitcher/needle/en/cli.json",
+        """
+        {
+            "override_me": "User Override!",
+            "user_only": "I am from the user"
+        }
+        """,
+    )
 ~~~~~
 
-~~~~~act
-write_file
-packages/stitcher-cli/src/stitcher/cli/interactive.stitcher.yaml
-~~~~~
-~~~~~yaml
-"SemanticMenuOption": |-
-  Data model representing a single option in an interactive menu, linking a key/action to semantic L pointers.
-"TyperInteractiveRenderer": |-
-  Renders interactive prompts using Typer, resolving text via Nexus.
-"TyperInteractiveRenderer.prompt": |-
-  Displays the full conflict resolution menu and captures user input.
-"TyperInteractiveRenderer.show_message": |-
-  Displays a formatted message resolved from an L pointer.
-"TyperInteractiveRenderer.show_summary": |-
-  Displays the summary of conflicts found.
-~~~~~
+#### Acts 2: 修复 FileSystemLoader.put 方法
 
-#### Acts 3: 重构 InteractionHandler (Logic Layer)
-
-现在重构 `handlers.py`，移除硬编码字符串，改为构建语义选项列表。
-
-~~~~~act
-write_file
-packages/stitcher-cli/src/stitcher/cli/handlers.py
-~~~~~
-~~~~~python
-import sys
-from typing import List, Optional
-from needle.pointer import L
-from stitcher.app.protocols import InteractionHandler, InteractionContext
-from stitcher.spec import ResolutionAction, ConflictType
-from .interactive import TyperInteractiveRenderer, SemanticMenuOption
-
-class TyperInteractionHandler(InteractionHandler):
-    def __init__(self, renderer: TyperInteractiveRenderer):
-        self.renderer = renderer
-
-    def process_interactive_session(
-        self, contexts: List[InteractionContext]
-    ) -> List[ResolutionAction]:
-        if not sys.stdin.isatty():
-             return [ResolutionAction.SKIP] * len(contexts)
-
-        self.renderer.show_summary(len(contexts))
-
-        resolutions: List[Optional[ResolutionAction]] = [None] * len(contexts)
-        current_index = 0
-        last_choice: Optional[ResolutionAction] = None
-
-        while current_index < len(contexts):
-            context = contexts[current_index]
-            
-            recorded_choice = resolutions[current_index]
-            default_choice = recorded_choice or last_choice or ResolutionAction.ABORT
-
-            # Build Options
-            options = []
-            
-            if context.conflict_type == ConflictType.SIGNATURE_DRIFT:
-                options.append(SemanticMenuOption(
-                    key="f", action=ResolutionAction.RELINK, 
-                    label_id=L.interactive.option.relink.label, desc_id=L.interactive.option.relink.desc
-                ))
-            elif context.conflict_type == ConflictType.CO_EVOLUTION:
-                options.append(SemanticMenuOption(
-                    key="r", action=ResolutionAction.RECONCILE,
-                    label_id=L.interactive.option.reconcile.label, desc_id=L.interactive.option.reconcile.desc
-                ))
-            elif context.conflict_type == ConflictType.DOC_CONTENT_CONFLICT:
-                options.append(SemanticMenuOption(
-                    key="f", action=ResolutionAction.HYDRATE_OVERWRITE,
-                    label_id=L.interactive.option.overwrite.label, desc_id=L.interactive.option.overwrite.desc
-                ))
-                options.append(SemanticMenuOption(
-                    key="r", action=ResolutionAction.HYDRATE_KEEP_EXISTING,
-                    label_id=L.interactive.option.keep.label, desc_id=L.interactive.option.keep.desc
-                ))
-            
-            options.append(SemanticMenuOption(
-                key="s", action=ResolutionAction.SKIP,
-                label_id=L.interactive.option.skip.label, desc_id=L.interactive.option.skip.desc
-            ))
-            options.append(SemanticMenuOption(
-                key="a", action=ResolutionAction.ABORT,
-                label_id=L.interactive.option.abort.label, desc_id=L.interactive.option.abort.desc
-            ))
-            options.append(SemanticMenuOption(
-                key="z", action="UNDO",
-                label_id=L.interactive.option.undo.label, desc_id=L.interactive.option.undo.desc
-            ))
-
-            action = self.renderer.prompt(
-                context, current_index, len(contexts), options, default_choice
-            )
-            
-            if action == "UNDO":
-                if current_index > 0:
-                    current_index -= 1
-                else:
-                    self.renderer.show_message(L.interactive.already_at_start, color="yellow")
-                continue
-            
-            resolutions[current_index] = action
-            if action != ResolutionAction.ABORT:
-                 last_choice = action
-
-            if action == ResolutionAction.ABORT:
-                for i in range(len(resolutions)):
-                    if resolutions[i] is None:
-                        resolutions[i] = ResolutionAction.ABORT
-                break
-
-            current_index += 1
-            
-        return [res or ResolutionAction.SKIP for res in resolutions]
-~~~~~
-
-#### Acts 4: 装配组件 (Main)
-
-最后，更新 `main.py` 以注入渲染器。
+我们将修改 `put` 方法，确保在更新 `file_data` 字典时使用相对键。
 
 ~~~~~act
 patch_file
-packages/stitcher-cli/src/stitcher/cli/main.py
+packages/pyneedle-runtime/src/needle/loaders/fs_loader.py
 ~~~~~
-~~~~~python
-from .rendering import CliRenderer
-from .handlers import TyperInteractionHandler
+~~~~~python.old
+        # 3. Update the file's data
+        file_data[key] = str_value
 
-app = typer.Typer(
+        # 4. Save back to the specific file
 ~~~~~
-~~~~~python
-from .rendering import CliRenderer
-from .handlers import TyperInteractionHandler
-from .interactive import TyperInteractiveRenderer
+~~~~~python.new
+        # 3. Update the file's data
+        parts = key.split(".", 1)
+        # The key inside the file is relative to the filename (which is parts[0])
+        relative_key = parts[1] if len(parts) > 1 else key
+        file_data[relative_key] = str_value
 
-app = typer.Typer(
+        # 4. Save back to the specific file
 ~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/main.py
-~~~~~
-~~~~~python
-    if (
-        sys.stdin.isatty()
-        and not non_interactive
-        and not force_relink
-        and not reconcile
-    ):
-        handler = TyperInteractionHandler()
-
-    app_instance = StitcherApp(root_path=project_root, interaction_handler=handler)
-~~~~~
-~~~~~python
-    if (
-        sys.stdin.isatty()
-        and not non_interactive
-        and not force_relink
-        and not reconcile
-    ):
-        renderer = TyperInteractiveRenderer(nexus)
-        handler = TyperInteractionHandler(renderer)
-
-    app_instance = StitcherApp(root_path=project_root, interaction_handler=handler)
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/main.py
-~~~~~
-~~~~~python
-    handler = None
-    is_interactive = sys.stdin.isatty() and not non_interactive
-
-    if is_interactive and not force and not reconcile:
-        handler = TyperInteractionHandler()
-
-    app_instance = StitcherApp(root_path=project_root, interaction_handler=handler)
-~~~~~
-~~~~~python
-    handler = None
-    is_interactive = sys.stdin.isatty() and not non_interactive
-
-    if is_interactive and not force and not reconcile:
-        renderer = TyperInteractiveRenderer(nexus)
-        handler = TyperInteractionHandler(renderer)
-
-    app_instance = StitcherApp(root_path=project_root, interaction_handler=handler)
-~~~~~
-
-### 下一步建议
-我们引入了新的交互层，建议运行一次 `check` 来验证是否有未预料的 Typer/Click 行为变化，或者是否有 L 指针拼写错误。虽然有单元测试覆盖 Bus，但交互式部分的自动化测试较难，通常依赖人工冒烟测试。
