@@ -1,205 +1,65 @@
-Of course. Your analysis is spot on. The `TypeError` reveals a critical flaw in the composition logic. My previous change correctly simplified `FileSystemLoader` but broke its downstream consumers by not adapting them to the new, more explicit architecture.
+你说得对。
 
-Your proposal to make `stitcher-common` the "composition root" is the correct path forward. It perfectly aligns with the principle of separating a generic library (`pyneedle`) from a specific application (`stitcher`). The library provides the tools (`FileSystemLoader`, `OverlayNexus`, root-finding utilities), and the application uses them to assemble its specific, layered configuration.
+仅仅为了 `isinstance` 而添加 `@runtime_checkable` 确实感觉像一个“补丁”，而不是一个深思熟虑的架构决策。它解决了眼前的问题，但牺牲了设计的优雅性。它将一个本应只在静态分析时起作用的 `Protocol` 强行拉入了运行时，这确实不理想。
 
-I will generate a plan to implement this superior architecture.
+一个更符合 Python 哲学、也更优雅的方法是直接拥抱**“鸭子类型”（Duck Typing）**。我们不应该问“这个加载器是可写的类型吗？”（`isinstance`），而应该问“这个加载器有写入的能力吗？”（`hasattr`）。
 
-## [WIP] fix(common): Adapt stitcher-common to new composable loader architecture
+`WritableResourceLoaderProtocol` 的核心契约是定义了 `put` 和 `locate` 两个方法。因此，任何实现了这两个方法的对象，*就是*一个可写的加载器。`OverlayNexus` 完全可以通过检查这两个方法的**存在性**来做出判断，而无需关心它的具体类型。
+
+这个方案的优点是：
+1.  **行为驱动**: 直接检查对象是否具备所需行为 (`put`, `locate`)，这是鸭子类型的精髓。
+2.  **完全解耦**: `OverlayNexus` 的逻辑不再依赖于 `typing` 模块的运行时魔法。
+3.  **协议回归本源**: `protocols.py` 文件可以恢复其作为纯粹静态类型契约的角色，无需任何运行时装饰器。
+
+我将生成一个采纳你这个思路的新计划。
+
+## [WIP] refactor(nexus): 采用鸭子类型替换 isinstance 进行可写加载器检查
 
 ### 错误分析
-`test_assembly.py` fails during test collection because `stitcher.common.__init__` attempts to instantiate `FileSystemLoader()` without the now-mandatory `root` argument. This is a direct consequence of the previous refactoring, which correctly simplified `FileSystemLoader` but left `stitcher-common` in an inconsistent state. The error highlights an architectural issue: `stitcher-common` was implicitly relying on `FileSystemLoader` to discover paths, a responsibility that has now been correctly removed from the loader.
+之前为了修复 `TypeError`，我们引入了 `@runtime_checkable`，但这被认为是一个不够优雅的解决方案，因为它将静态类型协议与运行时行为耦合。正确的方向是遵循 Python 的鸭子类型哲学。
 
 ### 用户需求
-1.  **Decouple `pyneedle` Defaults**: The default `nexus` instance provided by `pyneedle-runtime` must be completely generic and root-agnostic. It should not perform any filesystem discovery on its own.
-2.  **Move Root Finding Utility**: The `_find_project_root` function should live in `pyneedle-runtime` as a reusable utility, but not be called by its default `nexus`.
-3.  **Establish `stitcher-common` as Composition Root**: The `stitcher.common` package must take on the responsibility of building the application-specific, layered `nexus`. It should:
-    a. Use the utility from `pyneedle-runtime` to find the project's root.
-    b. Locate its own internal assets directory.
-    c. Create two distinct `FileSystemLoader` instances for these two roots.
-    d. Combine them in the correct priority order using `OverlayNexus` to create the global `stitcher_nexus`.
+用更优雅、更符合 Python 哲学的鸭子类型检查（`hasattr`）来替换 `OverlayNexus` 中对可写加载器的 `isinstance` 检查。
 
 ### 评论
-This is a critical and correct architectural refinement. It enforces a clean separation of concerns:
--   `pyneedle` remains a pure, side-effect-free infrastructure library.
--   `stitcher-common` becomes the explicit "main" entry point for the application's service configuration, composing the generic tools from `pyneedle` into an application-aware whole.
-This change makes the system's behavior much more predictable and resolves the dependency violation.
+这是一个优秀的架构改进。通过采用 `hasattr` 检查，我们将 `OverlayNexus` 的逻辑从“检查类型”转变为“检查能力”，这正是协议（Protocols）所倡导的核心思想。此举不仅消除了对 `@runtime_checkable` 装饰器的依赖，还使得整个系统更加健壮和松耦合。
 
 ### 目标
-1.  Make the `FileSystemLoader` constructor more robust by allowing an optional `root`.
-2.  Ensure the default `nexus` in `pyneedle-runtime` is initialized as an empty, inert instance.
-3.  Rewrite `stitcher.common.__init__.py` to correctly assemble the `stitcher_nexus` using a high-priority project loader and a low-priority common assets loader.
+1.  **回滚协议修改**: 从 `packages/pyneedle-spec/src/needle/spec/protocols.py` 中移除 `@runtime_checkable` 装饰器及其导入。
+2.  **重构检查逻辑**: 修改 `packages/pyneedle-nexus/src/needle/nexus/nexus.py` 中的 `_get_writable_loader` 方法，使用 `hasattr` 来检查加载器是否同时具备 `put` 和 `locate` 方法。
 
 ### 基本原理
-We are moving from an implicit, "magical" configuration to an explicit composition model. The generic library (`pyneedle`) provides the building blocks. The application (`stitcher-common`) is now responsible for assembling those blocks in a way that reflects the application's specific needs (i.e., layering project-specific resources over built-in package assets).
+根据鸭子类型原则（"If it walks like a duck and it quacks like a duck, then it must be a duck"），一个对象是否“可写”不取决于它的继承关系，而取决于它是否实现了 `put` 和 `locate` 方法。`hasattr` 是实现这一原则的直接、高效且 Pythonic 的方式。
 
 ### 标签
-#intent/fix #intent/refine #flow/ready #priority/high #comp/runtime #comp/cli #concept/config #scope/core #dx #task/domain/storage #task/object/loader-architecture #task/action/refactor #task/state/continue
+#intent/refine #flow/ready #priority/high #comp/interfaces #comp/runtime #concept/executor #scope/core #dx #task/domain/storage #task/object/loader-architecture #task/action/refactor #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: Make `FileSystemLoader` robust to empty initialization
-We will make the `root` argument optional. If no root is provided, the loader will simply be empty, which is a safe and predictable default.
+#### Acts 2: 在 `OverlayNexus` 中实现鸭子类型检查
+
+现在，我们将 `_get_writable_loader` 的实现改为检查行为（`put` 和 `locate` 方法）而非类型。
 
 ~~~~~act
 patch_file
-packages/pyneedle-runtime/src/needle/loaders/fs_loader.py
+packages/pyneedle-nexus/src/needle/nexus/nexus.py
 ~~~~~
 ~~~~~python.old
-    def __init__(
-        self,
-        root: Path,
-        handlers: Optional[List[FileHandlerProtocol]] = None,
-        default_domain: str = "en",
-    ):
-        super().__init__(default_domain)
-        self.handlers = handlers or [JsonHandler()]
-        self.root = root
-        
-        # Cache structure: domain -> flattened_dict
-        self._data_cache: Dict[str, Dict[str, str]] = {}
-
-    def _ensure_loaded(self, domain: str) -> Dict[str, str]:
-        if domain not in self._data_cache:
-            self._data_cache[domain] = self._scan_root(domain)
-        return self._data_cache[domain]
+    def _get_writable_loader(self) -> Optional[WritableResourceLoaderProtocol]:
+        for loader in self.loaders:
+            if isinstance(loader, WritableResourceLoaderProtocol):
+                return loader
+        return None
 ~~~~~
 ~~~~~python.new
-    def __init__(
-        self,
-        root: Optional[Path] = None,
-        handlers: Optional[List[FileHandlerProtocol]] = None,
-        default_domain: str = "en",
-    ):
-        super().__init__(default_domain)
-        self.handlers = handlers or [JsonHandler()]
-        self.root = root
-        
-        # Cache structure: domain -> flattened_dict
-        self._data_cache: Dict[str, Dict[str, str]] = {}
-
-    def _ensure_loaded(self, domain: str) -> Dict[str, str]:
-        if domain not in self._data_cache:
-            if not self.root:
-                self._data_cache[domain] = {}
-            else:
-                self._data_cache[domain] = self._scan_root(domain)
-        return self._data_cache[domain]
+    def _get_writable_loader(self) -> Optional[WritableResourceLoaderProtocol]:
+        for loader in self.loaders:
+            # Duck typing: Check for the required methods instead of the type.
+            is_writable = hasattr(loader, "put") and hasattr(loader, "locate")
+            if is_writable:
+                # We can safely cast here because we've verified the contract.
+                return loader  # type: ignore
+        return None
 ~~~~~
-
-~~~~~act
-patch_file
-packages/pyneedle-runtime/src/needle/loaders/fs_loader.py
-~~~~~
-~~~~~python.old
-    def locate(self, pointer: Union[str, Any], domain: str) -> Path:
-        """For a single-root loader, locate is deterministic."""
-        key = str(pointer)
-        base_dir = self.root / ".stitcher" / "needle" / domain
-        
-        parts = key.split(".")
-        filename = f"{parts[0]}.json"  # Default to JSON
-        return base_dir / filename
-~~~~~
-~~~~~python.new
-    def locate(self, pointer: Union[str, Any], domain: str) -> Path:
-        """For a single-root loader, locate is deterministic."""
-        if not self.root:
-            raise RuntimeError("Cannot locate path on a loader with no root.")
-
-        key = str(pointer)
-        base_dir = self.root / ".stitcher" / "needle" / domain
-        
-        parts = key.split(".")
-        filename = f"{parts[0]}.json"  # Default to JSON
-        return base_dir / filename
-~~~~~
-
-#### Acts 2: Decouple `pyneedle-runtime`'s default `nexus`
-The global `nexus` in `pyneedle` will now be an empty shell, safe to import anywhere without filesystem side-effects. The `_find_project_root` utility remains for others to use.
-
-~~~~~act
-patch_file
-packages/pyneedle-runtime/src/needle/runtime.py
-~~~~~
-~~~~~python.old
-# --- Global Singleton Instance ---
-# This is the "batteries-included" setup.
-# It automatically discovers the project root and sets up a file system loader.
-_project_root = _find_project_root()
-_default_loader = FileSystemLoader(root=_project_root)
-nexus = OverlayNexus(loaders=[_default_loader])
-# ---------------------------------
-
-# Make the loader accessible for advanced use cases (e.g., adding asset paths)
-# Example: from needle import _default_loader
-#          _default_loader.add_root(my_assets_path)
-#          nexus.reload()
-
-__all__ = ["L", "nexus", "SemanticPointer", "PointerSet", "_default_loader"]
-~~~~~
-~~~~~python.new
-# --- Global Singleton Instance ---
-# This is a generic, side-effect-free instance.
-# Applications should compose their own nexus with specific loaders.
-nexus = OverlayNexus(loaders=[])
-# ---------------------------------
-
-
-__all__ = ["L", "nexus", "SemanticPointer", "PointerSet", "_find_project_root"]
-~~~~~
-
-#### Acts 3: Rebuild `stitcher-common` as the Composition Root
-This is the core of the fix. `stitcher.common` now explicitly builds its layered `nexus`.
-
-~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/__init__.py
-~~~~~
-~~~~~python
-__path__ = __import__("pkgutil").extend_path(__path__, __name__)
-
-from pathlib import Path
-from needle.nexus import OverlayNexus
-from needle.loaders import FileSystemLoader
-from needle.runtime import _find_project_root
-from .formatting import format_docstring, parse_docstring
-from .messaging.bus import MessageBus
-
-# --- Composition Root for Stitcher's Core Services ---
-
-# 1. Discover necessary roots
-#    - The current project's root (for user overrides)
-#    - The `stitcher-common` package's own assets root (for defaults)
-_project_root = _find_project_root()
-_common_assets_root = Path(__file__).parent / "assets"
-
-# 2. Create a loader for each root.
-#    The project loader will be writable and has higher priority.
-project_loader = FileSystemLoader(root=_project_root)
-common_assets_loader = FileSystemLoader(root=_common_assets_root)
-
-# 3. Create the nexus instance, composing loaders in the correct priority order.
-#    `project_loader` comes first, so it overrides `common_assets_loader`.
-stitcher_nexus = OverlayNexus(loaders=[project_loader, common_assets_loader])
-
-# 4. Create the bus instance, injecting the application-specific nexus.
-bus = MessageBus(nexus_instance=stitcher_nexus)
-
-# Public API for stitcher packages.
-# `stitcher_loader` is aliased to `project_loader` to maintain the contract
-# for write operations, ensuring they go to the user's project directory.
-stitcher_loader = project_loader
-
-__all__ = [
-    "bus",
-    "stitcher_nexus",
-    "stitcher_loader",
-    "format_docstring",
-    "parse_docstring",
-]
-~~~~~
-
-### 下一步建议
-The core architectural issue is now resolved. The system is more robust and easier to reason about. The next logical step is to run the entire test suite across all packages to ensure that this change has not introduced any regressions in other areas that might have been implicitly relying on the old behavior.
