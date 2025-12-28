@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "Capture: A fs_loader.json, A json_handler.json, A protocols.json ... and 4 more files", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766916838.5668387, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[COMMIT] feat(cli): 引入调试日志系统并修复扫描路径配置", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766916839.0651898, "duration_ms": 0}}
