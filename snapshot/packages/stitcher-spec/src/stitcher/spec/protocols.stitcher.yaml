@@ -1,0 +1,20 @@
+"FingerprintStrategyProtocol": |-
+  Protocol defining the strategy for computing composite fingerprints.
+  Designed to support composition of multiple hashing algorithms (Structure, AST, Merkle, etc.).
+"FingerprintStrategyProtocol.compute": |-
+  Computes a composite Fingerprint object for the given entity.
+  The resulting object allows O(1) access to various hash types (e.g. fp['current_code_structure_hash']).
+"LanguageParserProtocol": |-
+  Protocol defining the contract for parsing raw source code into Stitcher's Intermediate Representation (ModuleDef).
+"LanguageParserProtocol.parse": |-
+  Parses source code into a ModuleDef object.
+"LanguageTransformerProtocol": |-
+  Protocol defining lossless code transformations, specifically for documentation management.
+"LanguageTransformerProtocol.inject": |-
+  Injects docstrings from a dictionary back into the source code AST.
+"LanguageTransformerProtocol.strip": |-
+  Removes all docstrings from the source code.
+"StubGeneratorProtocol": |-
+  Protocol defining how to generate static type stubs (e.g. .pyi files) from Stitcher's IR.
+"StubGeneratorProtocol.generate": |-
+  Generates the complete string content of a stub file from a ModuleDef.
