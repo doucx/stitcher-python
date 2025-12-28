@@ -1,95 +1,73 @@
 简要回答
-好的，我们将按照 TDD 流程进行。首先，我们需要验证之前的 `FileSystemLoader` 修复是否有效（即确认它是否真的能正确合成 `check.file.fail` 这样的键）。如果加载器逻辑正确，那么问题极有可能是 **Import 时机/初始化顺序** 导致的（Typer App 在 CLI 资产注册进 Nexus 之前就初始化了）。
+问题已被精确定位：**初始化顺序错误 (Initialization Order Bug)**。
 
-我们将创建一个集成测试来验证这两点。
+`stitcher --help` 显示原始 Key 的原因是：`stitcher.cli.main` 模块中的 Typer 装饰器（如 `@app.command(help=nexus.get(...))`) 是在**模块导入时立即执行**的。
 
-## [WIP] test(runtime): 验证 FileSystemLoader FQN 合成逻辑与 CLI 资源加载
+而在 `stitcher.cli.__init__.py` 中，`from .main import app` 发生在资产注册代码（`stitcher_nexus.loaders.insert(...)`）**之前**。这意味着当 `main.py` 被解释执行并尝试获取帮助文本时，CLI 的语言包还没有被加载到 Nexus 中，因此 Nexus 只能返回 Key 本身作为兜底。
+
+`check` 命令之所以正常，是因为它使用的 `L.check...` 资源来自 `stitcher-common`，这部分资源在 `stitcher.common` 导入时就已经初始化好了。
+
+解决方案非常简单：调整 `__init__.py` 中的代码顺序，确保“先注册资产，后导入 App”。
+
+## [WIP] fix(cli): 修复 CLI 帮助文本初始化顺序问题
 
 ### 用户需求
-通过测试验证：
-1.  `FileSystemLoader` 是否能正确根据文件路径合成 FQN（例如 `check/file.json` -> `check.file.*`）。
-2.  定位为何 CLI 仍然显示原始 Key。
+修复 `stitcher --help` 输出中显示原始 Key（如 `cli.app.description`）而非本地化文本的问题。
 
 ### 评论
-这将帮助我们区分是“底层加载逻辑错误”还是“应用层初始化顺序错误”。
+这是一个经典的 Python 导入时副作用（Import-time Side Effects）问题。Typer/Click 的声明式定义导致 `nexus.get()` 在导入时就被调用，因此必须严格保证环境（Nexus 状态）在导入前已就绪。
 
 ### 目标
-1.  在 `packages/pyneedle-runtime/tests/test_fs_loader_fqn.py` 创建测试，验证 FQN 合成。
-2.  在 `packages/stitcher-cli/tests/test_cli_assets.py` 创建测试，模拟 CLI 启动并检查资源解析情况。
+1.  修改 `packages/stitcher-cli/src/stitcher/cli/__init__.py`。
+2.  将 CLI 资源的注册逻辑（创建 `cli_loader` 并注入 Nexus）移动到 `from .main import app` 之前。
 
 ### 基本原理
-隔离变量法。先验证单元逻辑（Loader），再验证集成逻辑（CLI App）。
+确保在 `main` 模块被加载、装饰器被求值之前，`stitcher_nexus` 中已经包含了 `stitcher-cli` 的资源加载器。
 
 ### 标签
-#intent/test #flow/ready #priority/high #comp/runtime #comp/cli #concept/loader #scope/core #ai/instruct #task/domain/testing #task/object/test-suite #task/action/create #task/state/begin
+#intent/fix #flow/ready #priority/high #comp/cli #concept/init #scope/core #ai/instruct #task/domain/cli #task/object/init-order #task/action/fix #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: 创建 Loader FQN 逻辑验证测试
-
-此测试在临时目录构建符合 SST v2 结构的资源文件，并断言 `FileSystemLoader` 能加载出带前缀的键。
+#### Acts 1: 调整 stitcher.cli.__init__.py 的顺序
 
 ~~~~~act
 write_file
-packages/pyneedle-runtime/tests/test_fs_loader_fqn.py
+packages/stitcher-cli/src/stitcher/cli/__init__.py
 ~~~~~
 ~~~~~python
-import pytest
+__path__ = __import__("pkgutil").extend_path(__path__, __name__)
+
 from pathlib import Path
+
 from needle.loaders import FileSystemLoader
+from stitcher.common import stitcher_nexus
 
-def test_fs_loader_synthesizes_fqn_from_path(tmp_path: Path):
-    """
-    Verifies that FileSystemLoader correctly synthesizes FQN prefixes 
-    based on the file path relative to the domain root.
-    
-    Structure:
-    root/
-      needle/
-        en/
-          cli/
-            command.json  -> {"check": "Check..."} -> cli.command.check
-          check/
-            file.json     -> {"fail": "Fail..."}   -> check.file.fail
-          __init__.json   -> {"app": "Stitcher"}   -> app
-    """
-    # 1. Arrange
-    needle_root = tmp_path / "needle" / "en"
-    needle_root.mkdir(parents=True)
-    
-    # Create cli/command.json
-    (needle_root / "cli").mkdir()
-    (needle_root / "cli" / "command.json").write_text('{"check": "Check command"}', encoding="utf-8")
-    
-    # Create check/file.json
-    (needle_root / "check").mkdir()
-    (needle_root / "check" / "file.json").write_text('{"fail": "Check failed"}', encoding="utf-8")
-    
-    # Create __init__.json (Root level)
-    (needle_root / "__init__.json").write_text('{"app": "Stitcher App"}', encoding="utf-8")
+# --- Composition Root for Stitcher CLI Assets ---
+# This is where the CLI layer registers its own resources into the shared nexus.
+# CRITICAL: This MUST happen BEFORE importing '.main', because main.py defines
+# Typer commands that resolve help strings at import time via nexus.get().
 
-    # 2. Act
-    loader = FileSystemLoader(root=tmp_path)
-    # Force load 'en' domain
-    data = loader.load("en")
-    
-    # 3. Assert
-    # Case A: Nested file
-    assert "cli.command.check" in data
-    assert data["cli.command.check"] == "Check command"
-    
-    # Case B: Another nested file
-    assert "check.file.fail" in data
-    assert data["check.file.fail"] == "Check failed"
-    
-    # Case C: __init__.json (Should NOT have __init__ prefix)
-    assert "app" in data
-    assert data["app"] == "Stitcher App"
-    # Should NOT be "__init__.app"
-    assert "__init__.app" not in data
+try:
+    _cli_assets_root = Path(__file__).parent / "assets"
+    if _cli_assets_root.is_dir():
+        # 1. Create a dedicated loader for the CLI's assets.
+        cli_loader = FileSystemLoader(root=_cli_assets_root)
+        # 2. Add it to the nexus loader stack with the highest priority.
+        #    This ensures CLI-specific strings override common ones.
+        stitcher_nexus.loaders.insert(0, cli_loader)
+except NameError:
+    # This might happen in some testing or packaging scenarios.
+    pass
+
+# Now it is safe to import the app, as the nexus is fully primed.
+from .main import app
+
+__all__ = ["app"]
 ~~~~~
 
 ### 下一步建议
-如果上述测试通过，我将立即生成修复 CLI 初始化顺序的计划（在 `stitcher-cli/__init__.py` 中调整导入顺序）。如果失败，我将继续调试 Loader 逻辑。
+
+执行完此 Patch 后，再次运行 `stitcher --help`，应该就能看到正确的、包含 "Stitcher-Python: 缝合..." 描述的帮助信息了。

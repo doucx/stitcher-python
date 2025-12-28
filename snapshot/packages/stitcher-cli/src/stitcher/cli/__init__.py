@@ -4,12 +4,12 @@ from pathlib import Path
 
 from needle.loaders import FileSystemLoader
 from stitcher.common import stitcher_nexus
-from .main import app
 
 # --- Composition Root for Stitcher CLI Assets ---
 # This is where the CLI layer registers its own resources into the shared nexus.
+# CRITICAL: This MUST happen BEFORE importing '.main', because main.py defines
+# Typer commands that resolve help strings at import time via nexus.get().
 
-# Auto-register built-in assets for the 'cli' package using the new architecture.
 try:
     _cli_assets_root = Path(__file__).parent / "assets"
     if _cli_assets_root.is_dir():
@@ -21,5 +21,8 @@ try:
 except NameError:
     # This might happen in some testing or packaging scenarios.
     pass
+
+# Now it is safe to import the app, as the nexus is fully primed.
+from .main import app
 
 __all__ = ["app"]
