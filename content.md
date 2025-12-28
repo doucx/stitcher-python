@@ -1,28 +1,24 @@
-测试结果仍然显示出大量失败，这表明我们的重构虽然恢复了部分功能，但在处理“静默成功”和“警告”之间的界限时存在逻辑漏洞。特别是，当文档有改进（`doc_improvement`）或仅存在警告（`warning`）时，`run_check` 的行为不符合测试预期。
+## [WIP] fix: 修正集成测试中的哈希计算与断言
 
-具体分析如下：
-1.  **`is_clean` 属性的逻辑问题**：在 `test_check_state_machine.py` 中，`test_state_synchronized` 失败是因为它检测到了 `check.issue.redundant` 警告。这意味着即使在“同步”状态下，如果代码中保留了 docstring，`check_module` 也会报告 Redundant。这符合预期，但测试断言“无警告”则过于严格，或需要调整以允许 Redundant 警告（这是非阻塞的）。
-2.  **`success` vs `success_with_warnings`**：在 `test_state_doc_improvement_auto_reconciled` 和 `test_state_signature_drift_force_relink` 中，测试期望 `success`（完全干净），但实际上可能因为 Redundant 或其他非阻塞性警告而返回 `success_with_warnings`（也是 True，但消息 ID 不同），或者因为 `is_clean` 判断失误导致返回 False。
-3.  **Redundant Warning 的干扰**：目前的测试用例中，代码里往往保留了旧的 docstring，这在 `check_module` 看来就是 Redundant。这会污染测试结果，使原本干净的测试变为“带警告的成功”。
+### 用户需求
+修正 `tests/integration/test_check_state_machine.py` 和 `tests/integration/test_check_signatures.py` 中的错误。
+1.  **哈希一致性**: 在测试中，文档哈希的预期值不应硬编码，而应使用 `DocumentManager` 的内部逻辑动态生成，以匹配 `YamlAdapter` 的行为。
+2.  **CLI 参数适配**: `test_check_signatures.py` 中过时的 `update_signatures` 参数必须替换为 `force_relink`。
+3.  **状态持久化验证**: 确保 `check` 命令在执行 `force_relink` 后真正更新了磁盘上的签名文件。
 
-我将采取以下措施：
-1.  **调整 `FileCheckResult` 逻辑**：确保 `auto_reconciled_count` 不会阻止 `is_clean` 为 True（如果是静默修复的话），或者明确 `run_check` 在有自动修复时的行为。
-2.  **优化测试数据**：在需要“干净”状态的测试中，确保代码中的 docstring 已被移除（或与 YAML 完全一致且预期为 Redundant），以避免意外的 Redundant 警告干扰核心逻辑测试。或者，调整断言以接受 Redundant 警告。
-3.  **精确断言**：修改测试，允许 `check.run.success` 或 `check.run.success_with_warnings`，只要整体结果 `success` 为 True。
+### 评论
+这次修复将解决“测试预期与实现细节不匹配”的问题。特别是对于哈希计算，我们必须承认 `YamlAdapter` 和文件系统读取可能引入微小的格式差异（如结尾换行符），因此在测试中使用生产代码相同的计算路径是唯一可靠的方法。
 
-特别是对于 `test_state_synchronized`，如果我们在 `init` 后没有 `strip` 代码中的 docstring，那么 `check` 必然会报 Redundant。这是一个特性而非 Bug。我将修改测试以适应这一行为：在 `init` 后手动清空代码 docstring，或者更新测试以期望 Redundant 警告。为了测试的纯粹性，**清空代码 docstring** 是更好的选择，模拟真实的“文档已迁移”状态。
+### 目标
+1.  重写 `tests/integration/test_check_state_machine.py`：
+    *   引入 `_hash_content` 辅助函数（通过实例化 `DocumentManager`）。
+    *   在 `test_state_doc_improvement_auto_reconciled` 中使用该辅助函数计算预期哈希。
+2.  重写 `tests/integration/test_check_signatures.py`：
+    *   将 `update_signatures=True` 替换为 `force_relink=True`。
+    *   确保在修改代码时移除 docstring 以避免 Redundant 干扰。
 
-## [WIP] fix: 修复状态机测试中的 Redundant 干扰与断言逻辑
-
-### 错误分析
-1.  **Redundant 干扰**: 在测试 `test_state_synchronized` 等场景中，我们在 `init` 后没有移除代码中的 docstring。因此 `check_module` 正确地报告了 `redundant` 警告。这导致 `is_clean` 为 False，并且测试断言“无警告”失败。
-2.  **断言过严**: 测试期望 `check.run.success`，但在有 Redundant 警告时，系统发出的是 `check.run.success_with_warnings`。两者都代表命令执行成功（返回 True），但消息 ID 不同。
-3.  **YAML 写入方式**: 在测试中我们简单地用 `json.dumps` 写入 YAML 文件（模拟），但这可能导致格式差异（如缩进），虽然 `YamlAdapter` 能读，但不够严谨。
-
-### 解决方案
-1.  **清理测试环境**: 在 `run_init` 后，更新源代码以移除 docstring，模拟真实的“文档分离”状态。这将消除 `redundant` 警告，使我们能专注于测试状态机逻辑。
-2.  **更新测试断言**: 在 `test_check_state_machine.py` 中，确保在 `setup` 阶段构造一个“干净”的基线（无 Redundant）。
-3.  **统一成功消息**: 确认 `run_check` 的逻辑：如果有 `auto_reconciled`（INFO），这本身不应被视为 Warning，应允许 `success`。
+### 基本原理
+通过让测试代码复用应用代码的哈希计算逻辑 (`doc_manager._hash_content`)，我们消除了“硬编码哈希”带来的脆弱性。同时，清理过时的 CLI 参数调用将使测试能够正确运行并验证新的状态机逻辑。
 
 ### 标签
 #intent/fix #flow/ready #priority/high #comp/tests #scope/core #ai/instruct #task/domain/validation #task/object/state-machine #task/state/end
@@ -30,9 +26,9 @@
 ---
 ### Script
 
-#### Acts 1: 修正 `test_check_state_machine.py`
+#### Acts 1: 修正 `tests/integration/test_check_state_machine.py`
 
-我将重写这个文件，确保在每个测试的 `Act` 阶段之前，源代码中的 docstring 都已被移除，从而消除 Redundant 警告的干扰。
+重点修复 `test_state_doc_improvement_auto_reconciled` 中的哈希断言，并确保所有测试在修改代码时都处于干净状态（无 Redundant 警告）。
 
 ~~~~~act
 write_file
@@ -41,8 +37,8 @@ tests/integration/test_check_state_machine.py
 ~~~~~python
 from textwrap import dedent
 from pathlib import Path
-import hashlib
 import json
+import hashlib
 from stitcher.app import StitcherApp
 from needle.pointer import L
 from stitcher.test_utils import SpyBus, WorkspaceFactory
@@ -68,7 +64,6 @@ def test_state_synchronized(tmp_path, monkeypatch):
     State 1: Synchronized - Code and docs match stored hashes.
     Expected: Silent pass.
     """
-    # 1. Arrange: Initial setup
     factory = WorkspaceFactory(tmp_path)
     # Start with code that HAS docstrings so init works
     project_root = (
@@ -81,22 +76,13 @@ def test_state_synchronized(tmp_path, monkeypatch):
     with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
         app.run_init()
 
-    # CRITICAL: Remove docstring from code to match "Synchronized" state (Docs in YAML, Code clean)
-    # If we don't do this, we get REDUNDANT warning.
+    # CRITICAL: Remove docstring from code to match "Synchronized" state
     (project_root / "src/module.py").write_text("def func(a: int):\n    pass")
 
-    # Update the stored signature hash because we changed the file content? 
-    # NO. Signature hash (compute_fingerprint) explicitly IGNORES docstrings. 
-    # So removing docstring does NOT change signature hash. 
-    # However, we DO need to ensure the YAML doc matches what we want.
-    # init generated YAML with "Docstring.", so we are good.
-
-    # 2. Act: Run check
     spy_bus = SpyBus()
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
         success = app.run_check()
 
-    # 3. Assert: Should pass cleanly
     assert success is True
     _assert_no_errors_or_warnings(spy_bus)
     spy_bus.assert_id_called(L.check.run.success, level="success")
@@ -107,7 +93,6 @@ def test_state_doc_improvement_auto_reconciled(tmp_path, monkeypatch):
     State 2: Documentation Improvement - Signature matches, docstring changed.
     Expected: INFO message, auto-reconcile doc hash, pass.
     """
-    # 1. Arrange
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
@@ -121,31 +106,30 @@ def test_state_doc_improvement_auto_reconciled(tmp_path, monkeypatch):
     # Clean code to avoid redundant warning
     (project_root / "src/module.py").write_text("def func(a: int):\n    pass")
 
-    # 2. Modify: Update only the docstring in the YAML file
-    # We use YamlAdapter to write to ensure correct formatting if possible, or just mock it carefully
-    # Since we are integration testing, we should write valid YAML.
+    # Modify YAML
     doc_file = project_root / "src/module.stitcher.yaml"
-    # Using simple YAML format
-    doc_file.write_text('__doc__: "Module Doc"\nfunc: "New Doc."\n', encoding="utf-8")
-
+    # Note: YamlAdapter by default uses block style. When we manually write,
+    # we simulate an external edit.
+    new_doc_content = "New Doc."
+    doc_file.write_text(f'__doc__: "Module Doc"\nfunc: "{new_doc_content}"\n', encoding="utf-8")
+    
     initial_hashes = _get_stored_hashes(project_root, "src/module.py")
     
-    # 3. Act: Run check
     spy_bus = SpyBus()
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
         success = app.run_check()
 
-    # 4. Assert: Should pass, report doc improvement
     assert success is True
-    # Info message for doc improvement
     spy_bus.assert_id_called(f"[Doc Updated] 'func': Documentation was improved.", level="info")
-    # Overall success (Clean pass because infos don't count as warnings)
     spy_bus.assert_id_called(L.check.run.success, level="success")
 
     final_hashes = _get_stored_hashes(project_root, "src/module.py")
     assert final_hashes["func"]["signature_hash"] == initial_hashes["func"]["signature_hash"]
-    # Doc hash should be updated
-    assert final_hashes["func"]["document_hash"] == hashlib.sha256("New Doc.".encode("utf-8")).hexdigest()
+    
+    # Use app's logic to calculate expected hash
+    # We rely on DocumentManager._hash_content.
+    expected_hash = app.doc_manager._hash_content(new_doc_content)
+    assert final_hashes["func"]["document_hash"] == expected_hash
 
 
 def test_state_signature_drift_error(tmp_path, monkeypatch):
@@ -153,7 +137,6 @@ def test_state_signature_drift_error(tmp_path, monkeypatch):
     State 3: Signature Drift - Signature changed, docstring matches stored.
     Expected: ERROR message, check fails.
     """
-    # 1. Arrange
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
@@ -167,12 +150,10 @@ def test_state_signature_drift_error(tmp_path, monkeypatch):
     # Clean code AND modify signature
     (project_root / "src/module.py").write_text("def func(a: str):\n    pass")
 
-    # 2. Act
     spy_bus = SpyBus()
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
         success = app.run_check()
 
-    # 3. Assert
     assert success is False
     spy_bus.assert_id_called(f"[Signature Drift] 'func': Code changed, docs may be stale.", level="error")
     spy_bus.assert_id_called(L.check.run.fail, level="error")
@@ -183,7 +164,6 @@ def test_state_signature_drift_force_relink(tmp_path, monkeypatch):
     State 3 (Resolved): Signature Drift - Signature changed, docstring matches stored.
     Expected: SUCCESS message, update signature hash, pass.
     """
-    # 1. Arrange
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
@@ -199,17 +179,18 @@ def test_state_signature_drift_force_relink(tmp_path, monkeypatch):
 
     initial_hashes = _get_stored_hashes(project_root, "src/module.py")
 
-    # 2. Act: Run check with --force-relink
+    # Act: Run check with --force-relink
     spy_bus = SpyBus()
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
         success = app.run_check(force_relink=True)
 
-    # 3. Assert
     assert success is True
     spy_bus.assert_id_called(f"[OK] Re-linked signature for 'func' in src/module.py", level="success")
     spy_bus.assert_id_called(L.check.run.success, level="success")
 
     final_hashes = _get_stored_hashes(project_root, "src/module.py")
+    
+    # Assert signature hash updated
     assert final_hashes["func"]["signature_hash"] != initial_hashes["func"]["signature_hash"]
     # Doc hash remains same
     assert final_hashes["func"]["document_hash"] == initial_hashes["func"]["document_hash"]
@@ -220,7 +201,6 @@ def test_state_co_evolution_error(tmp_path, monkeypatch):
     State 4: Co-evolution - Both signature and docstring changed.
     Expected: ERROR message, check fails.
     """
-    # 1. Arrange
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
@@ -238,12 +218,10 @@ def test_state_co_evolution_error(tmp_path, monkeypatch):
     doc_file = project_root / "src/module.stitcher.yaml"
     doc_file.write_text('__doc__: "Module Doc"\nfunc: "New YAML Doc."\n', encoding="utf-8")
 
-    # 2. Act
     spy_bus = SpyBus()
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
         success = app.run_check()
 
-    # 3. Assert
     assert success is False
     spy_bus.assert_id_called(f"[Co-evolution] 'func': Both code and docs changed; intent unclear.", level="error")
     spy_bus.assert_id_called(L.check.run.fail, level="error")
@@ -254,7 +232,6 @@ def test_state_co_evolution_reconcile(tmp_path, monkeypatch):
     State 4 (Resolved): Co-evolution - Both signature and docstring changed.
     Expected: SUCCESS message, update both hashes, pass.
     """
-    # 1. Arrange
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
@@ -270,16 +247,16 @@ def test_state_co_evolution_reconcile(tmp_path, monkeypatch):
     
     # Modify YAML doc
     doc_file = project_root / "src/module.stitcher.yaml"
-    doc_file.write_text('__doc__: "Module Doc"\nfunc: "New YAML Doc."\n', encoding="utf-8")
+    new_doc_content = "New YAML Doc."
+    doc_file.write_text(f'__doc__: "Module Doc"\nfunc: "{new_doc_content}"\n', encoding="utf-8")
 
     initial_hashes = _get_stored_hashes(project_root, "src/module.py")
 
-    # 2. Act: Run check with --reconcile
+    # Act: Run check with --reconcile
     spy_bus = SpyBus()
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
         success = app.run_check(reconcile=True)
 
-    # 3. Assert
     assert success is True
     spy_bus.assert_id_called(f"[OK] Reconciled changes for 'func' in src/module.py", level="success")
     spy_bus.assert_id_called(L.check.run.success, level="success")
@@ -287,13 +264,14 @@ def test_state_co_evolution_reconcile(tmp_path, monkeypatch):
     final_hashes = _get_stored_hashes(project_root, "src/module.py")
     assert final_hashes["func"]["signature_hash"] != initial_hashes["func"]["signature_hash"]
     assert final_hashes["func"]["document_hash"] != initial_hashes["func"]["document_hash"]
-    # Verify doc hash matches the new content
-    assert final_hashes["func"]["document_hash"] == hashlib.sha256("New YAML Doc.".encode("utf-8")).hexdigest()
+    
+    expected_doc_hash = app.doc_manager._hash_content(new_doc_content)
+    assert final_hashes["func"]["document_hash"] == expected_doc_hash
 ~~~~~
 
-#### Acts 2: 修正 `test_check_signatures.py`
+#### Acts 2: 修正 `tests/integration/test_check_signatures.py`
 
-同样地，我们需要在 `test_check_signatures.py` 中移除 docstring，以避免 Redundant 警告导致测试失败（或使用 `success_with_warnings`）。为了保持测试的一致性，我将修改该文件以移除代码中的 docstring。
+替换过时的 `update_signatures` 参数，使用 `force_relink`。
 
 ~~~~~act
 write_file
@@ -337,7 +315,10 @@ def test_check_detects_signature_change(tmp_path, monkeypatch):
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
         app.run_init()
 
-    # 3. Modify Code: Change signature AND remove docstring to avoid Redundant warning
+    _assert_no_errors(spy_bus)
+    spy_bus.assert_id_called(L.init.run.complete, level="success")
+
+    # 3. Modify Code: Change signature AND remove docstring
     modified_code = dedent("""
     def process(value: str) -> int:
         return len(value) * 2
@@ -372,7 +353,7 @@ def test_generate_does_not_update_signatures(tmp_path, monkeypatch):
     with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
         app.run_init()
     
-    # 2. Modify Code: Signature change
+    # 2. Modify Code
     (project_root / "src/main.py").write_text("def func(a: str): ...")
 
     # 3. Run Generate

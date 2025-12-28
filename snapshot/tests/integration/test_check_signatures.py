@@ -35,7 +35,10 @@ def test_check_detects_signature_change(tmp_path, monkeypatch):
     with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
         app.run_init()
 
-    # 3. Modify Code: Change signature AND remove docstring to avoid Redundant warning
+    _assert_no_errors(spy_bus)
+    spy_bus.assert_id_called(L.init.run.complete, level="success")
+
+    # 3. Modify Code: Change signature AND remove docstring
     modified_code = dedent("""
     def process(value: str) -> int:
         return len(value) * 2
@@ -70,7 +73,7 @@ def test_generate_does_not_update_signatures(tmp_path, monkeypatch):
     with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
         app.run_init()
     
-    # 2. Modify Code: Signature change
+    # 2. Modify Code
     (project_root / "src/main.py").write_text("def func(a: str): ...")
 
     # 3. Run Generate
