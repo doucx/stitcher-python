@@ -18,4 +18,9 @@ __all__ = [
     "ClassDef",
     "FunctionDef",
     "ModuleDef",
+    # Reconciliation Models
+    "ConflictType",
+    "ResolutionAction",
+    "Resolution",
+    "ResolutionPlan",
 ]

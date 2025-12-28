@@ -131,3 +131,30 @@ class ModuleDef:
                 keys.append(attr.name)
 
         return sorted(keys)
+
+
+# --- Interactive Reconciliation Models ---
+
+
+class ConflictType(str, Enum):
+    SIGNATURE_DRIFT = "SIGNATURE_DRIFT"
+    CO_EVOLUTION = "CO_EVOLUTION"
+
+
+class ResolutionAction(str, Enum):
+    RELINK = "RELINK"
+    RECONCILE = "RECONCILE"
+    SKIP = "SKIP"
+    ABORT = "ABORT"
+
+
+@dataclass
+class Resolution:
+    fqn: str
+    conflict_type: ConflictType
+    action: ResolutionAction
+
+
+@dataclass
+class ResolutionPlan:
+    resolutions: List[Resolution] = field(default_factory=list)
