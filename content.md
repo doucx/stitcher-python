@@ -1,77 +1,229 @@
-好的，我们已经顺利完成了“交互式引导与调和模式”的所有开发环节，包括领域模型构建、应用层解耦重构、CLI 交互向导实现以及自动化修复逻辑的补回。现在，我们将这些改动作为一个完整的逻辑单元提交到 Git 仓库。
+好的，为了确保“交互式调和模式”及其相关的两阶段执行逻辑能够长期稳定运行，我们需要建立一套严密的回归测试。
 
-## [COMMIT] feat(cli): 实现 'check' 命令的交互式调和模式
+我们将重点测试以下三个维度：
+1.  **自动调和逻辑**：确保“文档改进”场景下的自动哈希更新不会再次丢失（防止之前的回归）。
+2.  **应用层流转**：验证 `StitcherApp` 是否正确地按照“分析 -> 决策 -> 执行”的顺序处理冲突。
+3.  **CLI 行为决策**：验证 TTY 环境检测及 `--non-interactive` 标志是否能正确控制控制处理器的注入。
+
+## [WIP] test: 为交互式调和模式建立回归测试套件
 
 ### 用户需求
-用户需要一种高效、直观且容错性高的方式来处理 `stitcher check` 检测到的冲突。
+为新实现的交互式调和模式建立回归测试，确保自动调和逻辑、双阶段执行流以及 CLI 标志位的正确性。
 
 ### 评论
-这是一次重大的开发者体验 (DX) 升级。通过引入交互式向导，我们将原来繁琐的“查看错误 -> 手动附加标志 -> 重新运行”循环简化为“一站式”决策过程。这种设计不仅提高了处理效率，更通过撤销支持和粘性默认值，极大地降低了误操作的风险和心智负担。
+这些测试是该特性生命周期的“保险柜”。特别是针对“自动调和”的测试，将永远防止我们之前遇到的那个回归错误再次发生。通过模拟 `click.getchar` 的输入序列，我们甚至可以在不启动真实终端的情况下，验证复杂的“问卷”交互逻辑是否正确地生成了调和计划。
 
 ### 目标
-1.  提交在 `stitcher-spec` 中定义的新领域模型。
-2.  提交在 `stitcher-application` 中实现的 `InteractionHandler` 协议及其自动执行/非交互式逻辑。
-3.  提交在 `stitcher-cli` 中实现的高级交互向导及其与核心逻辑的装配。
-4.  包含所有相关的文档更新和标志位增强。
-
-### 基本原理
-我们将这组横跨三个子包（Spec, Application, CLI）的修改合并为一个原子提交。这组修改在逻辑上是高度内聚的：Spec 定义了数据契约，Application 实现了执行逻辑，CLI 提供了用户入口。作为一个完整的特性交付，这样做有利于保持 Git 历史的清晰和特性的可追溯性。
+1.  **集成测试**：在 `tests/integration/test_check_interactive_flow.py` 中验证 `StitcherApp` 的四阶段工作流（分析、自动执行、交互决策、批量执行）。
+2.  **CLI 测试**：在 `packages/stitcher-cli/tests/test_check_cli_behavior.py` 中验证 `--non-interactive` 和 TTY 检测逻辑。
+3.  **交互逻辑测试**：通过 Mock `click.getchar` 验证 `TyperInteractionHandler` 的单键响应和撤销逻辑。
 
 ### 标签
-#intent/build #flow/ready #comp/cli #comp/application #comp/spec #concept/ui #scope/ux #ai/instruct #task/domain/cli #task/object/interactive-check #task/action/implementation #task/state/end #task/status/completed
+#intent/tooling #flow/ready #priority/high #comp/tests #concept/state #scope/dx #ai/instruct #task/domain/testing #task/object/interactive-check #task/action/implementation #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 提交变更
+#### Acts 1: 创建应用层集成测试
 
-我们将所有涉及到的文件添加到暂存区，并创建一个详尽的提交记录。
-
-~~~~~act
-git_add
-packages/stitcher-spec/src/stitcher/spec/models.py
-packages/stitcher-spec/src/stitcher/spec/__init__.py
-packages/stitcher-spec/src/stitcher/spec/models.stitcher.yaml
-packages/stitcher-application/src/stitcher/app/protocols.py
-packages/stitcher-application/src/stitcher/app/handlers/noop_handler.py
-packages/stitcher-application/src/stitcher/app/handlers/__init__.py
-packages/stitcher-application/src/stitcher/app/core.py
-packages/stitcher-cli/src/stitcher/cli/handlers.py
-packages/stitcher-cli/src/stitcher/cli/main.py
-packages/stitcher-cli/src/stitcher/cli/assets/needle/en/commands.json
-packages/stitcher-cli/src/stitcher/cli/assets/needle/zh/commands.json
-packages/stitcher-cli/src/stitcher/cli/main.stitcher.yaml
-~~~~~
+我们将验证 `StitcherApp` 如何处理“文档改进”（自动）和“签名漂移”（交互）的组合场景。
 
 ~~~~~act
-git_commit
+write_file
+tests/integration/test_check_interactive_flow.py
 ~~~~~
-~~~~~text
-feat(cli): implement interactive reconciliation mode for 'check' command
+~~~~~python
+import pytest
+from stitcher.app import StitcherApp
+from stitcher.app.protocols import InteractionHandler, InteractionContext
+from stitcher.spec import ResolutionAction, ConflictType
+from stitcher.test_utils import WorkspaceFactory, SpyBus
+from needle.pointer import L
 
-This commit introduces a comprehensive interactive "Reconciliation Wizard"
-to resolve conflicts (Signature Drift and Co-evolution) during 'stitcher check'.
+class MockResolutionHandler(InteractionHandler):
+    """A handler that returns a pre-defined sequence of actions."""
+    def __init__(self, actions: list[ResolutionAction]):
+        self.actions = actions
+        self.called_with = []
 
-Key improvements:
-- Decoupled application logic from UI via a new 'InteractionHandler' protocol.
-- Implemented 'TyperInteractionHandler' with support for:
-    - Single-key interaction (no Enter required for choices).
-    - Undo support ('z' key) to revisit and change previous decisions.
-    - Sticky defaults: the last choice becomes the default for next similar conflicts.
-    - Recorded defaults: when going back via Undo, the already chosen action is shown as default.
-- Redesigned 'StitcherApp.run_check' into a robust 4-phase model:
-    1. Analysis: Scan all files for conflicts.
-    2. Auto-Execution: Automatically reconcile doc improvements without user input.
-    3. Decision: Use the handler to gather user decisions for all conflicts.
-    4. Execution: Batch-apply all confirmed resolutions.
-- Added '--non-interactive' flag to explicitly disable interactivity in TTY environments.
-- Updated documentation and added i18n support for the new interactive features.
+    def process_interactive_session(self, contexts: list[InteractionContext]) -> list[ResolutionAction]:
+        self.called_with = contexts
+        return self.actions
 
-This major DX upgrade makes conflict resolution much more efficient and less error-prone for developers during large-scale refactorings.
+def test_check_workflow_mixed_auto_and_interactive(tmp_path, monkeypatch):
+    """
+    Ensures that auto-reconciliation and interactive decisions can co-exist
+    and are executed correctly in their respective phases.
+    """
+    factory = WorkspaceFactory(tmp_path)
+    # 1. Setup: A module with two functions
+    # func_a: will have doc improvement (auto)
+    # func_b: will have signature drift (interactive)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/app.py", '''
+def func_a():
+    """Old Doc A."""
+    pass
+def func_b(x: int):
+    """Doc B."""
+    pass
+''')
+        .build()
+    )
+    
+    app = StitcherApp(root_path=project_root)
+    app.run_init()
+
+    # 2. Trigger Changes
+    # Change A: Modify YAML directly (Doc Improvement)
+    doc_file = project_root / "src/app.stitcher.yaml"
+    doc_file.write_text('func_a: "New Doc A."\nfunc_b: "Doc B."\n', encoding="utf-8")
+    
+    # Change B: Modify Source Code (Signature Drift)
+    (project_root / "src/app.py").write_text('''
+def func_a():
+    pass
+def func_b(x: str): # int -> str
+    pass
+''')
+
+    # 3. Define Interactive Decision
+    handler = MockResolutionHandler([ResolutionAction.RELINK])
+    app.interaction_handler = handler
+
+    # 4. Run Check
+    spy_bus = SpyBus()
+    with spy_bus.patch(monkeypatch, "stitcher.app.core.bus"):
+        success = app.run_check()
+
+    # 5. Assertions
+    assert success is True
+    # Verify Auto-reconcile report
+    spy_bus.assert_id_called(L.check.state.doc_updated, level="info")
+    # Verify Interactive resolution report
+    spy_bus.assert_id_called(L.check.state.relinked, level="success")
+    
+    # Verify Hashes are actually updated in storage
+    from tests.integration.test_check_state_machine import _get_stored_hashes
+    final_hashes = _get_stored_hashes(project_root, "src/app.py")
+    
+    # func_a should have updated yaml hash
+    expected_doc_a_hash = app.doc_manager.compute_yaml_content_hash("New Doc A.")
+    assert final_hashes["func_a"]["baseline_yaml_content_hash"] == expected_doc_a_hash
+    
+    # func_b should have updated code hash due to RELINK
+    assert final_hashes["func_b"]["baseline_code_structure_hash"] is not None
+~~~~~
+
+#### Acts 2: 创建 CLI 行为测试
+
+验证 `--non-interactive` 是否能正确阻止交互式处理器的注入。
+
+~~~~~act
+write_file
+packages/stitcher-cli/tests/test_check_cli_behavior.py
+~~~~~
+~~~~~python
+import sys
+from unittest.mock import MagicMock
+from typer.testing import CliRunner
+from stitcher.cli.main import app
+import pytest
+
+runner = CliRunner()
+
+def test_check_non_interactive_flag_disables_handler(monkeypatch):
+    """
+    Verifies that --non-interactive flag prevents TyperInteractionHandler
+    from being instantiated even if in a TTY.
+    """
+    # Mock TTY to True
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    
+    # Mock StitcherApp to see what handler it gets
+    mock_app_cls = MagicMock()
+    monkeypatch.setattr("stitcher.cli.main.StitcherApp", mock_app_cls)
+    
+    # Run with flag
+    runner.invoke(app, ["check", "--non-interactive"])
+    
+    # Assert: interaction_handler passed to constructor was None
+    args, kwargs = mock_app_cls.call_args
+    assert kwargs["interaction_handler"] is None
+
+def test_check_interactive_by_default_in_tty(monkeypatch):
+    """
+    Verifies that in a TTY, an InteractionHandler is injected by default.
+    """
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    
+    mock_app_cls = MagicMock()
+    monkeypatch.setattr("stitcher.cli.main.StitcherApp", mock_app_cls)
+    
+    runner.invoke(app, ["check"])
+    
+    args, kwargs = mock_app_cls.call_args
+    assert kwargs["interaction_handler"] is not None
+    assert "TyperInteractionHandler" in str(type(kwargs["interaction_handler"]))
+~~~~~
+
+#### Acts 3: 验证交互向导的内部逻辑
+
+我们将模拟用户的按键序列，验证 `TyperInteractionHandler` 的决策生成。
+
+~~~~~act
+write_file
+packages/stitcher-cli/tests/test_handler_logic.py
+~~~~~
+~~~~~python
+from stitcher.cli.handlers import TyperInteractionHandler
+from stitcher.app.protocols import InteractionContext
+from stitcher.spec import ResolutionAction, ConflictType
+import click
+
+def test_handler_single_key_and_sticky_default(monkeypatch):
+    handler = TyperInteractionHandler()
+    contexts = [
+        InteractionContext("f1.py", "a", ConflictType.SIGNATURE_DRIFT),
+        InteractionContext("f1.py", "b", ConflictType.SIGNATURE_DRIFT),
+    ]
+    
+    # Simulating: 
+    # 1. User presses 'f' for the first conflict
+    # 2. User presses 'Enter' (\r) for the second conflict (should use 'f' as sticky default)
+    input_sequence = iter(['f', '\r'])
+    monkeypatch.setattr(click, "getchar", lambda: next(input_sequence))
+    
+    actions = handler.process_interactive_session(contexts)
+    
+    assert actions[0] == ResolutionAction.RELINK
+    assert actions[1] == ResolutionAction.RELINK
+
+def test_handler_undo_logic(monkeypatch):
+    handler = TyperInteractionHandler()
+    contexts = [
+        InteractionContext("f1.py", "a", ConflictType.SIGNATURE_DRIFT),
+        InteractionContext("f1.py", "b", ConflictType.SIGNATURE_DRIFT),
+    ]
+    
+    # Simulating:
+    # 1. User presses 'f' (Relink) for first
+    # 2. User presses 'z' (Undo) to go back
+    # 3. User presses 's' (Skip) to overwrite the first decision
+    # 4. User presses 'r' (Reconcile - though not valid for drift, but handler will handle it or we test flow)
+    # Actually, let's keep it simple: f -> z -> s -> s
+    input_sequence = iter(['f', 'z', 's', 's'])
+    monkeypatch.setattr(click, "getchar", lambda: next(input_sequence))
+    
+    actions = handler.process_interactive_session(contexts)
+    
+    assert actions[0] == ResolutionAction.SKIP
+    assert actions[1] == ResolutionAction.SKIP
 ~~~~~
 
 ### 下一步建议
-- **回归测试**: 建议在各种环境下（交互式 TTY, 非交互式 TTY, `--non-interactive` 标志）运行 `stitcher check` 以确保行为符合预期。
-- **UI 优化**: 未来可以考虑在冲突展示中加入更详细的差异对比（Diff view），帮助用户做更明智的决策。
-- **CI 集成**: 检查 CI 流程是否能正确处理由于 `--non-interactive` 引起的静默失败。
+- **运行测试**：执行这些新创建的测试文件。
+- **完善边界条件**：考虑添加针对“无效按键”或“中途 ABORT”的交互测试。
+- **性能评估**：在拥有大量冲突（例如 100+）的大型项目中测试交互向导的响应速度和内存占用。
