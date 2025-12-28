@@ -19,7 +19,10 @@ class StubGenerator:
 
         # 1. Module Docstring
         if module.docstring:
-            lines.append(format_docstring(module.docstring, self._indent(0)))
+            # format_docstring returns the literal without starting indent, so we prepend it.
+            # For module level (level 0), indent is empty string, but consistent logic applies.
+            formatted = format_docstring(module.docstring, self._indent(0))
+            lines.append(f"{self._indent(0)}{formatted}")
             lines.append("")  # Empty line after docstring
 
         # 2. Imports (TODO: Pass these through from scanner later)
@@ -147,7 +150,8 @@ class StubGenerator:
         # Body
         if func.docstring:
             lines.append(def_line)
-            lines.append(format_docstring(func.docstring, self._indent(level + 1)))
+            formatted = format_docstring(func.docstring, self._indent(level + 1))
+            lines.append(f"{self._indent(level + 1)}{formatted}")
             lines.append(f"{self._indent(level + 1)}...")
         else:
             # For functions without docstrings, use a single line format.
@@ -175,7 +179,8 @@ class StubGenerator:
 
         # Docstring
         if cls.docstring:
-            lines.append(format_docstring(cls.docstring, self._indent(level + 1)))
+            formatted = format_docstring(cls.docstring, self._indent(level + 1))
+            lines.append(f"{self._indent(level + 1)}{formatted}")
             has_content = True
 
         # Attributes

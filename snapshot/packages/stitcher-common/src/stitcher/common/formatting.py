@@ -54,9 +54,12 @@ def format_docstring(content: str, indent_str: str) -> str:
     if len(lines) == 1:
         # Single line: keep it compact and escape internal quotes
         processed_doc = content.replace('"""', '\\"\\"\\"')
-        return f'{indent_str}"""{processed_doc}"""'
+        return f'"""{processed_doc}"""'
 
     # Multi-line: adopt the ruff/black style for readability
     # Re-indent all lines to match the current level.
+    # Note: The start quotes do NOT have indentation here, as that is handled
+    # by the caller (StubGenerator) or the AST wrapper (LibCST).
+    # However, internal lines MUST have the indentation.
     indented_body = "\n".join(f"{indent_str}{line}" for line in lines)
-    return f'{indent_str}"""\n{indented_body}\n{indent_str}"""'
+    return f'"""\n{indented_body}\n{indent_str}"""'
