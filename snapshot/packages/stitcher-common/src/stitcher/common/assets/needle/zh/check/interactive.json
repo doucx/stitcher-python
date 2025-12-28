@@ -1,0 +1,45 @@
+{
+  "header": "发现 {count} 个冲突，请逐一处理。",
+  "conflict_header": "冲突 {current}/{total} 于 {path}",
+  "symbol_header": "  符号: {fqn}",
+  "prompt": "  请选择一个操作:",
+  "reason": {
+    "signature_drift": "  原因: 函数签名已变更，但文档未变 (签名漂移)。",
+    "co_evolution": "  原因: 函数签名和文档都已变更 (协同演进)。",
+    "doc_content_conflict": "  原因: 源代码中的文档与 YAML 文件中的文档不一致。"
+  },
+  "menu": {
+    "relink": {
+      "label": "[F]强制重链接",
+      "help": "强制将新签名与旧文档重新链接。"
+    },
+    "reconcile": {
+      "label": "[R]接受变更",
+      "help": "接受代码和文档的变更作为新的正确状态。"
+    },
+    "hydrate_overwrite": {
+      "label": "[F]强制覆盖",
+      "help": "使用代码中的文档覆盖 YAML (代码优先)。"
+    },
+    "hydrate_keep_existing": {
+      "label": "[R]保留现有",
+      "help": "保留 YAML 中的现有文档 (YAML 优先)。"
+    },
+    "skip": {
+      "label": "[S]跳过",
+      "help": "暂时跳过此冲突。"
+    },
+    "abort": {
+      "label": "[A]中止",
+      "help": "中止整个流程。"
+    },
+    "undo": {
+      "label": "[Z]撤销",
+      "help": "返回上一个冲突。"
+    }
+  },
+  "feedback": {
+    "at_first": "已经-在第一个冲突处。",
+    "invalid": "无效选项，请重试。"
+  }
+}

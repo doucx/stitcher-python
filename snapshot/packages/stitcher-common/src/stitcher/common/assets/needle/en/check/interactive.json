@@ -1,0 +1,45 @@
+{
+  "header": "Found {count} conflicts. Please review them one by one.",
+  "conflict_header": "Conflict {current}/{total} in {path}",
+  "symbol_header": "  Symbol: {fqn}",
+  "prompt": "  Please choose an action:",
+  "reason": {
+    "signature_drift": "  Reason: Signature has changed, but docs have not (Signature Drift).",
+    "co_evolution": "  Reason: Both signature and docs have changed (Co-evolution).",
+    "doc_content_conflict": "  Reason: Source code docstring differs from YAML docstring."
+  },
+  "menu": {
+    "relink": {
+      "label": "[F]orce-relink",
+      "help": "Force-relink new signature with old docs."
+    },
+    "reconcile": {
+      "label": "[R]econcile",
+      "help": "Accept both changes as the new correct state."
+    },
+    "hydrate_overwrite": {
+      "label": "[F]orce overwrite",
+      "help": "Overwrite YAML with code docs (Code-first)."
+    },
+    "hydrate_keep_existing": {
+      "label": "[R]econcile",
+      "help": "Keep existing YAML docs (YAML-first)."
+    },
+    "skip": {
+      "label": "[S]kip",
+      "help": "Skip this conflict for now."
+    },
+    "abort": {
+      "label": "[A]bort",
+      "help": "Abort the entire process."
+    },
+    "undo": {
+      "label": "[Z]Undo",
+      "help": "Go back to the previous conflict."
+    }
+  },
+  "feedback": {
+    "at_first": "Already at the first conflict.",
+    "invalid": "Invalid choice, please try again."
+  }
+}
