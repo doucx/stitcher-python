@@ -1,2 +1,4 @@
 "TyperInteractionHandler": |-
   An interactive handler using Typer/Click for user prompts.
+"TyperInteractionHandler.process_interactive_session": |-
+  Processes a list of conflicts by interactively prompting the user for a resolution for each one.
