@@ -40,7 +40,17 @@ class PointerSetProtocol(Protocol):
 
 
 class ResourceLoaderProtocol(Protocol):
-    def load(self, domain: str) -> Dict[str, Any]: ...
+    def fetch(
+        self, pointer: str, domain: str, ignore_cache: bool = False
+    ) -> str | None: ...
+
+    def get(
+        self,
+        pointer: Union[str, "SemanticPointerProtocol"],
+        domain: str | None = None,
+    ) -> str: ...
+
+    def load(self, domain: str, ignore_cache: bool = False) -> Dict[str, Any]: ...
 
 
 class WritableResourceLoaderProtocol(ResourceLoaderProtocol, Protocol):
@@ -54,8 +64,4 @@ class WritableResourceLoaderProtocol(ResourceLoaderProtocol, Protocol):
 
 
 class NexusProtocol(ResourceLoaderProtocol, Protocol):
-    def get(
-        self, pointer: Union[str, SemanticPointerProtocol], domain: str | None = None
-    ) -> str: ...
-
     def reload(self, domain: str | None = None) -> None: ...
