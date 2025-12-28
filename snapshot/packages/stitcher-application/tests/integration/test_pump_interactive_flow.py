@@ -51,7 +51,9 @@ def test_pump_interactive_overwrite(conflicting_workspace, monkeypatch):
         result = app.run_pump()
 
     # 3. Assert
-    assert result.success is True, "Pumping should succeed after interactive resolution."
+    assert result.success is True, (
+        "Pumping should succeed after interactive resolution."
+    )
     spy_bus.assert_id_called(L.pump.file.success, level="success")
 
     # Verify file content was updated

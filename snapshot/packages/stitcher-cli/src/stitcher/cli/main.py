@@ -140,9 +140,12 @@ def pump(
     # 2. Interactive Strip Confirmation (New Logic)
     if result.redundant_files and is_interactive and not strip:
         typer.echo("")
-        typer.secho(f"Found {len(result.redundant_files)} file(s) with redundant docstrings in source code.", fg=typer.colors.YELLOW)
+        typer.secho(
+            f"Found {len(result.redundant_files)} file(s) with redundant docstrings in source code.",
+            fg=typer.colors.YELLOW,
+        )
         if typer.confirm("Do you want to strip them now?", default=True):
-             app_instance.run_strip(files=result.redundant_files)
+            app_instance.run_strip(files=result.redundant_files)
 
 
 if __name__ == "__main__":
