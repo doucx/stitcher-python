@@ -7,6 +7,7 @@ from stitcher.test_utils import WorkspaceFactory, SpyBus
 
 class CapturingHandler(InteractionHandler):
     """A handler that captures the contexts passed to it and returns SKIP."""
+
     def __init__(self):
         self.captured_contexts: List[InteractionContext] = []
 
@@ -29,7 +30,7 @@ def test_check_generates_signature_diff(tmp_path, monkeypatch):
         .with_source("src/main.py", "def func(a: int): ...")
         .build()
     )
-    
+
     # Run init to save baseline signature and TEXT
     app_init = StitcherApp(root_path=project_root)
     with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
@@ -41,17 +42,17 @@ def test_check_generates_signature_diff(tmp_path, monkeypatch):
     # 3. Run check with capturing handler
     handler = CapturingHandler()
     app_check = StitcherApp(root_path=project_root, interaction_handler=handler)
-    
+
     with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
         app_check.run_check()
 
     # 4. Assert
     assert len(handler.captured_contexts) == 1
     ctx = handler.captured_contexts[0]
-    
+
     assert ctx.conflict_type == ConflictType.SIGNATURE_DRIFT
     assert ctx.signature_diff is not None
-    
+
     # Check for unified diff markers
     assert "--- baseline" in ctx.signature_diff
     assert "+++ current" in ctx.signature_diff
@@ -76,17 +77,17 @@ def test_pump_generates_doc_diff(tmp_path, monkeypatch):
     # 2. Run pump with capturing handler
     handler = CapturingHandler()
     app_pump = StitcherApp(root_path=project_root, interaction_handler=handler)
-    
+
     with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
         app_pump.run_pump()
 
     # 3. Assert
     assert len(handler.captured_contexts) == 1
     ctx = handler.captured_contexts[0]
-    
+
     assert ctx.conflict_type == ConflictType.DOC_CONTENT_CONFLICT
     assert ctx.doc_diff is not None
-    
+
     # Check for unified diff markers
     assert "--- yaml" in ctx.doc_diff
     assert "+++ code" in ctx.doc_diff

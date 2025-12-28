@@ -1,8 +1,5 @@
-import sys
-from pathlib import Path
 import typer
 
-import typer
 from stitcher.common import bus, stitcher_nexus as nexus
 from needle.pointer import L
 from .rendering import CliRenderer

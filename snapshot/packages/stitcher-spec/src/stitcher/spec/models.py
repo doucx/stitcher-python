@@ -82,19 +82,19 @@ class FunctionDef:
                 s = f"*{arg.name}"
             elif arg.kind == ArgumentKind.VAR_KEYWORD:
                 s = f"**{arg.name}"
-            
+
             if arg.annotation:
                 s += f": {arg.annotation}"
             if arg.default:
                 s += f" = {arg.default}"
             arg_strs.append(s)
-        
+
         parts.append(", ".join(arg_strs))
         parts.append(")")
-        
+
         if self.return_annotation:
             parts.append(f"-> {self.return_annotation}")
-        
+
         parts.append(":")
         return " ".join(parts).replace("( ", "(").replace(" )", ")").replace(" :", ":")
 

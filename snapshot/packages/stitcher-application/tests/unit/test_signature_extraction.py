@@ -1,4 +1,3 @@
-from textwrap import dedent
 from stitcher.spec import Argument, ArgumentKind, FunctionDef, ModuleDef
 from stitcher.app.services import SignatureManager
 
@@ -23,7 +22,7 @@ def test_extract_signature_text_simple(tmp_path):
         return_annotation="bool",
     )
     module = ModuleDef(file_path="src/main.py", functions=[func])
-    
+
     manager = SignatureManager(root_path=tmp_path)
 
     # Act
@@ -43,7 +42,7 @@ def test_extract_signature_text_async(tmp_path):
         return_annotation="None",
     )
     module = ModuleDef(file_path="src/main.py", functions=[func])
-    
+
     manager = SignatureManager(root_path=tmp_path)
 
     # Act
