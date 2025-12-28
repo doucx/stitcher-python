@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from stitcher.scanner import (
+from stitcher.adapter.python import (
     parse_plugin_entry,
     InspectionError,
 )
