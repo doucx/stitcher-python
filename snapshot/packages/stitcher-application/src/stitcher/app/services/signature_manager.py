@@ -6,7 +6,6 @@ from stitcher.spec import ModuleDef
 
 
 class SignatureManager:
-    """Manages the persistence of composite hashes (signature and document)."""
 
     def __init__(self, root_path: Path):
         self.root_path = root_path
@@ -17,7 +16,6 @@ class SignatureManager:
         return self.sig_root / rel_path.with_suffix(".json")
 
     def compute_code_structure_hashes(self, module: ModuleDef) -> Dict[str, str]:
-        """Computes structural fingerprints for all addressable functions/methods."""
         hashes = {}
         for func in module.functions:
             hashes[func.name] = func.compute_fingerprint()
@@ -28,10 +26,6 @@ class SignatureManager:
         return hashes
 
     def save_composite_hashes(self, module: ModuleDef, hashes: Dict[str, Any]) -> None:
-        """
-        Saves the composite hash map for a module.
-        Expected format: { "FQN": { "baseline_code_structure_hash": "...", "baseline_yaml_content_hash": "..." } }
-        """
         if not hashes:
             sig_path = self._get_sig_path(module)
             if sig_path.exists():
@@ -45,7 +39,6 @@ class SignatureManager:
             json.dump(hashes, f, indent=2, sort_keys=True)
 
     def load_composite_hashes(self, module: ModuleDef) -> Dict[str, Any]:
-        """Loads the composite hash map for a module."""
         sig_path = self._get_sig_path(module)
         if not sig_path.exists():
             return {}

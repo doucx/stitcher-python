@@ -212,11 +212,9 @@ class DocumentManager:
         return keys
 
     def compute_yaml_content_hash(self, content: str) -> str:
-        """Computes the hash of a docstring content string."""
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
     def compute_yaml_content_hashes(self, module: ModuleDef) -> Dict[str, str]:
-        """Computes hashes for each docstring in the corresponding YAML."""
         docs = self.load_docs_for_module(module)
         return {
             fqn: self.compute_yaml_content_hash(doc_content)
