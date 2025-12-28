@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "Capture: M doc_manager.py, M doc_manager.stitcher.yaml, M signature_manager.py ... and 1 more files", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766896196.49826, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "Acts 1: 标准化消息定义文件中的键", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766896197.5499835, "duration_ms": 0}}
