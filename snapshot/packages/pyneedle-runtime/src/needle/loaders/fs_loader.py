@@ -13,7 +13,7 @@ from needle.nexus import BaseLoader
 class FileSystemLoader(BaseLoader, WritableResourceLoaderProtocol):
     def __init__(
         self,
-        root: Path,
+        root: Optional[Path] = None,
         handlers: Optional[List[FileHandlerProtocol]] = None,
         default_domain: str = "en",
     ):
@@ -26,7 +26,10 @@ class FileSystemLoader(BaseLoader, WritableResourceLoaderProtocol):
 
     def _ensure_loaded(self, domain: str) -> Dict[str, str]:
         if domain not in self._data_cache:
-            self._data_cache[domain] = self._scan_root(domain)
+            if not self.root:
+                self._data_cache[domain] = {}
+            else:
+                self._data_cache[domain] = self._scan_root(domain)
         return self._data_cache[domain]
 
     def _scan_root(self, domain: str) -> Dict[str, str]:
@@ -103,6 +106,9 @@ class FileSystemLoader(BaseLoader, WritableResourceLoaderProtocol):
 
     def locate(self, pointer: Union[str, Any], domain: str) -> Path:
         """For a single-root loader, locate is deterministic."""
+        if not self.root:
+            raise RuntimeError("Cannot locate path on a loader with no root.")
+
         key = str(pointer)
         base_dir = self.root / ".stitcher" / "needle" / domain
         
