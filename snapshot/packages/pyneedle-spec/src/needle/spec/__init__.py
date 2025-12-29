@@ -7,6 +7,7 @@ from .protocols import (
     ResourceLoaderProtocol,
     WritableResourceLoaderProtocol,
     NexusProtocol,
+    OperatorProtocol,
 )
 
 __all__ = [
@@ -15,4 +16,5 @@ __all__ = [
     "ResourceLoaderProtocol",
     "WritableResourceLoaderProtocol",
     "NexusProtocol",
+    "OperatorProtocol",
 ]

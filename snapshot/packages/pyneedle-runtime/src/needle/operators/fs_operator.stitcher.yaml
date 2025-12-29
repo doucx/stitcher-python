@@ -1,0 +1,16 @@
+"FileSystemOperator": |-
+  A high-performance, lazy-loading Executor Operator for the file system.
+
+  It maps `SemanticPointer` paths to file system paths using a standard convention:
+  The first segment of the pointer determines the filename (`{segment}.json`),
+  and the remaining segments determine the key within that file.
+"FileSystemOperator.__call__": |-
+  Resolves a pointer to a string value.
+
+  Example:
+  `op(L.app.title)` -> Loads `root/app.json` -> Returns value of key "title".
+
+  Returns `None` if the file does not exist or the key is not found.
+"FileSystemOperator.__init__": |-
+  Initializes the operator with a specific root directory.
+  This directory is usually a specific language folder (e.g., `.../assets/en`).
