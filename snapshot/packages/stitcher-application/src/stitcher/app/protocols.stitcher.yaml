@@ -4,8 +4,12 @@
   The type of conflict detected.
 "InteractionContext.file_path": |-
   The relative path to the file containing the conflict.
+"InteractionContext.doc_diff": |-
+  The unified diff for a docstring content change.
 "InteractionContext.fqn": |-
   The fully qualified name of the symbol with the conflict.
+"InteractionContext.signature_diff": |-
+  The unified diff for a signature change.
 "InteractionHandler": |-
   Protocol for handling user interactions during a check.
 "InteractionHandler.process_interactive_session": |-

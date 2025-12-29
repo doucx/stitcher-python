@@ -11,6 +11,8 @@
   Returns all messages captured by the spy.
 "SpyRenderer": |-
   A renderer that captures structured message data.
+"SpyRenderer.messages": |-
+  A list of captured messages.
 "SpyRenderer.record": |-
   Records a semantic message call.
 "SpyRenderer.render": |-

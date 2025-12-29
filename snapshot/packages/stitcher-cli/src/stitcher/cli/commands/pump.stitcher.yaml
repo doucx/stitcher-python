@@ -6,3 +6,4 @@
     force: If True, overwrite YAML with source docstrings on conflict.
     reconcile: If True, keep YAML docstrings on conflict.
     non_interactive: Force non-interactive mode, failing on unresolved conflicts.
+    non_interactive: Force non-interactive mode, failing on unresolved conflicts.

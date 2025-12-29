@@ -1,3 +1,5 @@
+"get_project_root": |-
+  Returns the project root, which is the current working directory.
 "make_app": |-
   Creates a StitcherApp instance rooted at the current working directory.
 "make_interaction_handler": |-

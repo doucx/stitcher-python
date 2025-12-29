@@ -1,6 +1,10 @@
 "DocumentManager": |-
   Service responsible for managing documentation assets.
   Handles extraction of docstrings from IR and persistence via adapters.
+"DocumentManager.adapter": |-
+  The document adapter for reading/writing docs.
+"DocumentManager.root_path": |-
+  The root path of the project.
 "DocumentManager._extract_from_class": |-
   Recursively extracts docstrings from a class and its methods.
 "DocumentManager._extract_from_function": |-
