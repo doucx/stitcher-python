@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 from needle.pointer import L, SemanticPointer, PointerSet
-from needle.nexus import OverlayOperator
+from needle.operators import OverlayOperator
 
 
 def _find_project_root(start_dir: Optional[Path] = None) -> Path:

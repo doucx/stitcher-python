@@ -13,7 +13,6 @@ dev = [
     "ruff",
     "mypy",
     "pyneedle",
-    "pyneedle-nexus",
     "pyneedle-pointer",
     "pyneedle-spec",
     "stitcher-cli",
@@ -27,7 +26,6 @@ members = ["packages/*", "packages/stitcher-test-utils"]
 [tool.uv.sources]
 pyneedle = { workspace = true }
 pyneedle-runtime = { workspace = true }
-pyneedle-nexus = { workspace = true }
 pyneedle-pointer = { workspace = true }
 pyneedle-spec = { workspace = true }
 stitcher-spec = { workspace = true }
@@ -52,7 +50,6 @@ pythonpath = [
     "packages/stitcher-cli/src",
     "packages/pyneedle-spec/src",
     "packages/pyneedle-pointer/src",
-    "packages/pyneedle-nexus/src",
     "packages/pyneedle-runtime/src",
     "packages/pyneedle/src",
     "packages/stitcher-test-utils/src"
@@ -75,7 +72,6 @@ stub_package = "packages/stitcher-stubs"
 scan_paths = [
     "packages/pyneedle-spec/src",
     "packages/pyneedle-pointer/src",
-    "packages/pyneedle-nexus/src",
     "packages/pyneedle-runtime/src",
     "packages/pyneedle/src",
 ]
@@ -95,7 +91,6 @@ extraPaths = [
     "packages/stitcher-test-utils/src",
     "packages/pyneedle-spec/src",
     "packages/pyneedle-pointer/src",
-    "packages/pyneedle-nexus/src",
     "packages/pyneedle-runtime/src",
     "packages/pyneedle/src",
     # Add the new stub packages' source directories

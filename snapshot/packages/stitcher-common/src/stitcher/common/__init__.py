@@ -4,8 +4,7 @@ import os
 from pathlib import Path
 from typing import Dict
 from needle.pointer import L
-from needle.nexus import OverlayOperator
-from needle.operators import I18NFactoryOperator
+from needle.operators import I18NFactoryOperator, OverlayOperator
 from needle.runtime import _find_project_root
 from .formatting import format_docstring, parse_docstring
 from .messaging.bus import MessageBus

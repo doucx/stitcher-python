@@ -10,7 +10,6 @@ requires-python = ">=3.10"
 dependencies = [
     "pyneedle-spec",
     "pyneedle-pointer",
-    "pyneedle-nexus",
     "pyneedle-runtime",
 ]
 
@@ -20,5 +19,4 @@ packages = ["src/needle"]
 [tool.uv.sources]
 pyneedle-spec = { workspace = true }
 pyneedle-pointer = { workspace = true }
-pyneedle-nexus = { workspace = true }
 pyneedle-runtime = { workspace = true }

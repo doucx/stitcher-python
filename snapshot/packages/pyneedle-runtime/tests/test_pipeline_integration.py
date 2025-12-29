@@ -1,7 +1,6 @@
 from pathlib import Path
 from needle.pointer import L
-from needle.operators import FileSystemOperator
-from needle.nexus import OverlayOperator
+from needle.operators import FileSystemOperator, OverlayOperator
 
 
 def test_fs_pipeline_overrides(tmp_path: Path):
