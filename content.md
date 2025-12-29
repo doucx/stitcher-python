@@ -1,280 +1,82 @@
 简要回答
-好的，现在我们将为 `GriffePythonParser` 实现缺失的 `_enrich_typing_imports` 逻辑。这样可以确保生成的 `.pyi` 文件即使在源代码中缺少 `typing` 等导入的情况下，也能自动补全，从而变得类型安全和可用。
+好的，既然 Griffe 解析器的所有功能（包括结构解析、导入提取和自动补充缺失 `typing` 符号）都已实现并经过测试，并且混合解析器架构也已配置。现在是时候将这些工作作为一个完整的特性提交到代码库中。
 
-## [WIP] feat(adapter): 为 Griffe 解析器移植 `_enrich_typing_imports` 逻辑
+我将生成一个 `[COMMIT]` 计划，其中包含所有受影响文件的 `git add` 和一个详细的 `git commit` 消息。
+
+## [COMMIT] feat(adapter): 全面集成 Griffe 作为混合模式 Python 解析器
 
 ### 用户需求
-完善 `GriffePythonParser`，使其能够自动检测注解中使用的 `typing` 模块符号（如 `List`, `Optional`, `Any` 等），并在生成的 `ModuleDef.imports` 列表中补全缺失的导入语句。
+1.  在 `stitcher` 项目中全面集成 Griffe，利用其强大的静态分析能力。
+2.  实现一个混合解析器策略，根据 CLI 命令（分析型 vs. 转换型）动态选择 Griffe 或 LibCST。
+3.  确保 Griffe 解析器能够正确处理函数、类、属性的解析。
+4.  确保 Griffe 解析器能从源代码中提取 `import` 语句，并自动补充 `typing` 模块的缺失导入。
+5.  解决 Griffe 在处理相对导入和外部 Alias 时可能发生的崩溃及解析错误。
+6.  解决生成的 `.pyi` 文件中类属性赋值导致的语法错误。
 
 ### 评论
-这个功能对于确保生成存根文件的健壮性至关重要。我们将复用旧 `PythonParser` 中已有的 `_collect_annotations` 和 `_enrich_typing_imports` 函数，因为它们是独立于解析器实现的通用逻辑，可以直接适配到 `GriffePythonParser` 的 `parse` 流程中。
+本次集成是一项重大的架构改进，显著提升了 `stitcher` 的代码理解能力，特别是对于类型注解和复杂的 Python 语法。混合模式的设计确保了我们能够根据具体任务（静态分析或无损代码转换）选择最合适的工具，平衡了性能、准确性与代码格式保真度。虽然 Griffe 作为 `generate` 和 `check` 命令的解析器，但其在 `ModuleDef.imports` 自动补全能力目前仅限于 `typing` 模块，对于项目内部的跨模块类型引用仍有提升空间，但已经足以满足当前的核心需求。
 
 ### 目标
-1.  将辅助函数 `_collect_annotations`, `_has_unannotated_attributes`, `_enrich_typing_imports` 从 `packages/stitcher-python-adapter/src/stitcher/adapter/python/internal/parser.py` 中移植到 `packages/stitcher-python-adapter/src/stitcher/adapter/python/griffe_parser.py`。
-2.  在 `GriffePythonParser.parse` 的末尾调用 `_enrich_typing_imports` 来丰富 `ModuleDef`。
-3.  在 `tests/unit/test_griffe_parser.py` 中增加一个测试用例，验证即使源代码缺少 `typing` 导入，生成的 `ModuleDef` 也会自动包含它。
+1.  将 Griffe 集成作为 `stitcher-python-adapter` 模块的核心组件。
+2.  通过 `stitcher-cli` 工厂机制，实现 `generate` 和 `check` 命令使用 Griffe，而 `init`, `pump`, `strip`, `inject` 仍使用 LibCST。
+3.  通过新的集成测试和现有单元测试的通过，验证 Griffe 解析器的正确行为和稳定性。
+4.  将所有相关代码变更写入一个逻辑且完整的 Git 提交。
 
 ### 基本原理
-我们将 `_enrich_typing_imports` 作为一个后处理步骤。在通过 Griffe 构建了基本的 `ModuleDef` 之后，我们遍历其所有注解，查找 `typing` 模块的常用符号，并与 `ModuleDef.imports` 列表进行比对，补全缺失的项。
+我们遵循了依赖倒置原则，在 `stitcher-cli` 的 Composition Root 处，通过修改 `make_app` 工厂函数，实现了 `LanguageParserProtocol` 的具体实现（GriffePythonParser 或 PythonParser）的选择。这使得 `StitcherApp` 核心逻辑无需改变，同时能够根据上层命令的意图，动态切换底层解析引擎，从而最大化两种解析器的优势。
 
 ### 标签
-#intent/build #flow/ready #priority/high #comp/runtime #concept/parser #scope/core #ai/instruct
-#task/domain/engine #task/object/griffe-parser #task/action/expand #task/state/continue
+#intent/build #flow/ready #priority/high
+#comp/runtime #comp/cli #comp/test
+#concept/parser #concept/codegen #concept/state #concept/architecture
+#scope/core #scope/api #scope/dx
+#ai/instruct
+#task/domain/engine #task/object/griffe-parser #task/action/integration #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 将辅助函数移植到 `griffe_parser.py`
+#### Acts 1: 添加所有更改到 Git 暂存区
 
-我们从 `internal/parser.py` 中复制 `_collect_annotations` 等函数，并将其作为顶级函数粘贴到 `griffe_parser.py` 中。
+我们将暂存所有在 Griffe 集成过程中修改或新增的文件，包括源代码、测试文件和 `factories.py`。
 
 ~~~~~act
-write_file
+git_add
+packages/stitcher-python-adapter/tests/integration/test_griffe_resolution.py
 packages/stitcher-python-adapter/src/stitcher/adapter/python/griffe_parser.py
-~~~~~
-~~~~~python
-import ast
-from pathlib import Path
-import re
-import griffe
-from typing import List, Optional, Any, Set
-from stitcher.spec import (
-    ModuleDef,
-    LanguageParserProtocol,
-    FunctionDef,
-    ClassDef,
-    Attribute,
-    Argument,
-    ArgumentKind,
-)
-
-
-# --- Ported utility functions from internal/parser.py ---
-
-def _collect_annotations(module: ModuleDef) -> Set[str]:
-    annotations = set()
-
-    def add_if_exists(ann: Optional[str]):
-        if ann:
-            annotations.add(ann)
-
-    for attr in module.attributes:
-        add_if_exists(attr.annotation)
-
-    def collect_from_func(func: FunctionDef):
-        add_if_exists(func.return_annotation)
-        for arg in func.args:
-            add_if_exists(arg.annotation)
-
-    for func in module.functions:
-        collect_from_func(func)
-
-    for cls in module.classes:
-        for attr in cls.attributes:
-            add_if_exists(attr.annotation)
-        for method in cls.methods:
-            collect_from_func(method)
-
-    return annotations
-
-
-def _has_unannotated_attributes(module: ModuleDef) -> bool:
-    if any(attr.annotation is None for attr in module.attributes):
-        return True
-    for cls in module.classes:
-        if any(attr.annotation is None for attr in cls.attributes):
-            return True
-    return False
-
-
-def _enrich_typing_imports(module: ModuleDef):
-    TYPING_SYMBOLS = {
-        "List", "Dict", "Tuple", "Set", "Optional", "Union", "Any",
-        "Callable", "Sequence", "Iterable", "Type", "Final", "ClassVar", "Mapping"
-    }
-    required_symbols = set()
-
-    if _has_unannotated_attributes(module):
-        required_symbols.add("Any")
-
-    annotations = _collect_annotations(module)
-    for ann in annotations:
-        for symbol in TYPING_SYMBOLS:
-            if re.search(rf"\b{symbol}\b", ann):
-                required_symbols.add(symbol)
-
-    if not required_symbols:
-        return
-
-    existing_imports_text = "\n".join(module.imports)
-    for symbol in sorted(list(required_symbols)):
-        if not re.search(rf"\b{symbol}\b", existing_imports_text):
-            module.imports.append(f"from typing import {symbol}")
-
-
-# --- Main Parser Class ---
-
-class _ImportVisitor(ast.NodeVisitor):
-    def __init__(self):
-        self.imports: List[str] = []
-
-    def visit_Import(self, node: ast.Import) -> None:
-        self.imports.append(ast.unparse(node))
-
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
-        self.imports.append(ast.unparse(node))
-
-
-class GriffePythonParser(LanguageParserProtocol):
-    """
-    A Python parser implementation using Griffe.
-    """
-
-    def parse(self, source_code: str, file_path: str = "") -> ModuleDef:
-        """
-        Parses the given source code into a Stitcher ModuleDef IR using Griffe.
-        """
-        # 1. Parse into AST
-        try:
-            tree = ast.parse(source_code)
-        except SyntaxError as e:
-            raise ValueError(f"Syntax error in {file_path}: {e}") from e
-        
-        # 1.5 Extract Imports via AST
-        import_visitor = _ImportVisitor()
-        import_visitor.visit(tree)
-        imports = import_visitor.imports
-
-        # 2. Visit with Griffe
-        module_name = file_path.replace("/", ".").replace(".py", "") or "module"
-        path_obj = Path(file_path) if file_path else None
-        griffe_module = griffe.visit(module_name, filepath=path_obj, code=source_code)
-
-        # 3. Map to Stitcher IR
-        module_def = self._map_module(griffe_module, file_path, imports)
-
-        # 4. Enrich imports
-        _enrich_typing_imports(module_def)
-
-        return module_def
-
-    def _map_module(self, gm: griffe.Module, file_path: str, imports: List[str]) -> ModuleDef:
-        functions = []
-        classes = []
-        attributes = []
-
-        for member in gm.members.values():
-            if member.is_alias:
-                continue
-            if member.is_function:
-                functions.append(self._map_function(member))
-            elif member.is_class:
-                classes.append(self._map_class(member))
-            elif member.is_attribute:
-                attributes.append(self._map_attribute(member))
-
-        docstring = gm.docstring.value if gm.docstring else None
-
-        return ModuleDef(
-            file_path=file_path,
-            docstring=docstring,
-            functions=functions,
-            classes=classes,
-            attributes=attributes,
-            imports=imports
-        )
-
-    def _map_class(self, gc: griffe.Class) -> ClassDef:
-        methods = []
-        attributes = []
-        for member in gc.members.values():
-            if member.is_function:
-                methods.append(self._map_function(member))
-            elif member.is_attribute:
-                attributes.append(self._map_attribute(member))
-        docstring = gc.docstring.value if gc.docstring else None
-        bases = [str(b) for b in gc.bases]
-        return ClassDef(
-            name=gc.name,
-            bases=bases,
-            decorators=[str(d.value) for d in gc.decorators],
-            docstring=docstring,
-            attributes=attributes,
-            methods=methods
-        )
-
-    def _map_attribute(self, ga: griffe.Attribute) -> Attribute:
-        annotation = str(ga.annotation) if ga.annotation else None
-        value = str(ga.value) if ga.value else None
-        docstring = ga.docstring.value if ga.docstring else None
-        return Attribute(name=ga.name, annotation=annotation, value=value, docstring=docstring)
-
-    def _map_function(self, gf: griffe.Function) -> FunctionDef:
-        args = [self._map_argument(p) for p in gf.parameters]
-        return_annotation = str(gf.returns) if gf.returns else None
-        docstring = gf.docstring.value if gf.docstring else None
-        return FunctionDef(
-            name=gf.name,
-            args=args,
-            return_annotation=return_annotation,
-            docstring=docstring,
-            is_async="async" in gf.labels,
-            decorators=[str(d.value) for d in gf.decorators],
-            is_static="staticmethod" in gf.labels,
-            is_class="classmethod" in gf.labels,
-        )
-
-    def _map_argument(self, param: griffe.Parameter) -> Argument:
-        kind_map = {
-            "positional-only": ArgumentKind.POSITIONAL_ONLY,
-            "positional-or-keyword": ArgumentKind.POSITIONAL_OR_KEYWORD,
-            "keyword-only": ArgumentKind.KEYWORD_ONLY,
-            "variadic positional": ArgumentKind.VAR_POSITIONAL,
-            "variadic keyword": ArgumentKind.VAR_KEYWORD,
-        }
-        st_kind = ArgumentKind.POSITIONAL_OR_KEYWORD
-        if param.kind:
-             slug = str(param.kind.value)
-             st_kind = kind_map.get(slug, ArgumentKind.POSITIONAL_OR_KEYWORD)
-        annotation = str(param.annotation) if param.annotation else None
-        default = str(param.default) if param.default else None
-        return Argument(name=param.name, kind=st_kind, annotation=annotation, default=default)
+packages/stitcher-python-adapter/tests/unit/test_griffe_parser.py
+packages/stitcher-python-adapter/src/stitcher/adapter/python/internal/stub_generator.py
+packages/stitcher-python-adapter/tests/unit/test_stub_generator.py
+packages/stitcher-cli/src/stitcher/cli/factories.py
+packages/stitcher-cli/src/stitcher/cli/commands/basics.py
+packages/stitcher-cli/src/stitcher/cli/commands/check.py
+packages/stitcher-cli/src/stitcher/cli/commands/pump.py
 ~~~~~
 
-#### Acts 2: 添加 enriquecer-imports 测试
+#### Acts 2: 执行 Git 提交
 
-我们增加一个测试，专门验证当源代码缺少 `typing` 导入时，解析器是否能自动补全。
+创建一个清晰且详细的提交信息，总结本次 Griffe 集成的所有关键点。
 
 ~~~~~act
-patch_file
-packages/stitcher-python-adapter/tests/unit/test_griffe_parser.py
+git_commit
 ~~~~~
-~~~~~python.old
-        # Check that we caught all of them. Order should be preserved.
-        assert len(module.imports) == 3
-        for expected in expected_imports:
-            assert expected in module.imports
+~~~~~text
+feat(adapter): Integrate Griffe with hybrid parser strategy
+
+This commit fully integrates Griffe as a primary Python parsing backend, enabling a hybrid parser strategy within Stitcher. This significantly enhances static analysis capabilities for `generate` and `check` commands, while preserving the fidelity of source code transformations for `pump`, `strip`, and `inject` commands through LibCST.
+
+**Key Changes & Improvements:**
+
+1.  **Hybrid Parser Strategy:** Implemented a new mechanism in `stitcher-cli`'s `make_app` factory to dynamically select between `GriffePythonParser` (for analysis-heavy tasks like `generate` and `check`) and `PythonParser` (LibCST-based, for transformation tasks like `pump`, `strip`, `inject`).
+2.  **GriffePythonParser Implementation:**
+    *   **Full Structural Parsing:** Extended to correctly parse function, class, and module-level attributes, including their docstrings, annotations, and values.
+    *   **Robust Import Handling:**
+        *   Resolved `BuiltinModuleError` by providing `filepath` to `griffe.visit` for accurate relative import resolution.
+        *   Mitigated `AliasResolutionError` during module member iteration by safely skipping `member.is_alias` entries, focusing solely on definitions within the current module.
+        *   **Automatic `typing` Import Enrichment:** Ported the `_enrich_typing_imports` logic to automatically add `from typing import ...` statements to the `ModuleDef.imports` list based on annotations found, ensuring generated `.pyi` files are type-checker compliant.
+3.  **Stub Generator Fix:** Modified `StubGenerator._generate_attribute` to suppress default values for class-level attributes in `.pyi` files (e.g., `_run_id: Any = run_id`) to prevent runtime `NameError` due to incorrect scope inference. Module-level attributes retain their values.
+4.  **Comprehensive Testing:** Added new integration and unit tests (e.g., `test_griffe_resolution.py`, `test_griffe_parser.py` enhancements) to validate Griffe's parsing capabilities, import resolution, and stub generation correctness.
+
+This integration leverages Griffe's advanced semantic understanding for critical analysis tasks, positioning Stitcher for better type stub generation and more precise code health checks, while maintaining the non-destructive nature of code transformation commands.
 ~~~~~
-~~~~~python.new
-        # Check that we caught all of them. Order should be preserved.
-        assert len(module.imports) == 3
-        for expected in expected_imports:
-            assert expected in module.imports
-
-    def test_enrich_typing_imports(self, parser):
-        # Code explicitly missing 'from typing import List'
-        code = """
-def process_list(items: List[int]) -> None:
-    pass
-"""
-        module = parser.parse(code)
-        
-        # Check that the import was added automatically
-        assert "from typing import List" in module.imports
-~~~~~
-
-### 下一步建议
-
-运行单元测试。如果通过，`GriffePythonParser` 的核心功能就已完备。
-这意味着我们可以为整个 “集成Griffe” 任务创建一个 `[COMMIT]` 计划，将 `test(adapter): ...`, `fix(adapter): ...`, `feat(adapter): ...` 等一系列的 `[WIP]` 成果汇总为一个逻辑单元提交。
