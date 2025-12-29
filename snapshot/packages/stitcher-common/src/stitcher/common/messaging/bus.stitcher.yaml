@@ -1,7 +1,7 @@
 "MessageBus": |-
   Coordinates message resolution and rendering.
 "MessageBus.__init__": |-
-  Initializes the bus with a nexus instance for message lookup.
+  Initializes the bus with an operator (callable) for message lookup.
 "MessageBus.error": |-
   Sends an error-level message.
 "MessageBus.info": |-

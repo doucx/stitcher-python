@@ -67,21 +67,16 @@ def get_current_renderer() -> OverlayOperator:
 # or at least allows dynamic resolution per call if we didn't cache aggressively.
 # Given the cache above, it's 'Session Scope' caching.
 
-# To adapt to MessageBus which expects an object with `.get()` (Legacy) or `__call__` (New),
-# we need to make sure MessageBus is updated. 
-# For now, let's create a proxy object that acts as the "Stitcher Operator".
+# 4. Message Bus
+# We pass a lambda that delegates to the current renderer.
+# This ensures that we always use the latest operator from the cache (or rebuild it if cache cleared).
+# Using a simple function instead of a Proxy class.
 
-class StitcherOperatorProxy:
-    def __call__(self, key):
-        renderer = get_current_renderer()
-        return renderer(key)
-    
-    # Legacy compat if MessageBus still calls get()
-    def get(self, key):
-        return self.__call__(key)
+def stitcher_operator(key):
+    renderer = get_current_renderer()
+    return renderer(key)
 
-stitcher_operator = StitcherOperatorProxy()
-bus = MessageBus(nexus_instance=stitcher_operator)
+bus = MessageBus(operator=stitcher_operator)
 
 
 __all__ = [

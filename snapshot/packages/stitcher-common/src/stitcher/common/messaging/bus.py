@@ -1,13 +1,13 @@
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, Callable
 
 from needle.pointer import SemanticPointer
 from .protocols import Renderer
 
 
 class MessageBus:
-    def __init__(self, nexus_instance: Any):
+    def __init__(self, operator: Callable[[Union[str, SemanticPointer]], str]):
         self._renderer: Optional[Renderer] = None
-        self._nexus = nexus_instance
+        self._operator = operator
 
     def set_renderer(self, renderer: Renderer):
         self._renderer = renderer
@@ -18,8 +18,12 @@ class MessageBus:
         if not self._renderer:
             return
 
-        # Resolve the pointer to a string template using the injected nexus
-        template = self._nexus.get(msg_id)
+        # Resolve the pointer to a string template using the injected operator
+        template = self._operator(msg_id)
+        
+        # Handle lookup failure gracefully
+        if template is None:
+            template = str(msg_id)
 
         # Format the final message
         try:
@@ -48,7 +52,10 @@ class MessageBus:
     def render_to_string(
         self, msg_id: Union[str, SemanticPointer], **kwargs: Any
     ) -> str:
-        template = self._nexus.get(msg_id)
+        template = self._operator(msg_id)
+        if template is None:
+            return str(msg_id)
+            
         try:
             return template.format(**kwargs)
         except KeyError:
