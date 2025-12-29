@@ -86,17 +86,11 @@
   "FunctionDef.args": {
     "baseline_yaml_content_hash": "a86cc24a1403803dbf13f01a5404687a2e150fcda695dce993d6ed0c35fabf2d"
   },
-  "FunctionDef.compute_fingerprint": {
-    "baseline_yaml_content_hash": null
-  },
   "FunctionDef.decorators": {
     "baseline_yaml_content_hash": "17f289bcac22ce9a2eb638bd6dcb2f36d24df59a4dbd8ea0e68b15c71f304f70"
   },
   "FunctionDef.docstring": {
     "baseline_yaml_content_hash": "532766530fa64e27afa8d76bfd767d524e94cd3156060de9698d676645562eb0"
-  },
-  "FunctionDef.get_signature_string": {
-    "baseline_yaml_content_hash": null
   },
   "FunctionDef.is_async": {
     "baseline_yaml_content_hash": "f89efbf7d8cc3804134869a90435348d77cf6add0c2dcdcfa457cedaae55cfce"

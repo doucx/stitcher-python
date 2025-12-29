@@ -1,22 +1,20 @@
 import typer
 from needle.pointer import L
-from stitcher.common import bus, stitcher_nexus as nexus
+from stitcher.common import bus, stitcher_operator as nexus
 from stitcher.cli.factories import make_app, make_interaction_handler
 
 
 def pump_command(
-    strip: bool = typer.Option(
-        False, "--strip", help=nexus.get(L.cli.option.strip.help)
-    ),
+    strip: bool = typer.Option(False, "--strip", help=nexus(L.cli.option.strip.help)),
     force: bool = typer.Option(
         False,
         "--force",
-        help=nexus.get(L.cli.option.force.help),
+        help=nexus(L.cli.option.force.help),
     ),
     reconcile: bool = typer.Option(
         False,
         "--reconcile",
-        help=nexus.get(L.cli.option.reconcile.help),
+        help=nexus(L.cli.option.reconcile.help),
     ),
     non_interactive: bool = typer.Option(
         False,

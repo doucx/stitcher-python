@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional
 from needle.pointer import L, SemanticPointer, PointerSet
-from needle.nexus import OverlayNexus
+from needle.nexus import OverlayOperator
 
 
 def _find_project_root(start_dir: Optional[Path] = None) -> Path:
@@ -18,8 +18,8 @@ def _find_project_root(start_dir: Optional[Path] = None) -> Path:
 
 # --- Global Singleton Instance ---
 # This is a generic, side-effect-free instance.
-# Applications should compose their own nexus with specific loaders.
-nexus = OverlayNexus(loaders=[])
+# Applications should compose their own nexus with specific operators.
+nexus = OverlayOperator(operators=[])
 # ---------------------------------
 
 

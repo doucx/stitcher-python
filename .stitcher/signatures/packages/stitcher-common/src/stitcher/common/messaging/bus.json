@@ -3,9 +3,9 @@
     "baseline_yaml_content_hash": "72c2336022bfddbd67fe59611c469d6ea53844027063137f71aad3a2f37a4634"
   },
   "MessageBus.__init__": {
-    "baseline_code_signature_text": "def __init__(self, nexus_instance: Any):",
-    "baseline_code_structure_hash": "de08aa69b6a926b7352d7226ca2b0e5fbf48c3728cc2383e73f4d1535b5a280f",
-    "baseline_yaml_content_hash": "0d4d6084009729a4e09284a5b2571112ffdb310ce450402b2476d16428cb86d4"
+    "baseline_code_signature_text": "def __init__(self, operator: Callable[[Union[str, SemanticPointer]], str]):",
+    "baseline_code_structure_hash": "846e52773ff07823ad4aba827a5f846d034a3d943dcb5123a1784015a51190ef",
+    "baseline_yaml_content_hash": "144b8f2405c5422e2f3ad89b588c3b6ad82818b805f0911d68b108a496858be2"
   },
   "MessageBus._render": {
     "baseline_code_signature_text": "def _render(self, level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:",
