@@ -3,7 +3,6 @@ from needle.spec import OperatorProtocol, SemanticPointerProtocol
 
 
 class OverlayOperator(OperatorProtocol):
-
     def __init__(self, operators: List[OperatorProtocol]):
         self.operators = operators
 
@@ -12,7 +11,7 @@ class OverlayOperator(OperatorProtocol):
         # But OperatorProtocol allows Any, so we pass raw key mostly?
         # Standard convention for Executor Operators is to expect SemanticPointer/str.
         # Let's pass the key as-is to children to allow flexibility.
-        
+
         for op in self.operators:
             result = op(key)
             if result is not None:

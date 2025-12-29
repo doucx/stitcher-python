@@ -1,5 +1,4 @@
-from typing import Protocol, Dict, Any, Union, Iterable, TypeVar
-from pathlib import Path
+from typing import Protocol, Any, Union, Iterable, TypeVar
 
 # T_co is covariant, meaning SemanticPointerProtocol can return subtypes of itself
 T_Pointer = TypeVar("T_Pointer", bound="SemanticPointerProtocol", covariant=True)
@@ -40,5 +39,4 @@ class PointerSetProtocol(Protocol):
 
 
 class OperatorProtocol(Protocol):
-
     def __call__(self, key: Any) -> Any: ...

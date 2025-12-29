@@ -5,9 +5,7 @@ from stitcher.cli.factories import make_app, make_interaction_handler
 
 
 def pump_command(
-    strip: bool = typer.Option(
-        False, "--strip", help=nexus(L.cli.option.strip.help)
-    ),
+    strip: bool = typer.Option(False, "--strip", help=nexus(L.cli.option.strip.help)),
     force: bool = typer.Option(
         False,
         "--force",

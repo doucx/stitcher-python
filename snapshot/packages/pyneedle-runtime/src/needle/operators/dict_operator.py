@@ -3,7 +3,6 @@ from needle.spec import OperatorProtocol, SemanticPointerProtocol
 
 
 class DictOperator(OperatorProtocol):
-
     def __init__(self, data: Dict[str, Any]):
         self._data = self._flatten(data)
 
@@ -21,10 +20,10 @@ class DictOperator(OperatorProtocol):
         # Check strict match first
         str_key = str(key)
         val = self._data.get(str_key)
-        
+
         if val is not None:
-             return val
-             
-        # Optional: We could implement partial matching here if needed, 
+            return val
+
+        # Optional: We could implement partial matching here if needed,
         # but for an atomic operator, exact match is preferred.
         return None

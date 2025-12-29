@@ -1,12 +1,11 @@
 import os
 from pathlib import Path
-from typing import Optional, Union, Dict, Any, List
+from typing import Optional, Union, Dict
 from needle.spec import OperatorProtocol, SemanticPointerProtocol
 from needle.operators.helpers.json_handler import JsonHandler
 
 
 class FileSystemOperator(OperatorProtocol):
-
     def __init__(self, root: Union[str, Path]):
         self.root = Path(root)
         self._handler = JsonHandler()

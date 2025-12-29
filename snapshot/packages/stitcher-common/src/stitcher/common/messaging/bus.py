@@ -20,7 +20,7 @@ class MessageBus:
 
         # Resolve the pointer to a string template using the injected operator
         template = self._operator(msg_id)
-        
+
         # Handle lookup failure gracefully
         if template is None:
             template = str(msg_id)
@@ -55,7 +55,7 @@ class MessageBus:
         template = self._operator(msg_id)
         if template is None:
             return str(msg_id)
-            
+
         try:
             return template.format(**kwargs)
         except KeyError:

@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 from typing import Dict
 from needle.pointer import L
-from needle.spec import SemanticPointerProtocol
 from needle.nexus import OverlayOperator
 from needle.operators import I18NFactoryOperator
 from needle.runtime import _find_project_root
@@ -58,21 +57,21 @@ def _detect_lang() -> str:
 
 def get_current_renderer() -> OverlayOperator:
     lang_code = _detect_lang()
-    
+
     if lang_code in _operator_cache:
         return _operator_cache[lang_code]
-    
+
     # Construct the pipeline on demand
     # L.en or L.zh based on env string
     # We use a simple pointer construction here.
     lang_ptr = getattr(L, lang_code)
-    
+
     user_op = _user_factory(lang_ptr)
     default_op = _default_factory(lang_ptr)
-    
+
     # Priority: User > Default
     pipeline = OverlayOperator([user_op, default_op])
-    
+
     _operator_cache[lang_code] = pipeline
     return pipeline
 
@@ -89,9 +88,11 @@ def get_current_renderer() -> OverlayOperator:
 # This ensures that we always use the latest operator from the cache (or rebuild it if cache cleared).
 # Using a simple function instead of a Proxy class.
 
+
 def stitcher_operator(key):
     renderer = get_current_renderer()
     return renderer(key)
+
 
 bus = MessageBus(operator=stitcher_operator)
 

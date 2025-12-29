@@ -36,9 +36,7 @@ def main(
 # Register commands
 app.command(name="check", help=nexus(L.cli.command.check.help))(check_command)
 app.command(name="pump", help=nexus(L.cli.command.pump.help))(pump_command)
-app.command(name="generate", help=nexus(L.cli.command.generate.help))(
-    generate_command
-)
+app.command(name="generate", help=nexus(L.cli.command.generate.help))(generate_command)
 app.command(name="init", help=nexus(L.cli.command.init.help))(init_command)
 app.command(name="strip", help=nexus(L.cli.command.strip.help))(strip_command)
 app.command(name="inject", help=nexus(L.cli.command.inject.help))(inject_command)
