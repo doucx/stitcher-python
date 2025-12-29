@@ -1,290 +1,112 @@
-好的，你的决策非常清晰且安全。**禁用 "跳过" 选项是现阶段最负责任的做法**，因为它彻底杜绝了用户在不知情的情况下因 `strip` 操作而丢失文档字符串的风险。
+好的，我完全理解。
 
-我们立即开始实施阶段一。
+你的分析再次切中了要害。我之前提出的“直接更新”方案过于粗糙，没有考虑到一个文件内同时存在“清洁”和“冲突”状态的混合场景。你提出的**文件级原子性**原则是绝对正确的，也是唯一能保证状态一致性的健壮策略。
 
-我将生成一个完整的计划，该计划包含我们最终达成共识的所有要点：
-1.  **统一解析器**: 所有命令都将使用 Griffe 进行代码分析。
-2.  **原子化 `pump` 逻辑**: `pump` 命令中的用户决策将原子化地更新代码和文档的状态。
-3.  **禁用 `pump` 中的“跳过”**: 为了防止数据丢失，暂时从 `pump` 的交互流程中移除“跳过”选项。
+**核心原则确认**：`pump` 操作对于任何一个文件都必须是事务性的。如果该文件内检测到**任何**一个文档内容冲突，那么针对该文件的**所有**签名更新操作都必须被中止。只有当一个文件内所有需要抽水的文档都是“清洁”（即在 YAML 中尚不存在）的情况下，`pump` 才能原子性地将该文件中所有符号的签名基线（包括代码结构和新的文档哈希）更新到最新状态。
 
-这是最终的执行计划。
+我将遵循你的指示，首先创建一个新的测试用例来固化这个行为。这个测试用例在当前的代码库下应该会失败（因为 `pump` 会错误地更新 `func_clean` 的签名），而在我们后续修复了 `hydrate_module` 和 `run_pump` 的逻辑后，它应该会通过。
 
-## [WIP] refactor(app): 实现原子化 pump 逻辑并统一解析器
+我们开始吧。
+
+## [WIP] test(pump): 增加文件级原子性完整测试
 
 ### 用户需求
-`stitcher pump` 命令存在一个严重的设计缺陷：它会在执行过程中，不经用户确认就将被修改代码的新签名保存为基线，从而导致后续的 `stitcher check` 命令无法检测到本应存在的“签名漂移”错误。此外，如果用户在 `pump` 中“跳过”一个冲突，后续的 `strip` 命令仍会移除该函数的文档字符串，造成数据丢失。
+需要一个集成测试来验证 `pump` 命令在处理包含混合状态（部分可清洁抽水，部分存在冲突）的文件时，能够保证文件级的原子性。具体来说，如果一个文件内存在任何一个文档内容冲突，`pump` 命令**绝不能**更新该文件中任何符号的签名，即便是那些本可以被“清洁”抽水的符号。
 
 ### 评论
-这是一个至关重要的、根本性的修复，旨在恢复系统的状态完整性和用户信任。本次重构将实施“由文档驱动的状态协调”原则，确保用户在 `pump` 中所做的每一个决策（无论是接受代码文档还是保留 YAML 文档）都能原子化地、正确地更新所有相关的签名基线。为了配合当前文件级 `strip` 的能力，我们暂时禁用 `pump` 中的“跳过”选项，作为一项关键的安全措施，以杜绝任何数据丢失的可能性。
+这是一个至关重要的健壮性测试。它将一个微妙但关键的业务规则——“文件级事务性抽水”——转化为一个可自动验证的测试用例。这可以防止 `pump` 产生令人困惑的、不一致的“部分成功”状态，强制用户在推进任何一个文件的基线之前，必须先解决该文件内的所有冲突。
 
 ### 目标
-1.  **重构 `StitcherApp.run_pump`**: 实现新的状态更新逻辑，确保用户决策（`Force-hydrate` 或 `Reconcile`）能够原子性地更新代码结构哈希和文档内容哈希。
-2.  **禁用 `pump` 的“跳过”选项**: 修改 `TyperInteractionHandler`，在处理 `pump` 命令的文档内容冲突时，不向用户提供“跳过”选项，强制用户做出明确决策。
-3.  **统一解析器**: 修改 `make_app` 工厂，强制所有命令使用 `GriffePythonParser`，以确保所有签名计算逻辑的一致性。
-4.  **清理调用点**: 移除所有命令中对 `make_app` 的 `parser_type` 参数传递。
+1.  在 `test_pump_state_integrity.py` 文件中，添加一个新的测试用例 `test_pump_is_atomic_per_file`。
+2.  该测试需要构造一个包含两个函数的源文件：
+    a. `func_clean`: 初始无文档，用于模拟一个“清洁抽水”场景。
+    b. `func_conflict`: 初始在 YAML 中有文档，但在代码中也有一个内容不同的新文档，用于模拟“内容冲突”场景。
+3.  测试流程将模拟 `init` -> `代码修改` -> `pump`。
+4.  最终的断言是：`pump` 操作失败后，`func_clean` 和 `func_conflict` 的签名记录必须与 `init` 时的状态**完全一致**，证明 `pump` 没有进行任何部分更新。
 
 ### 基本原理
-我们通过实施两个关键的架构原则来解决问题：
-1.  **原子化状态更新**: 用户在 `pump` 中的决策将被视为一个完整的事务。选择 `Force-hydrate` (代码优先) 会同时更新 YAML 文件和代码签名基线。选择 `Reconcile` (YAML 优先) 会保持 YAML 不变，但仍更新代码签名基线以反映代码的当前状态。这确保了 `pump` 之后系统总是处于一致状态。
-2.  **单一事实来源**: 所有代码的**读取和分析**操作将统一使用 Griffe。所有代码的**转换和写入**操作将继续使用 LibCST (`PythonTransformer`)。这确保了跨命令的一致性。
+此测试通过创建一个混合状态的文件来精确模拟边界条件。在有 bug 的代码中，`pump` 会错误地更新 `func_clean` 的签名，因为它只看到了“清洁”的部分，而忽略了同文件中的冲突。这将导致测试断言失败。在修复后的代码中，`pump` 在执行更新前会先对整个文件进行预检查，一旦发现冲突，就会中止对该文件的所有签名写入操作，从而保持了状态的原子性，使测试通过。
 
 ### 标签
-#intent/fix #intent/refine #flow/ready #priority/critical #comp/application #comp/cli #concept/state #concept/parser #scope/core #scope/ux #ai/brainstorm #task/domain/architecture #task/object/state-integrity #task/action/refactor #task/state/continue
+#intent/tooling #flow/ready #priority/critical #comp/tests #comp/application #concept/state #scope/core #ai/instruct #task/domain/testing #task/object/state-integrity #task/action/implementation #task/state/continue
 
 ---
 ### Script
 
-#### Acts 1: 重构 `run_pump` 以实现原子化状态更新
+#### Acts 1: 在 `test_pump_state_integrity.py` 中添加新的原子性测试
 
-这是核心修复。我们将替换 `run_pump` 方法中陈旧的、会造成状态腐化的签名更新逻辑，代之以新的、能够根据用户决策进行精确状态更新的逻辑。
-
-~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
-~~~~~
-~~~~~python.old
-            # Update signatures if successful
-            computed_fingerprints = self.sig_manager.compute_fingerprints(module)
-            yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
-            all_fqns = set(computed_fingerprints.keys()) | set(yaml_hashes.keys())
-
-            combined: Dict[str, Fingerprint] = {}
-            for fqn in all_fqns:
-                fp = computed_fingerprints.get(fqn, Fingerprint())
-
-                # Convert 'current' to 'baseline'
-                if "current_code_structure_hash" in fp:
-                    fp["baseline_code_structure_hash"] = fp[
-                        "current_code_structure_hash"
-                    ]
-                    del fp["current_code_structure_hash"]
-
-                if "current_code_signature_text" in fp:
-                    fp["baseline_code_signature_text"] = fp[
-                        "current_code_signature_text"
-                    ]
-                    del fp["current_code_signature_text"]
-
-                if fqn in yaml_hashes:
-                    fp["baseline_yaml_content_hash"] = yaml_hashes[fqn]
-                combined[fqn] = fp
-
-            self.sig_manager.save_composite_hashes(module, combined)
-
-            # Collect candidates for stripping
-~~~~~
-~~~~~python.new
-            # Update signatures based on hydration results
-            if result["updated_keys"] or result["reconciled_keys"]:
-                stored_hashes = self.sig_manager.load_composite_hashes(module)
-                new_hashes = copy.deepcopy(stored_hashes)
-                computed_fingerprints = self.sig_manager.compute_fingerprints(module)
-                current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
-                    module
-                )
-
-                # For keys where code doc was authoritative (updated)
-                for fqn in result["updated_keys"]:
-                    fp = computed_fingerprints.get(fqn, Fingerprint())
-                    # Convert current to baseline for both code and doc
-                    if "current_code_structure_hash" in fp:
-                        fp["baseline_code_structure_hash"] = fp[
-                            "current_code_structure_hash"
-                        ]
-                        del fp["current_code_structure_hash"]
-                    if "current_code_signature_text" in fp:
-                        fp["baseline_code_signature_text"] = fp[
-                            "current_code_signature_text"
-                        ]
-                        del fp["current_code_signature_text"]
-                    if fqn in current_yaml_map:
-                        fp["baseline_yaml_content_hash"] = current_yaml_map[fqn]
-                    new_hashes[fqn] = fp
-
-                # For keys where yaml doc was authoritative (reconciled)
-                for fqn in result["reconciled_keys"]:
-                    fp = new_hashes.get(fqn, Fingerprint())
-                    current_fp = computed_fingerprints.get(fqn, Fingerprint())
-                    # only update code baseline
-                    if "current_code_structure_hash" in current_fp:
-                        fp["baseline_code_structure_hash"] = current_fp[
-                            "current_code_structure_hash"
-                        ]
-                    if "current_code_signature_text" in current_fp:
-                        fp["baseline_code_signature_text"] = current_fp[
-                            "current_code_signature_text"
-                        ]
-                    new_hashes[fqn] = fp
-
-                self.sig_manager.save_composite_hashes(module, new_hashes)
-
-            # Collect candidates for stripping
-~~~~~
-
-#### Acts 2: 在 `pump` 交互中禁用“跳过”选项
-
-为了防止因文件级 `strip` 造成的数据丢失，我们暂时从 `pump` 命令的交互式冲突解决流程中移除“跳过”(`Skip`)选项。
+我们将通过 `patch_file` 向现有的测试文件中追加一个新的测试函数。
 
 ~~~~~act
 patch_file
-packages/stitcher-cli/src/stitcher/cli/handlers.py
+packages/stitcher-application/tests/integration/test_pump_state_integrity.py
 ~~~~~
 ~~~~~python.old
-                    )
-                )
-
-            options.append(
-                SemanticMenuOption(
-                    key="s",
-                    action=ResolutionAction.SKIP,
-                    label_id=L.interactive.option.skip.label,
-                    desc_id=L.interactive.option.skip.desc,
-                )
-            )
-            options.append(
-                SemanticMenuOption(
+    # Additionally, verify that the correct error was reported.
+    spy_bus_check.assert_id_called(L.check.state.signature_drift, level="error")
 ~~~~~
 ~~~~~python.new
-                    )
-                )
-                # NOTE: Skip is disabled for pump to prevent data loss with file-level strip
-                if context.conflict_type != ConflictType.DOC_CONTENT_CONFLICT:
-                    options.append(
-                        SemanticMenuOption(
-                            key="s",
-                            action=ResolutionAction.SKIP,
-                            label_id=L.interactive.option.skip.label,
-                            desc_id=L.interactive.option.skip.desc,
-                        )
-                    )
-
-            options.append(
-                SemanticMenuOption(
-~~~~~
-
-#### Acts 3: 统一应用工厂及所有调用点
-
-我们将修改核心工厂和所有命令，以强制使用 Griffe 作为唯一的代码解析器。
-
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/factories.py
-~~~~~
-~~~~~python.old
-def make_app(
-    handler: Optional[InteractionHandler] = None,
-    parser_type: str = "cst",
-) -> StitcherApp:
-    # Composition Root: Assemble the dependencies
-    if parser_type == "griffe":
-        parser = GriffePythonParser()
-    else:
-        parser = PythonParser()
-
-    transformer = PythonTransformer()
-~~~~~
-~~~~~python.new
-def make_app(
-    handler: Optional[InteractionHandler] = None,
-) -> StitcherApp:
-    # Composition Root: Assemble the dependencies
-    # UNIFIED: Always use Griffe for analysis
-    parser = GriffePythonParser()
-
-    transformer = PythonTransformer()
-~~~~~
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/commands/basics.py
-~~~~~
-~~~~~python.old
-def generate_command():
-    app_instance = make_app(parser_type="griffe")
-    app_instance.run_from_config()
+    # Additionally, verify that the correct error was reported.
+    spy_bus_check.assert_id_called(L.check.state.signature_drift, level="error")
 
 
-def init_command():
-    app_instance = make_app(parser_type="cst")
-    app_instance.run_init()
+def test_pump_is_atomic_per_file(tmp_path, monkeypatch):
+    """
+    Ensures that if a file contains even one conflict, `pump` does NOT
+    update the signatures for ANY function in that file, even the ones
+    that could have been cleanly hydrated.
+    """
+    # 1. Arrange: A file with two functions.
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source(
+            "src/main.py",
+            """
+def func_clean(): ...
+def func_conflict(): ...
+            """,
+        )
+        .with_docs("src/main.stitcher.yaml", {"func_conflict": "Original YAML doc."})
+        .build()
+    )
+    app = create_test_app(root_path=project_root)
+    with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
+        app.run_init()
 
+    # Get initial state
+    from stitcher.test_utils import get_stored_hashes
 
-def strip_command():
-    if not typer.confirm(bus.render_to_string(L.strip.run.confirm)):
-        bus.warning(L.strip.run.aborted)
-        raise typer.Abort()
+    initial_hashes = get_stored_hashes(project_root, "src/main.py")
+    assert "func_clean" in initial_hashes
+    assert "func_conflict" in initial_hashes
 
-    app_instance = make_app(parser_type="cst")
-    app_instance.run_strip()
+    # 2. Act: Modify the code to create a mixed state
+    (project_root / "src/main.py").write_text(
+        'def func_clean():\\n    """New clean doc."""\\n'
+        'def func_conflict():\\n    """New conflicting doc."""'
+    )
 
+    # 3. Act: Run pump. It should fail because of func_conflict.
+    spy_bus_pump = SpyBus()
+    with spy_bus_pump.patch(monkeypatch, "stitcher.app.core.bus"):
+        # We run with force=False, reconcile=False to ensure conflict is detected
+        pump_result = app.run_pump(force=False, reconcile=False)
 
-def inject_command():
-    if not typer.confirm(bus.render_to_string(L.inject.run.confirm)):
-        bus.warning(L.inject.run.aborted)
-        raise typer.Abort()
+    # 4. Assert
+    assert (
+        pump_result.success is False
+    ), "Pump should fail due to the unresolved conflict."
+    spy_bus_pump.assert_id_called(L.pump.error.conflict, level="error")
 
-    app_instance = make_app(parser_type="cst")
-    app_instance.run_inject()
-~~~~~
-~~~~~python.new
-def generate_command():
-    app_instance = make_app()
-    app_instance.run_from_config()
-
-
-def init_command():
-    app_instance = make_app()
-    app_instance.run_init()
-
-
-def strip_command():
-    if not typer.confirm(bus.render_to_string(L.strip.run.confirm)):
-        bus.warning(L.strip.run.aborted)
-        raise typer.Abort()
-
-    app_instance = make_app()
-    app_instance.run_strip()
-
-
-def inject_command():
-    if not typer.confirm(bus.render_to_string(L.inject.run.confirm)):
-        bus.warning(L.inject.run.aborted)
-        raise typer.Abort()
-
-    app_instance = make_app()
-    app_instance.run_inject()
-~~~~~
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/commands/check.py
-~~~~~
-~~~~~python.old
-    app_instance = make_app(handler, parser_type="griffe")
-    success = app_instance.run_check(force_relink=force_relink, reconcile=reconcile)
-~~~~~
-~~~~~python.new
-    app_instance = make_app(handler)
-    success = app_instance.run_check(force_relink=force_relink, reconcile=reconcile)
-~~~~~
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/commands/pump.py
-~~~~~
-~~~~~python.old
-    app_instance = make_app(handler, parser_type="cst")
-
-    # 1. Run Pump
-~~~~~
-~~~~~python.new
-    app_instance = make_app(handler)
-
-    # 1. Run Pump
+    # The CRITICAL assertion: the signature file should NOT have been touched.
+    final_hashes = get_stored_hashes(project_root, "src/main.py")
+    assert (
+        final_hashes == initial_hashes
+    ), "Signature file was modified despite a conflict."
 ~~~~~
 
 ### 下一步建议
-1.  **执行计划**: 请执行此计划以应用所有修复。
-2.  **强制重新基线化**: 由于我们更改了核心签名逻辑，旧的签名文件已完全失效。请运行 `stitcher init` 来清除旧签名并基于 Griffe 生成全新的、正确的基线。
-3.  **验证**:
-    *   运行 `stitcher pump`，确认交互式会话中不再有“跳过”选项。
-    *   对冲突做出决策后，运行 `stitcher check`，确认系统状态一致，没有伪“签名漂移”错误。
-4.  **规划未来**: 将“实现精确到函数的 `strip` 命令”作为一个新任务进行规划，这将允许我们安全地重新启用“跳过”选项。
-
+1.  **执行计划**: 创建这个新的测试用例。
+2.  **运行测试 (预期失败)**: 在你当前的代码库上运行此新测试。它应该会因为 `final_hashes != initial_hashes` 而失败，证明我们已成功复现了非原子性更新的 bug。
+3.  **实施修复**: 在测试失败后，我将为你生成修复 `run_pump` 和 `hydrate_module` 逻辑的计划，以使其满足这个新的测试用例的要求。
