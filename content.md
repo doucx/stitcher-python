@@ -1,241 +1,130 @@
 简要回答
-好的，我们现在将“混合解析器模式”从架构设计转化为 `stitcher-cli` 的实际代码。我们将修改工厂函数以支持解析器选择，并根据命令的性质（分析型 vs 转换型）配置相应的解析器。
+我们遇到了大规模的 "Could not resolve alias" 错误。这表明 Griffe 在解析源代码时，无法正确通过 `griffe.visit` 在内存中构建模块与其导入之间的依赖关系。
 
-## [WIP] feat(cli): 实施混合解析器架构 (CST/Griffe)
+## [WIP] test(adapter): 增强 Griffe 集成测试以复现 Alias Resolution 错误
+
+### 错误分析
+Griffe 作为一个基于静态分析的工具，非常依赖于对模块结构的完整理解。
+1.  **路径问题**: 错误日志显示模块名被解析为 `packages.stitcher-application.src...`，这显然是因为我们在 `_map_module` 中构造 `module_name` 时使用了文件路径，而没有考虑到 Python 的包搜索路径 (PYTHONPATH)。Griffe 对此非常敏感，因为它需要通过模块名来解析导入关系。
+2.  **上下文缺失**: `griffe.visit` 是针对单个文件的。当它遇到 `from typing import List` 时，它需要知道 `typing` 是什么。对于标准库通常没问题，但对于项目内部的引用，如果模块名结构错误，Griffe 就无法找到对应的定义，从而在解析 Alias 时失败。
+
+错误信息 `Could not resolve alias ... pointing at ...` 实际上是 Griffe 在尝试解析一个 `Alias` 对象（即导入的名称）并获取其目标对象时抛出的异常，或者我们在代码中尝试访问此 Alias 的某些属性时触发的。
 
 ### 用户需求
-在 `stitcher-cli` 中实现命令驱动的解析器选择策略：
-1.  **纯分析命令** (`generate`, `check`)：使用 **Griffe** 解析器，以获得更强的语义理解能力。
-2.  **转换/混合命令** (`init`, `pump`, `strip`, `inject`)：保持使用 **LibCST** 解析器 (CST)，以确保代码修改的无损性和格式保留。
+创建一个重现此问题的集成测试，模拟真实的包结构和导入关系，以便我们后续修复模块名解析和搜索路径配置问题。
 
 ### 评论
-**注意**：目前的 `GriffePythonParser` 实现尚处于 MVP 阶段，尚未包含完整的 Import 语句提取逻辑。这意味着 `stitcher generate` 在本次变更后生成的 `.pyi` 文件可能会暂时缺少导入语句。这是一个已知的过渡状态，我们将在此架构变更完成后，立即在下一阶段完善 Griffe 解析器的 Import 处理逻辑。
+当前的单元测试过于简单，只测试了单一的字符串代码片段，没有模拟多模块、跨文件引用的场景。我们需要一个基于文件系统的集成测试。
 
 ### 目标
-1.  修改 `packages/stitcher-cli/src/stitcher/cli/factories.py`：扩展 `make_app` 函数，增加 `parser_type` 参数 (支持 "cst" 和 "griffe")。
-2.  修改 `packages/stitcher-cli/src/stitcher/cli/commands/basics.py`：将 `generate` 切换为 Griffe，`init`, `strip`, `inject` 明确锁定为 CST。
-3.  修改 `packages/stitcher-cli/src/stitcher/cli/commands/check.py`：将 `check` 切换为 Griffe。
-4.  修改 `packages/stitcher-cli/src/stitcher/cli/commands/pump.py`：将 `pump` 明确锁定为 CST。
+在 `packages/stitcher-python-adapter/tests/integration` 下创建 `test_griffe_resolution.py`，复现跨模块导入和标准库导入时的解析错误。
 
 ### 基本原理
-通过在 Composition Root（即 CLI 命令层）进行依赖注入的配置，我们实现了策略模式，使得底层的 `StitcherApp` 依然保持对具体解析器的无感知（只依赖 `LanguageParserProtocol`），同时又能针对不同任务特性选择最优工具。
+我们将使用 `WorkspaceFactory` 构建一个包含两个模块的迷你项目：
+1.  `models.py`: 定义一个类。
+2.  `main.py`: 导入 `models.py` 中的类和标准库 `typing.List`。
+然后使用 `GriffePythonParser` 解析 `main.py`，这应该会触发类似的 Alias Resolution 错误，验证我们的假设。
 
 ### 标签
-#intent/refine #flow/ready #priority/high #comp/cli #concept/parser #scope/core #ai/instruct
-#task/domain/architecture #task/object/hybrid-parser-strategy #task/action/integration #task/state/continue
+#intent/test #flow/ready #priority/high #comp/tests #concept/parser #scope/core #ai/instruct
+#task/domain/testing #task/object/integration-test #task/action/create #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 更新工厂函数以支持解析器选择
-
-首先，更新 `make_app` 工厂，使其能够根据参数实例化不同的解析器。
+#### Acts 1: 创建集成测试目录
 
 ~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/factories.py
+run_command
 ~~~~~
-~~~~~python.old
-from stitcher.common import stitcher_operator as nexus
-from stitcher.adapter.python import (
-    PythonParser,
-    PythonTransformer,
-    PythonStubGenerator,
-    PythonFingerprintStrategy,
-)
+~~~~~bash
+mkdir -p packages/stitcher-python-adapter/tests/integration
+~~~~~
 
-from .handlers import TyperInteractionHandler
-~~~~~
-~~~~~python.new
-from stitcher.common import stitcher_operator as nexus
-from stitcher.adapter.python import (
-    PythonParser,
-    GriffePythonParser,
-    PythonTransformer,
-    PythonStubGenerator,
-    PythonFingerprintStrategy,
-)
+#### Acts 2: 编写复现测试
 
-from .handlers import TyperInteractionHandler
-~~~~~
+在这个测试中，我们不 mock 任何东西，而是真实地创建文件。我们需要确保存储库根目录（Project Root）被正确识别，以便 Griffe 能理解模块路径。
 
 ~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/factories.py
+write_file
+packages/stitcher-python-adapter/tests/integration/test_griffe_resolution.py
 ~~~~~
-~~~~~python.old
-def make_app(handler: Optional[InteractionHandler] = None) -> StitcherApp:
-    # Composition Root: Assemble the dependencies
-    parser = PythonParser()
-    transformer = PythonTransformer()
-    generator = PythonStubGenerator()
-    strategy = PythonFingerprintStrategy()
+~~~~~python
+import pytest
+from pathlib import Path
+from stitcher.test_utils import WorkspaceFactory
+from stitcher.adapter.python import GriffePythonParser
 
-    return StitcherApp(
-        root_path=get_project_root(),
-        parser=parser,
-        transformer=transformer,
-        stub_generator=generator,
-        fingerprint_strategy=strategy,
-        interaction_handler=handler,
-    )
-~~~~~
-~~~~~python.new
-def make_app(
-    handler: Optional[InteractionHandler] = None,
-    parser_type: str = "cst",
-) -> StitcherApp:
-    # Composition Root: Assemble the dependencies
-    if parser_type == "griffe":
-        parser = GriffePythonParser()
-    else:
-        parser = PythonParser()
+def test_griffe_resolves_imports(tmp_path):
+    """
+    Integration test to reproduce 'Could not resolve alias' error.
+    Simulates a project with local imports and standard library imports.
+    """
+    # 1. Setup specific project structure
+    # src/
+    #   pkg/
+    #     __init__.py
+    #     models.py  (Defines User)
+    #     main.py    (Imports User and List)
+    
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/pkg/__init__.py", "")
+        .with_source(
+            "src/pkg/models.py", 
+            """
+class User:
+    name: str = "Alice"
+            """
+        )
+        .with_source(
+            "src/pkg/main.py",
+            """
+from typing import List
+from .models import User
 
-    transformer = PythonTransformer()
-    generator = PythonStubGenerator()
-    strategy = PythonFingerprintStrategy()
-
-    return StitcherApp(
-        root_path=get_project_root(),
-        parser=parser,
-        transformer=transformer,
-        stub_generator=generator,
-        fingerprint_strategy=strategy,
-        interaction_handler=handler,
-    )
-~~~~~
-
-#### Acts 2: 配置基础命令 (Generate, Init, Strip, Inject)
-
-将 `generate` 切换到 Griffe，其他保持 CST。
-
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/commands/basics.py
-~~~~~
-~~~~~python.old
-def generate_command():
-    app_instance = make_app()
-    app_instance.run_from_config()
-
-
-def init_command():
-    app_instance = make_app()
-    app_instance.run_init()
-
-
-def strip_command():
-    if not typer.confirm(bus.render_to_string(L.strip.run.confirm)):
-        bus.warning(L.strip.run.aborted)
-        raise typer.Abort()
-
-    app_instance = make_app()
-    app_instance.run_strip()
-
-
-def inject_command():
-    if not typer.confirm(bus.render_to_string(L.inject.run.confirm)):
-        bus.warning(L.inject.run.aborted)
-        raise typer.Abort()
-
-    app_instance = make_app()
-    app_instance.run_inject()
-~~~~~
-~~~~~python.new
-def generate_command():
-    app_instance = make_app(parser_type="griffe")
-    app_instance.run_from_config()
-
-
-def init_command():
-    app_instance = make_app(parser_type="cst")
-    app_instance.run_init()
-
-
-def strip_command():
-    if not typer.confirm(bus.render_to_string(L.strip.run.confirm)):
-        bus.warning(L.strip.run.aborted)
-        raise typer.Abort()
-
-    app_instance = make_app(parser_type="cst")
-    app_instance.run_strip()
-
-
-def inject_command():
-    if not typer.confirm(bus.render_to_string(L.inject.run.confirm)):
-        bus.warning(L.inject.run.aborted)
-        raise typer.Abort()
-
-    app_instance = make_app(parser_type="cst")
-    app_instance.run_inject()
-~~~~~
-
-#### Acts 3: 配置 Check 命令
-
-将 `check` 切换到 Griffe，因为它主要依赖读取能力进行状态比对。
-
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/commands/check.py
-~~~~~
-~~~~~python.old
-    # Use factory to decide if we need an interaction handler
-    handler = make_interaction_handler(
-        non_interactive=non_interactive,
-        auto_resolve_mode=(force_relink or reconcile),
+def get_users() -> List[User]:
+    return [User()]
+            """
+        )
+        .build()
     )
 
-    app_instance = make_app(handler)
-    success = app_instance.run_check(force_relink=force_relink, reconcile=reconcile)
-    if not success:
-~~~~~
-~~~~~python.new
-    # Use factory to decide if we need an interaction handler
-    handler = make_interaction_handler(
-        non_interactive=non_interactive,
-        auto_resolve_mode=(force_relink or reconcile),
-    )
+    parser = GriffePythonParser()
+    
+    # We simulate what StitcherApp does: iterate files and parse them.
+    # The critical part is what we pass as 'file_path'.
+    # In the app, it is relative to root, e.g., "src/pkg/main.py"
+    
+    main_py_path = "src/pkg/main.py"
+    source_code = (project_root / main_py_path).read_text(encoding="utf-8")
+    
+    # 2. Act
+    # This might fail or return a ModuleDef with broken annotations depending on 
+    # how Griffe handles the missing context if we don't config search paths.
+    try:
+        module = parser.parse(source_code, file_path=main_py_path)
+    except Exception as e:
+        pytest.fail(f"Griffe parsing crashed: {e}")
 
-    app_instance = make_app(handler, parser_type="griffe")
-    success = app_instance.run_check(force_relink=force_relink, reconcile=reconcile)
-    if not success:
-~~~~~
-
-#### Acts 4: 配置 Pump 命令
-
-将 `pump` 明确配置为使用 CST，因为它可能涉及 `--strip` 操作，需要 CST 的支持。
-
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/commands/pump.py
-~~~~~
-~~~~~python.old
-    # Use factory logic
-    handler = make_interaction_handler(
-        non_interactive=non_interactive,
-        auto_resolve_mode=(force or reconcile),
-    )
-
-    app_instance = make_app(handler)
-
-    # 1. Run Pump
-    result = app_instance.run_pump(strip=strip, force=force, reconcile=reconcile)
-~~~~~
-~~~~~python.new
-    # Use factory logic
-    handler = make_interaction_handler(
-        non_interactive=non_interactive,
-        auto_resolve_mode=(force or reconcile),
-    )
-
-    app_instance = make_app(handler, parser_type="cst")
-
-    # 1. Run Pump
-    result = app_instance.run_pump(strip=strip, force=force, reconcile=reconcile)
+    # 3. Assert
+    assert len(module.functions) == 1
+    func = module.functions[0]
+    
+    # If alias resolution fails, Griffe might return the Alias object string rep 
+    # or crash when we try to str() it in our parser implementation.
+    # We want to see if the return annotation is correctly resolved to a string "List[User]"
+    # or at least a string representation that doesn't crash.
+    
+    # Note: Griffe 1.0+ might resolve this to "typing.List[src.pkg.models.User]" or similar
+    # if paths are correct. If not, it might explain the crash.
+    print(f"Return annotation: {func.return_annotation}")
+    assert func.return_annotation is not None
+    assert "List" in func.return_annotation
 ~~~~~
 
 ### 下一步建议
-架构迁移已完成。现在，任何运行 `generate` 或 `check` 的操作都将使用 Griffe 解析器。
 
-接下来的当务之急是**完善 Griffe 解析器的能力**，特别是实现 `imports` 语句的提取和映射。如果没有这个，生成的 `.pyi` 文件将无法正确引用导入的类型，导致 stub 文件不可用。我们应该立即创建一个修复计划来解决这个问题。
+运行此测试。如果它通过了，说明问题可能出在 `stitcher check` 运行时的特定**文件路径传递方式**或**PYTHONPATH 环境**上。如果它失败（带着类似的 `Could not resolve alias` 或具体的 Crash），我们就成功复现了问题，并可以着手修复 `GriffePythonParser` 中的模块名计算逻辑和 `griffe.Loader` 的搜索路径配置。

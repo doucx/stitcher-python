@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat(cli): 实施混合解析器架构 (CST/Griffe)", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766991547.6916747, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test(adapter): 增强 Griffe 集成测试以复现 Alias Resolution 错误", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1766991628.3843987, "duration_ms": 0}}
