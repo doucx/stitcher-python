@@ -777,17 +777,34 @@ class StitcherApp:
                 # For keys where code doc was authoritative (updated/force-hydrated)
                 for fqn in result["updated_keys"]:
                     fp = computed_fingerprints.get(fqn, Fingerprint())
-                    # Atomically convert current to baseline for both code and doc hashes
+
+                    # Check for existing baseline to preserve
+                    stored_fp = new_hashes.get(fqn)
+
+                    # Atomically convert current to baseline, BUT preserve existing code baselines
+                    # to prevent implicit acceptance of signature drift.
                     if "current_code_structure_hash" in fp:
-                        fp["baseline_code_structure_hash"] = fp[
-                            "current_code_structure_hash"
-                        ]
+                        if stored_fp and "baseline_code_structure_hash" in stored_fp:
+                            fp["baseline_code_structure_hash"] = stored_fp[
+                                "baseline_code_structure_hash"
+                            ]
+                        else:
+                            fp["baseline_code_structure_hash"] = fp[
+                                "current_code_structure_hash"
+                            ]
                         del fp["current_code_structure_hash"]
+
                     if "current_code_signature_text" in fp:
-                        fp["baseline_code_signature_text"] = fp[
-                            "current_code_signature_text"
-                        ]
+                        if stored_fp and "baseline_code_signature_text" in stored_fp:
+                            fp["baseline_code_signature_text"] = stored_fp[
+                                "baseline_code_signature_text"
+                            ]
+                        else:
+                            fp["baseline_code_signature_text"] = fp[
+                                "current_code_signature_text"
+                            ]
                         del fp["current_code_signature_text"]
+
                     if fqn in current_yaml_map:
                         fp["baseline_yaml_content_hash"] = current_yaml_map[fqn]
                     new_hashes[fqn] = fp
@@ -852,6 +869,10 @@ class StitcherApp:
             bus.info(L.pump.run.no_changes)
         else:
             bus.success(L.pump.run.complete, count=total_updated)
+
+        # Reformat Phase: Ensure all processed modules have up-to-date signature schema
+        for module in all_modules:
+            self.sig_manager.reformat_hashes_for_module(module)
 
         return PumpResult(success=True, redundant_files=redundant_files)
 
