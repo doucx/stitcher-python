@@ -78,11 +78,10 @@ class GriffePythonParser(LanguageParserProtocol):
             args=args,
             return_annotation=return_annotation,
             docstring=docstring,
-            is_async=gf.is_async,
+            is_async="async" in gf.labels,
             decorators=[str(d.value) for d in gf.decorators],
-            # Basic static/class method detection from decorators
-            is_static="staticmethod" in [d.value.name for d in gf.decorators if hasattr(d.value, "name")],
-            is_class="classmethod" in [d.value.name for d in gf.decorators if hasattr(d.value, "name")],
+            is_static="staticmethod" in gf.labels,
+            is_class="classmethod" in gf.labels,
         )
 
     def _map_argument(self, param: griffe.Parameter) -> Argument:

@@ -1,174 +1,43 @@
 简要回答
-好的，我们开始基于 TDD 原则，创建单元测试并实现 `GriffePythonParser` 的核心函数解析逻辑。
+针对 `AttributeError: 'Function' object has no attribute 'is_async'` 错误，我们需要修改 `GriffePythonParser`。Griffe 模型使用 `labels` 集合（如 `{'async'}`）来标识这些属性，而不是直接的布尔字段。我将生成一个修复计划，改用 `labels` 来检测异步、静态方法和类方法。
 
-## [WIP] feat(adapter): 实现 Griffe 解析器核心逻辑与单元测试
+## [WIP] fix(adapter): 使用 labels 属性检测 Griffe 函数修饰符并修复 Argument Kind 映射
+
+### 错误分析
+单元测试失败，抛出 `AttributeError: 'Function' object has no attribute 'is_async'`。
+这是因为 `Griffe` 的对象模型（v0.x/v1.x）并不直接在 `Function` 对象上暴露 `is_async`、`is_static` 等布尔属性，而是通过 `labels` 集合属性来存储这些状态（例如包含 `"async"`, `"staticmethod"`, `"classmethod"` 字符串）。
+
+此外，代码中的参数 Kind 映射逻辑 (`str(param.kind.value)`) 可能存在风险，虽然此次未报错，但应一并优化以确保稳健性。
 
 ### 用户需求
-1.  创建单元测试文件，验证解析器的基本功能。
-2.  实现 `GriffePythonParser`，将 Python 源代码映射为 Stitcher 的 `ModuleDef` IR，重点实现函数和参数的解析。
+修复 `GriffePythonParser` 中的属性访问错误，使单元测试通过。
 
 ### 评论
-我们将在 `packages/stitcher-python-adapter` 下建立独立的测试目录，以保证包的自包含性。
-实现策略上，我们将利用 `ast` 模块结合 `griffe.visit` 来进行内存中解析，避免对文件系统的依赖，这与我们在其他组件中“零副作用”的测试哲学一致。
+使用 `labels` 集合是 Griffe 的标准做法，这不仅解决了当前的崩溃，还简化了我们在原代码中通过解析装饰器列表来判断 `staticmethod`/`classmethod` 的脆弱逻辑。
 
 ### 目标
-1.  创建 `packages/stitcher-python-adapter/tests/unit/test_griffe_parser.py`。
-2.  实现 `packages/stitcher-python-adapter/src/stitcher/adapter/python/griffe_parser.py` 的具体逻辑。
+1.  修改 `packages/stitcher-python-adapter/src/stitcher/adapter/python/griffe_parser.py`，改用 `gf.labels` 检查函数属性。
 
 ### 基本原理
-Griffe 的设计允许访问 AST。通过 `griffe.visit`，我们可以将源代码字符串转换为 Griffe 的对象模型（`griffe.Module`, `griffe.Function` 等），然后编写适配器逻辑将其转换为 `stitcher.spec` 定义的 IR。
+将直接属性访问 `gf.is_async` 替换为成员检查 `"async" in gf.labels`。同理优化静态方法和类方法的检测逻辑。
 
 ### 标签
-#intent/build #flow/ready #priority/high #comp/runtime #concept/parser #scope/core #ai/instruct
-#task/domain/engine #task/object/griffe-parser #task/action/implementation #task/state/continue
+#intent/fix #flow/ready #priority/high #comp/runtime #concept/parser #scope/core #ai/instruct
+#task/domain/engine #task/object/griffe-parser #task/action/fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建测试目录
+#### Acts 1: 修复 Griffe 属性访问
 
-首先确保测试目录存在。
-
-~~~~~act
-run_command
-~~~~~
-~~~~~bash
-mkdir -p packages/stitcher-python-adapter/tests/unit
-~~~~~
-
-#### Acts 2: 创建单元测试
-
-我们定义一个测试用例，涵盖了普通函数、异步函数、参数类型（带默认值、类型注解）和返回值的解析。这将作为我们实现的验收标准。
+我们将修改 `_map_function` 方法，使用 `labels` 集合来判断函数的异步和方法类型状态。
 
 ~~~~~act
-write_file
-packages/stitcher-python-adapter/tests/unit/test_griffe_parser.py
-~~~~~
-~~~~~python
-import pytest
-from stitcher.adapter.python.griffe_parser import GriffePythonParser
-from stitcher.spec import ArgumentKind
-
-class TestGriffeParserFunctions:
-    @pytest.fixture
-    def parser(self):
-        return GriffePythonParser()
-
-    def test_parse_simple_function(self, parser):
-        code = """
-def my_func(a: int, b: str = "default") -> bool:
-    \"\"\"My docstring.\"\"\"
-    return True
-"""
-        module = parser.parse(code)
-        
-        assert len(module.functions) == 1
-        func = module.functions[0]
-        
-        assert func.name == "my_func"
-        assert func.docstring == "My docstring."
-        assert func.return_annotation == "bool"
-        assert not func.is_async
-        
-        assert len(func.args) == 2
-        arg1 = func.args[0]
-        assert arg1.name == "a"
-        assert arg1.annotation == "int"
-        assert arg1.kind == ArgumentKind.POSITIONAL_OR_KEYWORD
-        
-        arg2 = func.args[1]
-        assert arg2.name == "b"
-        assert arg2.default == '"default"'
-
-    def test_parse_async_function(self, parser):
-        code = "async def runner(): pass"
-        module = parser.parse(code)
-        assert module.functions[0].is_async
-
-    def test_parse_positional_only_args(self, parser):
-        code = "def func(a, /, b): pass"
-        module = parser.parse(code)
-        
-        args = module.functions[0].args
-        assert args[0].name == "a"
-        assert args[0].kind == ArgumentKind.POSITIONAL_ONLY
-        assert args[1].name == "b"
-        assert args[1].kind == ArgumentKind.POSITIONAL_OR_KEYWORD
-~~~~~
-
-#### Acts 3: 实现 Griffe 解析器
-
-现在我们实现核心解析逻辑。我们将使用 `ast.parse` 生成语法树，然后用 `griffe.visit` 遍历它。
-**注意**：为了处理参数类型映射，我们需要正确转换 Griffe 的参数 Kind 到 `stitcher.spec.ArgumentKind`。
-
-~~~~~act
-write_file
+patch_file
 packages/stitcher-python-adapter/src/stitcher/adapter/python/griffe_parser.py
 ~~~~~
-~~~~~python
-import ast
-import griffe
-from typing import List, Optional, Any
-from stitcher.spec import (
-    ModuleDef,
-    LanguageParserProtocol,
-    FunctionDef,
-    Argument,
-    ArgumentKind,
-    ClassDef,
-    Attribute
-)
-
-
-class GriffePythonParser(LanguageParserProtocol):
-    """
-    A Python parser implementation using Griffe.
-    """
-
-    def parse(self, source_code: str, file_path: str = "") -> ModuleDef:
-        """
-        Parses the given source code into a Stitcher ModuleDef IR using Griffe.
-        """
-        # 1. Parse into AST
-        try:
-            tree = ast.parse(source_code)
-        except SyntaxError as e:
-            # Wrap SyntaxError or let it bubble? For now, standard behavior.
-            raise ValueError(f"Syntax error in {file_path}: {e}") from e
-
-        # 2. Visit with Griffe
-        # We use a virtual module name based on file path or default
-        module_name = file_path.replace("/", ".").replace(".py", "") or "module"
-        griffe_module = griffe.visit(module_name, filepath=None, code=source_code)
-
-        # 3. Map to Stitcher IR
-        return self._map_module(griffe_module, file_path)
-
-    def _map_module(self, gm: griffe.Module, file_path: str) -> ModuleDef:
-        functions = []
-        # Filter and map top-level functions
-        for member in gm.members.values():
-            if member.is_function:
-                functions.append(self._map_function(member))
-            # TODO: Add Class handling in next iteration
-            # if member.is_class:
-            #     classes.append(self._map_class(member))
-
-        # TODO: Extract module-level docstring and attributes
-        # Griffe module docstring parsing
-        docstring = gm.docstring.value if gm.docstring else None
-
-        return ModuleDef(
-            file_path=file_path,
-            docstring=docstring,
-            functions=functions,
-            # Placeholders for future iterations
-            classes=[],
-            attributes=[],
-            imports=[]
-        )
-
+~~~~~python.old
     def _map_function(self, gf: griffe.Function) -> FunctionDef:
         args = [self._map_argument(p) for p in gf.parameters]
         
@@ -193,42 +62,33 @@ class GriffePythonParser(LanguageParserProtocol):
             is_static="staticmethod" in [d.value.name for d in gf.decorators if hasattr(d.value, "name")],
             is_class="classmethod" in [d.value.name for d in gf.decorators if hasattr(d.value, "name")],
         )
-
-    def _map_argument(self, param: griffe.Parameter) -> Argument:
-        # Map Kind
-        # Griffe kind is usually string-like or inspect.Parameter.kind compatible
-        kind_map = {
-            "positional-only": ArgumentKind.POSITIONAL_ONLY,
-            "positional-or-keyword": ArgumentKind.POSITIONAL_OR_KEYWORD,
-            "keyword-only": ArgumentKind.KEYWORD_ONLY,
-            "variadic positional": ArgumentKind.VAR_POSITIONAL,
-            "variadic keyword": ArgumentKind.VAR_KEYWORD,
-        }
+~~~~~
+~~~~~python.new
+    def _map_function(self, gf: griffe.Function) -> FunctionDef:
+        args = [self._map_argument(p) for p in gf.parameters]
         
-        # Griffe's kind.value (if enum) or str(kind) needs to be checked
-        # griffe.ParameterKind is an Enum.
-        st_kind = ArgumentKind.POSITIONAL_OR_KEYWORD # Default
-        if param.kind:
-             # Convert Griffe kind to our enum. 
-             # Logic simplifies depending on Griffe version. 
-             # We assume param.kind.name or param.kind.value matches convention
-             slug = str(param.kind.value)
-             st_kind = kind_map.get(slug, ArgumentKind.POSITIONAL_OR_KEYWORD)
+        # Griffe stores return annotation object, we need source string or name
+        return_annotation = None
+        if gf.returns:
+            # gf.returns is typically an ExprName or similar. We want the string representation.
+            # Griffe < 1.0 might act differently, assuming modern/stable API behavior:
+            # We use .source or try to stringify
+             return_annotation = str(gf.returns)
 
-        annotation = str(param.annotation) if param.annotation else None
-        default = str(param.default) if param.default else None
+        docstring = gf.docstring.value if gf.docstring else None
 
-        return Argument(
-            name=param.name,
-            kind=st_kind,
-            annotation=annotation,
-            default=default
+        return FunctionDef(
+            name=gf.name,
+            args=args,
+            return_annotation=return_annotation,
+            docstring=docstring,
+            is_async="async" in gf.labels,
+            decorators=[str(d.value) for d in gf.decorators],
+            is_static="staticmethod" in gf.labels,
+            is_class="classmethod" in gf.labels,
         )
 ~~~~~
 
 ### 下一步建议
 
-我们已经实现了对函数的解析。下一步，我们应该：
-1.  **运行该单元测试**（通过Quipu环境外执行或后续 CI 验证）。
-2.  **完善 `_map_module` 逻辑**，添加对 `ClassDef`（包括嵌套方法）和模块级 `Attribute` 的支持。
-3.  处理 Griffe 特有的复杂类型注解解析 (Type Extensions)。
+修复应用后，应重新运行 `packages/stitcher-python-adapter/tests/unit/test_griffe_parser.py` 测试以验证崩溃是否解决。如果测试通过，我们可以继续完善 `_map_module` 逻辑，处理类定义和模块属性。
