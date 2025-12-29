@@ -3,10 +3,6 @@ from needle.spec import OperatorProtocol, SemanticPointerProtocol
 
 
 class OverlayOperator(OperatorProtocol):
-    """
-    A pure composition operator that delegates to a list of child operators.
-    It returns the first non-None result found.
-    """
 
     def __init__(self, operators: List[OperatorProtocol]):
         self.operators = operators

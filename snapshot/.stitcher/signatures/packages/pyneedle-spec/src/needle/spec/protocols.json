@@ -1,11 +1,11 @@
 {
-  "NexusProtocol": {
-    "baseline_yaml_content_hash": "bdfe001689e9ef268e6bfa7a419fceca7ab36b89979e84711d285ea0e99cfce3"
+  "OperatorProtocol": {
+    "baseline_yaml_content_hash": "51bcabc5f1a86a70df2c1b8199a97709fbf36dd95af46339259461c0178053c9"
   },
-  "NexusProtocol.reload": {
-    "baseline_code_signature_text": "def reload(self, domain: str | None = None) -> None:",
-    "baseline_code_structure_hash": "7e64116dc8b2cedef0ad93c725032e86f827ac3bbe41b3535042b1310ff82c55",
-    "baseline_yaml_content_hash": "1887671f5b899bd31793e7319baec93b7ddce92a91a37e0c1f81e5164ce3fae7"
+  "OperatorProtocol.__call__": {
+    "baseline_code_signature_text": "def __call__(self, key: Any) -> Any:",
+    "baseline_code_structure_hash": "34dfafc1708c356a4de8ad3b5b2b6c881f18a542c6112116c22327781fbd90fd",
+    "baseline_yaml_content_hash": "c80ba8562c954d976dfb44e466f63f70cf093861fcf677d3875aa4f25ecd6683"
   },
   "PointerSetProtocol": {
     "baseline_yaml_content_hash": "b6f0af339ba8423e0a07c96f30c47de7d9cbb55a371f6bf2fae7bc253904226d"
@@ -34,22 +34,6 @@
     "baseline_code_signature_text": "def __truediv__(self, other: Union[str, SemanticPointerProtocol]) -> \"PointerSetProtocol\":",
     "baseline_code_structure_hash": "37f679ef6f8af32a4bf1060f2dbda55d838151c1954957bc31be22be13f55e35",
     "baseline_yaml_content_hash": "56333dd4fb587a9da49dad8c84b9a80bfa1aa081d27094464635803b0d206e30"
-  },
-  "ResourceLoaderProtocol": {
-    "baseline_yaml_content_hash": "6a6daa0d81128149a26e82e43172e0a2b64705c608ade58fc9f6b15fcc161d60"
-  },
-  "ResourceLoaderProtocol.fetch": {
-    "baseline_code_signature_text": "def fetch(self, pointer: str, domain: str, ignore_cache: bool = False) -> str | None:",
-    "baseline_code_structure_hash": "76e1cb13b818bf3951add1c2e0785e312287dd008f610ef1eae8809700d76f88"
-  },
-  "ResourceLoaderProtocol.get": {
-    "baseline_code_signature_text": "def get(self, pointer: Union[str, \"SemanticPointerProtocol\"], domain: str | None = None) -> str:",
-    "baseline_code_structure_hash": "90ca628188dbc3b77013bba67a74a048b3458bfa6320ac82414702f87f7f3dce"
-  },
-  "ResourceLoaderProtocol.load": {
-    "baseline_code_signature_text": "def load(self, domain: str, ignore_cache: bool = False) -> Dict[str, Any]:",
-    "baseline_code_structure_hash": "19c036d1f9a825ec457931fafef065d3f4d1d4dffe9a26277648649c85d09ac5",
-    "baseline_yaml_content_hash": "b5218fdbe23c53f85706c5e5baa4a748393d028ee92d794dd1d98f2d29117f49"
   },
   "SemanticPointerProtocol": {
     "baseline_yaml_content_hash": "fe18d37498b223e7d7233845204c765d67b3235a8196a6a9c7f1a86d85a3087f"
@@ -91,18 +75,5 @@
   },
   "T_Pointer": {
     "baseline_yaml_content_hash": "c6ee5ff8814e8f607c56860162bca85d5d04015d82257889192138c1d4fde1b8"
-  },
-  "WritableResourceLoaderProtocol": {
-    "baseline_yaml_content_hash": "c2b3271f5952f43dddae8eeeed9eb93565aea603d3746acd1b58d75fa7a4df2b"
-  },
-  "WritableResourceLoaderProtocol.locate": {
-    "baseline_code_signature_text": "def locate(self, pointer: Union[str, SemanticPointerProtocol], domain: str) -> Path:",
-    "baseline_code_structure_hash": "084f949648184c0fb0fd8e27585426b3bbed9171b8c9f318cf9ee6bdcb346135",
-    "baseline_yaml_content_hash": "28b3619d5cc140525212b5049d1bf812e963340640e6b038f270453c850adaff"
-  },
-  "WritableResourceLoaderProtocol.put": {
-    "baseline_code_signature_text": "def put(self, pointer: Union[str, SemanticPointerProtocol], value: Any, domain: str) -> bool:",
-    "baseline_code_structure_hash": "f05b865f27f846ef46bd2a3f4928a946ed2cf1bb360b6daa5c6d77f49f4b5979",
-    "baseline_yaml_content_hash": "a71d1c164a3b9e22934715a4c6fcb207688f8c51016152105360febd6941067b"
   }
 }

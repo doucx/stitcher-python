@@ -1,9 +1,10 @@
 "FileSystemOperator": |-
-  A high-performance, lazy-loading Executor Operator for the file system.
+  A scanning Executor Operator that recursively loads resources from a directory.
 
-  It maps `SemanticPointer` paths to file system paths using a standard convention:
-  The first segment of the pointer determines the filename (`{segment}.json`),
-  and the remaining segments determine the key within that file.
+  It mimics the logic of the legacy FileSystemLoader:
+  1. Scans the root directory recursively.
+  2. Handles nested directories and __init__.json files.
+  3. Flattens the entire structure into a single key-value map during initialization.
 "FileSystemOperator.__call__": |-
   Resolves a pointer to a string value.
 

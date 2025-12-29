@@ -3,10 +3,6 @@ from needle.spec import OperatorProtocol, SemanticPointerProtocol
 
 
 class DictOperator(OperatorProtocol):
-    """
-    A Config Operator that provides values from an in-memory dictionary.
-    It automatically flavors (flattens) nested dictionaries upon initialization.
-    """
 
     def __init__(self, data: Dict[str, Any]):
         self._data = self._flatten(data)

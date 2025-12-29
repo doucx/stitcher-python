@@ -57,10 +57,6 @@ def _detect_lang() -> str:
 
 
 def get_current_renderer() -> OverlayOperator:
-    """
-    Returns the OverlayOperator for the current configured language.
-    This implements the 'Lazy Pipeline Construction' pattern.
-    """
     lang_code = _detect_lang()
     
     if lang_code in _operator_cache:

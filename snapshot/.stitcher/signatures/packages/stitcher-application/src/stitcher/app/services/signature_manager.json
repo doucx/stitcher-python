@@ -11,9 +11,6 @@
     "baseline_code_structure_hash": "d89618b33da1097394c0dab8b1de2a5b71a445d8a0e61990bbf89607c5461639",
     "baseline_yaml_content_hash": "b0ead96395f67f9fa60b9dba88f4c474d89f3a8e3296fd9a024d77a6ea4f6770"
   },
-  "SignatureManager.compute_code_structure_hashes": {
-    "baseline_yaml_content_hash": null
-  },
   "SignatureManager.compute_fingerprints": {
     "baseline_code_signature_text": "def compute_fingerprints(self, module: ModuleDef) -> Dict[str, Fingerprint]:",
     "baseline_code_structure_hash": "13d2c1a6cdc73db8bb244b7cf63e98f29e356c222a38995f081daef34b798a40",

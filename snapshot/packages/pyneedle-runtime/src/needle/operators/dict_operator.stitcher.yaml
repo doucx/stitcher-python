@@ -1,7 +1,6 @@
 "DictOperator": |-
-  A simple operator that wraps a dictionary.
-  Primarily used as a Config Operator to provide static configuration values
-  to the pipeline, or for mocking data in tests.
+  A Config Operator that provides values from an in-memory dictionary.
+  It automatically flavors (flattens) nested dictionaries upon initialization.
 "DictOperator.__call__": |-
   Retrieves a value from the dictionary using the string representation of the key.
 "DictOperator.__init__": |-

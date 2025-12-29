@@ -6,8 +6,8 @@
     "baseline_yaml_content_hash": "93692d06cf12324096fb552da6cdcef36aae854a944039ab6d3094420df3b6f6"
   },
   "TyperInteractiveRenderer.__init__": {
-    "baseline_code_signature_text": "def __init__(self, nexus):",
-    "baseline_code_structure_hash": "922a585e1a44914b096e86cae8d63985c11f0106419c2486c80caf3b9398f800"
+    "baseline_code_signature_text": "def __init__(self, operator):",
+    "baseline_code_structure_hash": "7ce9d0debd71b01d311ff177446a9d973e80bab2cd702699bcac2aaa964893d8"
   },
   "TyperInteractiveRenderer.prompt": {
     "baseline_code_signature_text": "def prompt(self, context: InteractionContext, current_idx: int, total: int, options: List[SemanticMenuOption], default_action: Any) -> Any:",

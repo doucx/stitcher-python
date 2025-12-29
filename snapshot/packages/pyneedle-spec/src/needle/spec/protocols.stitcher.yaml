@@ -1,13 +1,10 @@
 "OperatorProtocol": |-
-  The unified interface for all operators in the functional kernel.
-  
-  Unlike Loaders which mix configuration, policy, and fetching, 
-  Operators follow the "Builder is the Product" philosophy:
-  - __init__: Handles configuration (context injection).
-  - __call__: Handles execution (stateless transformation).
+  The unified interface for all operators (Config, Factory, Executor).
+  An operator is an object that is configured at initialization and
+  generates a result when called.
 "OperatorProtocol.__call__": |-
   Executes the operator's logic.
-  
+
   For Config Operators: key=str, returns Any.
   For Factory Operators: key=SemanticPointer, returns Operator.
   For Executor Operators: key=SemanticPointer, returns str or None.

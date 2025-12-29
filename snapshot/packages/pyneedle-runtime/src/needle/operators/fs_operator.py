@@ -6,14 +6,6 @@ from needle.operators.helpers.json_handler import JsonHandler
 
 
 class FileSystemOperator(OperatorProtocol):
-    """
-    A scanning Executor Operator that recursively loads resources from a directory.
-
-    It mimics the logic of the legacy FileSystemLoader:
-    1. Scans the root directory recursively.
-    2. Handles nested directories and __init__.json files.
-    3. Flattens the entire structure into a single key-value map during initialization.
-    """
 
     def __init__(self, root: Union[str, Path]):
         self.root = Path(root)

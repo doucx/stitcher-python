@@ -5,12 +5,6 @@ from needle.operators import FileSystemOperator
 
 
 class I18NFactoryOperator(OperatorProtocol):
-    """
-    A Factory Operator that produces FileSystemOperators for specific languages.
-    
-    It binds a root directory (e.g. `.../assets`) and, when called with a language 
-    pointer (e.g. `L.en`), returns a FileSystemOperator rooted at `.../assets/en`.
-    """
 
     def __init__(self, assets_root: Union[str, Path]):
         self.assets_root = Path(assets_root)

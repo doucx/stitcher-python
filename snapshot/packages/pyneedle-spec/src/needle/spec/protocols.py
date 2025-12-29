@@ -40,10 +40,5 @@ class PointerSetProtocol(Protocol):
 
 
 class OperatorProtocol(Protocol):
-    """
-    The unified interface for all operators (Config, Factory, Executor).
-    An operator is an object that is configured at initialization and
-    generates a result when called.
-    """
 
     def __call__(self, key: Any) -> Any: ...
