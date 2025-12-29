@@ -1,300 +1,111 @@
-好的，测试失败为我们指明了前进的道路。现在，我们将执行一个全面的修复计划，以解决这两个已验证的 bug，并让测试转绿。
+Excellent. This is the correct and most robust workflow. By writing the test first against the known-bad code, you guarantee that the test is actually testing the bug we think it is. When it fails (RED), we have confirmation. Then, when you apply the fixes and it passes (GREEN), we have confidence in both the fix and the test itself.
 
+Let's proceed. I will generate a plan to create this new integration test. The test will be designed to fail on the current (reverted) codebase and pass once your fixes are applied.
+
+I will create a new test file specifically for this scenario to keep the concerns separated.
+
+Here is the plan.
+
+## [WIP] test(app): Add integration test for pump state integrity
+
+### 用户需求
+创建一个新的集成测试，以防止 `stitcher pump` 命令的回归。该测试必须能够捕捉到 `pump` 命令错误地更新代码签名基线，从而掩盖了 `stitcher check` 本应发现的“签名漂移”错误的严重 bug。
+
+### 评论
+这是一个至关重要的回归测试。它将我们刚刚诊断和修复的、最严重的一类状态腐化 bug 固化为一个可自动验证的测试用例。这个测试的核心价值在于它精确地模拟了导致 bug 的命令交互序列 (`init` -> `code change` -> `pump` -> `check`)，确保了 `pump` 命令的副作用永远不会再次破坏 `check` 命令的完整性。
+
+### 目标
+1.  创建一个新的集成测试文件 `test_pump_state_integrity.py`。
+2.  在测试中，模拟一个完整的工作流：
+    a. 使用 `run_init` 创建一个初始的、有效的基线签名。
+    b. 修改源代码，引入一个明确的函数签名变更（例如，参数类型变化）。
+    c. 运行 `run_pump` 命令。
+    d. 运行 `run_check` 命令来验证 `pump` 之后的状态。
+3.  断言 `run_check` 在 `run_pump` 之后 **仍然** 检测到了签名漂移并失败。这个断言在当前（有 bug 的）代码库下会失败（RED），在应用修复后会通过（GREEN）。
+
+### 基本原理
+该测试的设计遵循了你提出的 TDD 工作流。它首先建立了一个已知的良好状态，然后引入一个变更，并执行有问题的 `pump` 命令。测试的最终断言是检查 `check` 命令是否仍然履行其作为“状态守卫者”的职责。在有 bug 的代码中，`pump` 会破坏签名状态，导致 `check` 错误地报告成功，测试因此失败。在修复后的代码中，`pump` 的行为被约束，`check` 会正确地报告失败，测试因此通过。这使其成为一个完美的回归防护网。
+
+### 标签
+#intent/tooling #flow/ready #priority/critical #comp/tests #comp/application #concept/state #scope/dx #ai/instruct #task/domain/testing #task/object/regression-guard #task/action/implementation #task/state/continue
+
+---
 ### Script
 
-#### Acts 1: 重构 `run_pump` 以实现原子化和状态安全更新
+#### Acts 1: 创建 `test_pump_state_integrity.py` 集成测试
 
-这是最核心的修复。我们将彻底替换 `run_pump` 中有问题的签名更新逻辑，引入新的、健壮的流程，该流程能够根据 `hydrate_module` 的结果（成功或失败）来保证文件级的原子性，并根据用户的具体决策（代码优先或 YAML 优先）来精确更新签名。
-
-~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
-~~~~~
-~~~~~python.old
-            if not result["success"]:
-                # If conflicts persist (e.g. user chose SKIP), verify failure
-                total_conflicts_remaining += len(result["conflicts"])
-                for conflict_key in result["conflicts"]:
-                    bus.error(
-                        L.pump.error.conflict,
-                        path=module.file_path,
-                        key=conflict_key,
-                    )
-                continue
-
-            if result["reconciled_keys"]:
-                bus.info(
-                    L.pump.info.reconciled,
-                    path=module.file_path,
-                    count=len(result["reconciled_keys"]),
-                )
-            if result["updated_keys"]:
-                total_updated += 1
-                bus.success(
-                    L.pump.file.success,
-                    path=module.file_path,
-                    count=len(result["updated_keys"]),
-                )
-
-            # Update signatures if successful
-            computed_fingerprints = self.sig_manager.compute_fingerprints(module)
-            yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
-            all_fqns = set(computed_fingerprints.keys()) | set(yaml_hashes.keys())
-
-            combined: Dict[str, Fingerprint] = {}
-            for fqn in all_fqns:
-                fp = computed_fingerprints.get(fqn, Fingerprint())
-
-                # Convert 'current' to 'baseline'
-                if "current_code_structure_hash" in fp:
-                    fp["baseline_code_structure_hash"] = fp[
-                        "current_code_structure_hash"
-                    ]
-                    del fp["current_code_structure_hash"]
-
-                if "current_code_signature_text" in fp:
-                    fp["baseline_code_signature_text"] = fp[
-                        "current_code_signature_text"
-                    ]
-                    del fp["current_code_signature_text"]
-
-                if fqn in yaml_hashes:
-                    fp["baseline_yaml_content_hash"] = yaml_hashes[fqn]
-                combined[fqn] = fp
-
-            self.sig_manager.save_composite_hashes(module, combined)
-~~~~~
-~~~~~python.new
-            if not result["success"]:
-                # If conflicts persist, it's a failure for this file.
-                # Do not update anything for this module. This ensures file-level atomicity.
-                total_conflicts_remaining += len(result["conflicts"])
-                for conflict_key in result["conflicts"]:
-                    bus.error(
-                        L.pump.error.conflict,
-                        path=module.file_path,
-                        key=conflict_key,
-                    )
-                continue
-
-            # --- ATOMIC SIGNATURE UPDATE ---
-            # This block only runs if hydrate_module succeeded for the entire file.
-
-            if result["reconciled_keys"]:
-                bus.info(
-                    L.pump.info.reconciled,
-                    path=module.file_path,
-                    count=len(result["reconciled_keys"]),
-                )
-            if result["updated_keys"]:
-                total_updated += 1
-                bus.success(
-                    L.pump.file.success,
-                    path=module.file_path,
-                    count=len(result["updated_keys"]),
-                )
-
-            # Only update signatures if something was actually hydrated or reconciled.
-            if result["updated_keys"] or result["reconciled_keys"]:
-                stored_hashes = self.sig_manager.load_composite_hashes(module)
-                new_hashes = copy.deepcopy(stored_hashes)
-                computed_fingerprints = self.sig_manager.compute_fingerprints(module)
-                current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
-                    module
-                )
-
-                # For keys where code doc was authoritative (updated/force-hydrated)
-                for fqn in result["updated_keys"]:
-                    fp = computed_fingerprints.get(fqn, Fingerprint())
-                    # Atomically convert current to baseline for both code and doc hashes
-                    if "current_code_structure_hash" in fp:
-                        fp["baseline_code_structure_hash"] = fp[
-                            "current_code_structure_hash"
-                        ]
-                        del fp["current_code_structure_hash"]
-                    if "current_code_signature_text" in fp:
-                        fp["baseline_code_signature_text"] = fp[
-                            "current_code_signature_text"
-                        ]
-                        del fp["current_code_signature_text"]
-                    if fqn in current_yaml_map:
-                        fp["baseline_yaml_content_hash"] = current_yaml_map[fqn]
-                    new_hashes[fqn] = fp
-
-                # For keys where yaml doc was authoritative (reconciled)
-                for fqn in result["reconciled_keys"]:
-                    # Start with the existing hash to preserve yaml_content_hash
-                    fp = new_hashes.get(fqn, Fingerprint())
-                    current_fp = computed_fingerprints.get(fqn, Fingerprint())
-                    # Only update the code baseline, leaving yaml baseline intact
-                    if "current_code_structure_hash" in current_fp:
-                        fp["baseline_code_structure_hash"] = current_fp[
-                            "current_code_structure_hash"
-                        ]
-                    if "current_code_signature_text" in current_fp:
-                        fp["baseline_code_signature_text"] = current_fp[
-                            "current_code_signature_text"
-                        ]
-                    new_hashes[fqn] = fp
-
-                self.sig_manager.save_composite_hashes(module, new_hashes)
-~~~~~
-
-#### Acts 2: 禁用 `pump` 的“跳过”选项并统一 CLI 解析器
-
-我们将一次性应用所有对 CLI 包的修改：禁用 `pump` 交互中的“跳过”选项，并将所有命令的解析器统一为 Griffe。
+我们将创建一个全新的测试文件，其中包含一个专门用于复现和验证此 bug 的测试用例。
 
 ~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/handlers.py
+write_file
+packages/stitcher-application/tests/integration/test_pump_state_integrity.py
 ~~~~~
-~~~~~python.old
-                    )
-                )
-
-            options.append(
-                SemanticMenuOption(
-                    key="s",
-                    action=ResolutionAction.SKIP,
-                    label_id=L.interactive.option.skip.label,
-                    desc_id=L.interactive.option.skip.desc,
-                )
-            )
-            options.append(
-                SemanticMenuOption(
-~~~~~
-~~~~~python.new
-                    )
-                )
-                # NOTE: Skip is disabled for pump to prevent data loss with file-level strip
-                if context.conflict_type != ConflictType.DOC_CONTENT_CONFLICT:
-                    options.append(
-                        SemanticMenuOption(
-                            key="s",
-                            action=ResolutionAction.SKIP,
-                            label_id=L.interactive.option.skip.label,
-                            desc_id=L.interactive.option.skip.desc,
-                        )
-                    )
-
-            options.append(
-                SemanticMenuOption(
-~~~~~
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/factories.py
-~~~~~
-~~~~~python.old
-def make_app(
-    handler: Optional[InteractionHandler] = None,
-    parser_type: str = "cst",
-) -> StitcherApp:
-    # Composition Root: Assemble the dependencies
-    if parser_type == "griffe":
-        parser = GriffePythonParser()
-    else:
-        parser = PythonParser()
-
-    transformer = PythonTransformer()
-~~~~~
-~~~~~python.new
-def make_app(
-    handler: Optional[InteractionHandler] = None,
-) -> StitcherApp:
-    # Composition Root: Assemble the dependencies
-    # UNIFIED: Always use Griffe for analysis
-    parser = GriffePythonParser()
-
-    transformer = PythonTransformer()
-~~~~~
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/commands/basics.py
-~~~~~
-~~~~~python.old
-def generate_command():
-    app_instance = make_app(parser_type="griffe")
-    app_instance.run_from_config()
+~~~~~python
+from stitcher.test_utils import create_test_app
+from needle.pointer import L
+from stitcher.test_utils import SpyBus, WorkspaceFactory
 
 
-def init_command():
-    app_instance = make_app(parser_type="cst")
-    app_instance.run_init()
+def test_pump_does_not_corrupt_code_signature_baseline(tmp_path, monkeypatch):
+    """
+    Regression Test: Ensures `pump` does not incorrectly update the code
+    signature baseline, which would hide a "signature drift" error from `check`.
 
+    Workflow:
+    1. `init`: Create a baseline with `func(a: int)`.
+    2. Modify code: Change signature to `func(a: str)` and add a docstring.
+    3. `pump`: This should only hydrate the docstring. On the buggy code, it
+       also incorrectly updates the code signature to match `func(a: str)`.
+    4. `check`: This should now report a signature drift. The test fails if
+       `check` passes, because it means `pump` corrupted the state.
+    """
+    # 1. Arrange: Initialize a workspace to create a baseline.
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/main.py", "def func(a: int): ...")
+        .build()
+    )
 
-def strip_command():
-    if not typer.confirm(bus.render_to_string(L.strip.run.confirm)):
-        bus.warning(L.strip.run.aborted)
-        raise typer.Abort()
+    # Use the LibCST parser for init, simulating the old state
+    # NOTE: When running against the *fixed* codebase, this will use Griffe,
+    # but the test logic remains valid as it's about state changes.
+    app = create_test_app(root_path=project_root)
+    with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
+        app.run_init()
 
-    app_instance = make_app(parser_type="cst")
-    app_instance.run_strip()
+    # 2. Act: Modify the code to introduce a signature drift AND a new docstring
+    (project_root / "src/main.py").write_text(
+        'def func(a: str):\n    """New doc."""', encoding="utf-8"
+    )
 
+    # 3. Act: Run pump. This is the command with the potential side effect.
+    # On buggy code, this will overwrite the code signature baseline.
+    # On fixed code, it will only update the doc hashes.
+    with SpyBus().patch(monkeypatch, "stitcher.app.core.bus"):
+        pump_result = app.run_pump()
+        assert pump_result.success is True, "Pump command itself should succeed."
 
-def inject_command():
-    if not typer.confirm(bus.render_to_string(L.inject.run.confirm)):
-        bus.warning(L.inject.run.aborted)
-        raise typer.Abort()
+    # 4. Assert: Run check and verify that it STILL detects the original drift.
+    spy_bus_check = SpyBus()
+    with spy_bus_check.patch(monkeypatch, "stitcher.app.core.bus"):
+        check_success = app.run_check()
 
-    app_instance = make_app(parser_type="cst")
-    app_instance.run_inject()
-~~~~~
-~~~~~python.new
-def generate_command():
-    app_instance = make_app()
-    app_instance.run_from_config()
+    # On buggy code, `pump` resets the baseline, so `check` will pass (check_success=True).
+    # This will make the assertion fail, proving the test catches the bug. (RED)
+    # On fixed code, `pump` does NOT reset the baseline, so `check` will fail (check_success=False).
+    # This will make the assertion pass. (GREEN)
+    assert (
+        check_success is False
+    ), "Check passed, meaning `pump` corrupted the signature baseline."
 
-
-def init_command():
-    app_instance = make_app()
-    app_instance.run_init()
-
-
-def strip_command():
-    if not typer.confirm(bus.render_to_string(L.strip.run.confirm)):
-        bus.warning(L.strip.run.aborted)
-        raise typer.Abort()
-
-    app_instance = make_app()
-    app_instance.run_strip()
-
-
-def inject_command():
-    if not typer.confirm(bus.render_to_string(L.inject.run.confirm)):
-        bus.warning(L.inject.run.aborted)
-        raise typer.Abort()
-
-    app_instance = make_app()
-    app_instance.run_inject()
-~~~~~
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/commands/check.py
-~~~~~
-~~~~~python.old
-    app_instance = make_app(handler, parser_type="griffe")
-    success = app_instance.run_check(force_relink=force_relink, reconcile=reconcile)
-~~~~~
-~~~~~python.new
-    app_instance = make_app(handler)
-    success = app_instance.run_check(force_relink=force_relink, reconcile=reconcile)
-~~~~~
-~~~~~act
-patch_file
-packages/stitcher-cli/src/stitcher/cli/commands/pump.py
-~~~~~
-~~~~~python.old
-    app_instance = make_app(handler, parser_type="cst")
-
-    # 1. Run Pump
-~~~~~
-~~~~~python.new
-    app_instance = make_app(handler)
-
-    # 1. Run Pump
+    # Additionally, verify that the correct error was reported.
+    spy_bus_check.assert_id_called(L.check.state.signature_drift, level="error")
 ~~~~~
 
 ### 下一步建议
-1.  **执行计划**: 执行此计划以应用所有修复。
-2.  **运行测试 (预期成功)**: 再次运行 `pytest packages/stitcher-application/tests/integration/test_pump_state_integrity.py`。现在，两个测试都应该通过（GREEN）。
-3.  **提交变更**: 在测试通过后，你可以将这些修复和新的测试文件一起提交，完成这次重要的重构。
+1.  **执行计划**: 创建这个新的测试文件。
+2.  **运行测试 (预期失败)**: 在当前的代码库（无修复）上运行 `pytest packages/stitcher-application/tests/integration/test_pump_state_integrity.py`。你将看到测试失败（RED），确认它正确地捕捉到了 bug。
+3.  **应用修复**: 使用 `git cherry-pick` 或其他方式，将我们之前讨论的修复方案应用到代码库中。
+4.  **再次运行测试 (预期成功)**: 再次运行相同的 `pytest` 命令。现在测试应该会通过（GREEN），证明修复是有效的，并且我们的回归测试已经就位。
+

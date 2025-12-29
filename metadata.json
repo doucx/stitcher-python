@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "Script", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767017350.9660618, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test(app): Add integration test for pump state integrity", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767017366.1775022, "duration_ms": 0}}
