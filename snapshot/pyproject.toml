@@ -93,7 +93,6 @@ extraPaths = [
     "packages/pyneedle-pointer/src",
     "packages/pyneedle-runtime/src",
     "packages/pyneedle/src",
-    # Add the new stub packages' source directories
     "packages/stitcher-stubs/src",
     "packages/needle-stubs/src",
 ]
