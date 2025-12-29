@@ -496,9 +496,11 @@ class StitcherApp:
 
                 for fqn in res.infos["doc_improvement"]:
                     if fqn in new_hashes:
-                        new_hashes[fqn]["baseline_yaml_content_hash"] = (
-                            current_yaml_map.get(fqn)
-                        )
+                        new_yaml_hash = current_yaml_map.get(fqn)
+                        if new_yaml_hash is not None:
+                            new_hashes[fqn]["baseline_yaml_content_hash"] = new_yaml_hash
+                        elif "baseline_yaml_content_hash" in new_hashes[fqn]:
+                            del new_hashes[fqn]["baseline_yaml_content_hash"]
 
                 if new_hashes != stored_hashes:
                     self.sig_manager.save_composite_hashes(module_def, new_hashes)
