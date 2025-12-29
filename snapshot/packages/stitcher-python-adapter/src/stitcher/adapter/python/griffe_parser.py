@@ -13,6 +13,17 @@ from stitcher.spec import (
 )
 
 
+class _ImportVisitor(ast.NodeVisitor):
+    def __init__(self):
+        self.imports: List[str] = []
+
+    def visit_Import(self, node: ast.Import) -> None:
+        self.imports.append(ast.unparse(node))
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        self.imports.append(ast.unparse(node))
+
+
 class GriffePythonParser(LanguageParserProtocol):
     """
     A Python parser implementation using Griffe.
@@ -27,6 +38,11 @@ class GriffePythonParser(LanguageParserProtocol):
             tree = ast.parse(source_code)
         except SyntaxError as e:
             raise ValueError(f"Syntax error in {file_path}: {e}") from e
+        
+        # 1.5 Extract Imports via AST
+        import_visitor = _ImportVisitor()
+        import_visitor.visit(tree)
+        imports = import_visitor.imports
 
         # 2. Visit with Griffe
         module_name = file_path.replace("/", ".").replace(".py", "") or "module"
@@ -37,9 +53,9 @@ class GriffePythonParser(LanguageParserProtocol):
         griffe_module = griffe.visit(module_name, filepath=path_obj, code=source_code)
 
         # 3. Map to Stitcher IR
-        return self._map_module(griffe_module, file_path)
+        return self._map_module(griffe_module, file_path, imports)
 
-    def _map_module(self, gm: griffe.Module, file_path: str) -> ModuleDef:
+    def _map_module(self, gm: griffe.Module, file_path: str, imports: List[str]) -> ModuleDef:
         functions = []
         classes = []
         attributes = []
@@ -65,7 +81,7 @@ class GriffePythonParser(LanguageParserProtocol):
             functions=functions,
             classes=classes,
             attributes=attributes,
-            imports=[] # Imports handling to be added later
+            imports=imports
         )
 
     def _map_class(self, gc: griffe.Class) -> ClassDef:

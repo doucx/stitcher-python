@@ -102,3 +102,23 @@ class MyClass(Base1, Base2):
         assert method.name == "method"
         assert len(method.args) == 1
         assert method.args[0].name == "self"
+
+    def test_parse_imports(self, parser):
+        code = """
+import os
+from typing import List, Optional
+import sys as system
+"""
+        module = parser.parse(code)
+        
+        # ast.unparse normalizes output
+        expected_imports = [
+            "import os",
+            "from typing import List, Optional",
+            "import sys as system"
+        ]
+        
+        # Check that we caught all of them. Order should be preserved.
+        assert len(module.imports) == 3
+        for expected in expected_imports:
+            assert expected in module.imports
