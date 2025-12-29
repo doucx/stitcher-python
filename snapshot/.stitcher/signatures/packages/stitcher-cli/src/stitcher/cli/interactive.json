@@ -16,7 +16,7 @@
   },
   "TyperInteractiveRenderer.show_message": {
     "baseline_code_signature_text": "def show_message(self, msg_id: SemanticPointer, color = None, **kwargs) -> None:",
-    "baseline_code_structure_hash": "34dd33c7935f086d4d6b2adc0e8b04ebcfcbd982968c23b989c4c07fce728995",
+    "baseline_code_structure_hash": "70341b3f84b5bc6d5954a873baa283b28bd898a04c33eff43b85242587b1f8c8",
     "baseline_yaml_content_hash": "f996c6e62065381b5f996d890f752a637aeab9bef3b99278c1d8eaf1f679df82"
   },
   "TyperInteractiveRenderer.show_summary": {

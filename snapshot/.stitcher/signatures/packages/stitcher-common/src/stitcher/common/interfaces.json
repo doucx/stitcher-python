@@ -1,10 +1,12 @@
 {
   "DocumentAdapter.load": {
     "baseline_code_signature_text": "def load(self, path: Path) -> Dict[str, str]:",
-    "baseline_code_structure_hash": "ef21d314c98812203d6777bd75855c109b1dadf617994d7a622ffcebd3b67de6"
+    "baseline_code_structure_hash": "ef21d314c98812203d6777bd75855c109b1dadf617994d7a622ffcebd3b67de6",
+    "baseline_yaml_content_hash": "1985052bc42168f0deb4deafef97d18f08d3bc3fe0000db4187920b8d3a976b4"
   },
   "DocumentAdapter.save": {
     "baseline_code_signature_text": "def save(self, path: Path, data: Dict[str, str]) -> None:",
-    "baseline_code_structure_hash": "e0400c9ac434751a49ef8df88352ee82d0898f1bbddbef0deaca730aa2d237a7"
+    "baseline_code_structure_hash": "e0400c9ac434751a49ef8df88352ee82d0898f1bbddbef0deaca730aa2d237a7",
+    "baseline_yaml_content_hash": "1a2f19a918cd3dcbe618ae95dfb52f09bb5ff6c2e882d5f56e9d9250426f0bd7"
   }
 }

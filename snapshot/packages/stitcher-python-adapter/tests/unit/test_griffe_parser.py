@@ -2,6 +2,7 @@ import pytest
 from stitcher.adapter.python.griffe_parser import GriffePythonParser
 from stitcher.spec import ArgumentKind
 
+
 class TestGriffeParserFunctions:
     @pytest.fixture
     def parser(self):
@@ -14,21 +15,21 @@ def my_func(a: int, b: str = "default") -> bool:
     return True
 """
         module = parser.parse(code)
-        
+
         assert len(module.functions) == 1
         func = module.functions[0]
-        
+
         assert func.name == "my_func"
         assert func.docstring == "My docstring."
         assert func.return_annotation == "bool"
         assert not func.is_async
-        
+
         assert len(func.args) == 2
         arg1 = func.args[0]
         assert arg1.name == "a"
         assert arg1.annotation == "int"
         assert arg1.kind == ArgumentKind.POSITIONAL_OR_KEYWORD
-        
+
         arg2 = func.args[1]
         assert arg2.name == "b"
         # Griffe (via ast.unparse) normalizes string literals to single quotes
@@ -42,12 +43,13 @@ def my_func(a: int, b: str = "default") -> bool:
     def test_parse_positional_only_args(self, parser):
         code = "def func(a, /, b): pass"
         module = parser.parse(code)
-        
+
         args = module.functions[0].args
         assert args[0].name == "a"
         assert args[0].kind == ArgumentKind.POSITIONAL_ONLY
         assert args[1].name == "b"
         assert args[1].kind == ArgumentKind.POSITIONAL_OR_KEYWORD
+
 
 class TestGriffeParserStructure:
     @pytest.fixture
@@ -61,9 +63,9 @@ CONST_VAL: int = 42
 simple_var = "hello"
 """
         module = parser.parse(code)
-        
+
         assert len(module.attributes) == 2
-        
+
         attr1 = next(a for a in module.attributes if a.name == "CONST_VAL")
         assert attr1.annotation == "int"
         assert attr1.value == "42"
@@ -84,18 +86,18 @@ class MyClass(Base1, Base2):
         module = parser.parse(code)
         assert len(module.classes) == 1
         cls = module.classes[0]
-        
+
         assert cls.name == "MyClass"
         assert cls.docstring == "Class doc."
         assert cls.bases == ["Base1", "Base2"]
-        
+
         # Check Attribute
         assert len(cls.attributes) == 1
         attr = cls.attributes[0]
         assert attr.name == "field"
         assert attr.annotation == "str"
         assert attr.value == "'init'"
-        
+
         # Check Method
         assert len(cls.methods) == 1
         method = cls.methods[0]
@@ -110,14 +112,14 @@ from typing import List, Optional
 import sys as system
 """
         module = parser.parse(code)
-        
+
         # ast.unparse normalizes output
         expected_imports = [
             "import os",
             "from typing import List, Optional",
-            "import sys as system"
+            "import sys as system",
         ]
-        
+
         # Check that we caught all of them. Order should be preserved.
         assert len(module.imports) == 3
         for expected in expected_imports:
@@ -130,6 +132,6 @@ def process_list(items: List[int]) -> None:
     pass
 """
         module = parser.parse(code)
-        
+
         # Check that the import was added automatically
         assert "from typing import List" in module.imports

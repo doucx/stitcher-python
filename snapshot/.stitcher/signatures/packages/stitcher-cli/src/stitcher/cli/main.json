@@ -4,7 +4,7 @@
   },
   "main": {
     "baseline_code_signature_text": "def main(verbose: bool = typer.Option(\n        False, \"--verbose\", \"-v\", help=nexus(L.cli.option.verbose.help)\n   )):",
-    "baseline_code_structure_hash": "7e635ee7d12ac63207d9345900704a4c706b540d1400a216612fc33bdcf8ca1c",
+    "baseline_code_structure_hash": "b54e6946d1e3eabe4c4c863c67f99c02a20bd188f33a528ffd4a523d7a1bdc75",
     "baseline_yaml_content_hash": "00b4b655f6abbcb58feab8172c3942e14703213c3b57aa70cb8074b7d47eacce"
   }
 }

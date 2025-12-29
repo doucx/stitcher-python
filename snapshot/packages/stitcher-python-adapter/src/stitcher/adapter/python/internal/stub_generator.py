@@ -190,9 +190,7 @@ class StubGenerator:
             # We explicitly DISABLE value generation for class attributes.
             # This prevents bugs where instance attributes initialized from __init__ arguments
             # (e.g. self.x = x) are generated as class attrs with invalid values (x: Any = x).
-            lines.append(
-                self._generate_attribute(attr, level + 1, include_value=False)
-            )
+            lines.append(self._generate_attribute(attr, level + 1, include_value=False))
             has_content = True
 
         if has_content and cls.methods:

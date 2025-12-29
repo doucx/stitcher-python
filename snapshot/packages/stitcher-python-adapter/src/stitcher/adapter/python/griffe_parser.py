@@ -2,7 +2,7 @@ import ast
 from pathlib import Path
 import re
 import griffe
-from typing import List, Optional, Any, Set
+from typing import List, Optional, Set
 from stitcher.spec import (
     ModuleDef,
     LanguageParserProtocol,
@@ -15,6 +15,7 @@ from stitcher.spec import (
 
 
 # --- Ported utility functions from internal/parser.py ---
+
 
 def _collect_annotations(module: ModuleDef) -> Set[str]:
     annotations = set()
@@ -54,8 +55,20 @@ def _has_unannotated_attributes(module: ModuleDef) -> bool:
 
 def _enrich_typing_imports(module: ModuleDef):
     TYPING_SYMBOLS = {
-        "List", "Dict", "Tuple", "Set", "Optional", "Union", "Any",
-        "Callable", "Sequence", "Iterable", "Type", "Final", "ClassVar", "Mapping"
+        "List",
+        "Dict",
+        "Tuple",
+        "Set",
+        "Optional",
+        "Union",
+        "Any",
+        "Callable",
+        "Sequence",
+        "Iterable",
+        "Type",
+        "Final",
+        "ClassVar",
+        "Mapping",
     }
     required_symbols = set()
 
@@ -78,6 +91,7 @@ def _enrich_typing_imports(module: ModuleDef):
 
 
 # --- Main Parser Class ---
+
 
 class _ImportVisitor(ast.NodeVisitor):
     def __init__(self):
@@ -104,7 +118,7 @@ class GriffePythonParser(LanguageParserProtocol):
             tree = ast.parse(source_code)
         except SyntaxError as e:
             raise ValueError(f"Syntax error in {file_path}: {e}") from e
-        
+
         # 1.5 Extract Imports via AST
         import_visitor = _ImportVisitor()
         import_visitor.visit(tree)
@@ -123,7 +137,9 @@ class GriffePythonParser(LanguageParserProtocol):
 
         return module_def
 
-    def _map_module(self, gm: griffe.Module, file_path: str, imports: List[str]) -> ModuleDef:
+    def _map_module(
+        self, gm: griffe.Module, file_path: str, imports: List[str]
+    ) -> ModuleDef:
         functions = []
         classes = []
         attributes = []
@@ -146,7 +162,7 @@ class GriffePythonParser(LanguageParserProtocol):
             functions=functions,
             classes=classes,
             attributes=attributes,
-            imports=imports
+            imports=imports,
         )
 
     def _map_class(self, gc: griffe.Class) -> ClassDef:
@@ -165,14 +181,16 @@ class GriffePythonParser(LanguageParserProtocol):
             decorators=[str(d.value) for d in gc.decorators],
             docstring=docstring,
             attributes=attributes,
-            methods=methods
+            methods=methods,
         )
 
     def _map_attribute(self, ga: griffe.Attribute) -> Attribute:
         annotation = str(ga.annotation) if ga.annotation else None
         value = str(ga.value) if ga.value else None
         docstring = ga.docstring.value if ga.docstring else None
-        return Attribute(name=ga.name, annotation=annotation, value=value, docstring=docstring)
+        return Attribute(
+            name=ga.name, annotation=annotation, value=value, docstring=docstring
+        )
 
     def _map_function(self, gf: griffe.Function) -> FunctionDef:
         args = [self._map_argument(p) for p in gf.parameters]
@@ -199,8 +217,10 @@ class GriffePythonParser(LanguageParserProtocol):
         }
         st_kind = ArgumentKind.POSITIONAL_OR_KEYWORD
         if param.kind:
-             slug = str(param.kind.value)
-             st_kind = kind_map.get(slug, ArgumentKind.POSITIONAL_OR_KEYWORD)
+            slug = str(param.kind.value)
+            st_kind = kind_map.get(slug, ArgumentKind.POSITIONAL_OR_KEYWORD)
         annotation = str(param.annotation) if param.annotation else None
         default = str(param.default) if param.default else None
-        return Argument(name=param.name, kind=st_kind, annotation=annotation, default=default)
+        return Argument(
+            name=param.name, kind=st_kind, annotation=annotation, default=default
+        )

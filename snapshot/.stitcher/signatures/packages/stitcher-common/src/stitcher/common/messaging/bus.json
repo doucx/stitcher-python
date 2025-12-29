@@ -9,25 +9,26 @@
   },
   "MessageBus._render": {
     "baseline_code_signature_text": "def _render(self, level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:",
-    "baseline_code_structure_hash": "62bae7b961efe5621e5b64a83611c62aa2288d458f49ad015c3e927b42ff3ddb"
+    "baseline_code_structure_hash": "f099d8527b0191b6e1ab31ed584439a758f0f95899752428e7ef4cd8e362d051"
   },
   "MessageBus.debug": {
     "baseline_code_signature_text": "def debug(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:",
-    "baseline_code_structure_hash": "8bb9b2e3b119b4f2dafdad526c65c49080dc5ac58e6a3e82137814a6844d8d26"
+    "baseline_code_structure_hash": "5b525873dfc92b815010b05320d2fe42c27d0917cc7d901f7810d2b56d2a263a",
+    "baseline_yaml_content_hash": "928a0f620a841b283ac3837b7a3bae4ac2a6129370ac84f99ef0148390ea5018"
   },
   "MessageBus.error": {
     "baseline_code_signature_text": "def error(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:",
-    "baseline_code_structure_hash": "9929be86f3572ebf6d23aab5fed5b3d32a90ea9f0fcba0ff0ccaed0e767f1366",
+    "baseline_code_structure_hash": "c5e349c7916d1623e1d664bb9335198f77596e281587b1ebcfdb1acaaf8c950f",
     "baseline_yaml_content_hash": "402fb048fe23b2b066058add62b707cc907224bdf758dfcbeb00257083fcf39e"
   },
   "MessageBus.info": {
     "baseline_code_signature_text": "def info(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:",
-    "baseline_code_structure_hash": "0cafb4086d84f382ca2c1d4b7b40848c7de212f7be9d753915acfb98a0bc9e93",
+    "baseline_code_structure_hash": "c513649ec26c01d93e600e8617ef242d072791db4ec9ca70a5c33bd460740ef7",
     "baseline_yaml_content_hash": "492b050ce206b8269e0c546d0fdf02295013a99ff671a3d9c8a71bcf302d92f6"
   },
   "MessageBus.render_to_string": {
     "baseline_code_signature_text": "def render_to_string(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> str:",
-    "baseline_code_structure_hash": "8b7e5575be386626c3710c9e5b121d282a91526bca5c4cf46de484ef9ac3fdc2",
+    "baseline_code_structure_hash": "1b64f52f8f359bab1e4b62a356a7a8661abbb1cd4d278eb2b7b076236eb9765c",
     "baseline_yaml_content_hash": "9bc4fc254d5dd3423bd7cde1d704f977d03be2bb085b6ce27447b6333b384f13"
   },
   "MessageBus.set_renderer": {
@@ -37,12 +38,12 @@
   },
   "MessageBus.success": {
     "baseline_code_signature_text": "def success(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:",
-    "baseline_code_structure_hash": "40f53de80795b999aa49a5b3ea50ac6bd73fcb830146d3a280fa48c4b4f426a0",
+    "baseline_code_structure_hash": "3e4e073f5175b379a480a69e878d06d1e7054d3436fd3f6dfc2787b3d6ce1fdd",
     "baseline_yaml_content_hash": "0c66ab7b6d76ac047fc491a3e53d7cf905acff334b7703e7725d24723d87188f"
   },
   "MessageBus.warning": {
     "baseline_code_signature_text": "def warning(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:",
-    "baseline_code_structure_hash": "28a8ed550ea8dd06537cc88ee0ee22e51992b747fa2db8ee8b7b0ea259688ad5",
+    "baseline_code_structure_hash": "651c2c0ba80fe486d970ac50dcb73eed32e7f6693bcda46f1444cb5564847723",
     "baseline_yaml_content_hash": "9544f3f112ad20455d4cad24942bceac10be5fdd581c785a4e1c679ed2fbcd63"
   }
 }
