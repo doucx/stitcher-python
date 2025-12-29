@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "Capture: M __init__.py, M __init__.py, M protocols.py ... and 4 more files", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767014333.4191887, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix: 规范化函数签名默认值以稳定指纹计算", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767014334.72162, "duration_ms": 0}}

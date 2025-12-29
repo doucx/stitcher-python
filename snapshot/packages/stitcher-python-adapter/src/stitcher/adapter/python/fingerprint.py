@@ -1,4 +1,5 @@
 import hashlib
+import ast
 from typing import Protocol, List, Union
 from stitcher.spec import FunctionDef, ClassDef, Fingerprint, ArgumentKind
 
@@ -76,7 +77,16 @@ class SignatureTextHasher:
             if arg.annotation:
                 s += f": {arg.annotation}"
             if arg.default:
-                s += f" = {arg.default}"
+                try:
+                    # Normalize the default value to a canonical string representation
+                    # This fixes issues with quote styles (' vs ") changing.
+                    normalized_default = ast.unparse(
+                        ast.parse(arg.default, mode="eval").body
+                    )
+                    s += f" = {normalized_default}"
+                except (SyntaxError, ValueError):
+                    # Fallback for complex defaults that aren't simple expressions
+                    s += f" = {arg.default}"
             arg_strs.append(s)
 
         parts.append(", ".join(arg_strs))
