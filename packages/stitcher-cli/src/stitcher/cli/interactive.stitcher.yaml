@@ -1,7 +1,17 @@
 "SemanticMenuOption": |-
   Data model representing a single option in an interactive menu, linking a key/action to semantic L pointers.
+"SemanticMenuOption.action": |-
+  The action to take when this option is selected.
+"SemanticMenuOption.desc_id": |-
+  The semantic pointer to the description text.
+"SemanticMenuOption.key": |-
+  The character key to select this option.
+"SemanticMenuOption.label_id": |-
+  The semantic pointer to the label text.
 "TyperInteractiveRenderer": |-
   Renders interactive prompts using Typer, resolving text via Nexus.
+"TyperInteractiveRenderer.operator": |-
+  The callable operator for resolving semantic pointers.
 "TyperInteractiveRenderer.prompt": |-
   Displays the full conflict resolution menu and captures user input.
 "TyperInteractiveRenderer.show_message": |-

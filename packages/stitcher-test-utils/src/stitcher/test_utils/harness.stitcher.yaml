@@ -1,5 +1,9 @@
 "VenvHarness": |-
   A test utility for creating and managing isolated virtual environments.
+"VenvHarness.root": |-
+  The root directory for the virtual environment.
+"VenvHarness.venv_dir": |-
+  The path to the virtual environment directory itself.
 "VenvHarness.__init__": |-
   Initializes the harness.
 

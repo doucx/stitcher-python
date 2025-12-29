@@ -1,0 +1,6 @@
+"DocumentAdapter": |-
+  Protocol defining the contract for document persistence adapters.
+"DocumentAdapter.load": |-
+  Loads documentation from a given path.
+"DocumentAdapter.save": |-
+  Saves documentation data to a given path.

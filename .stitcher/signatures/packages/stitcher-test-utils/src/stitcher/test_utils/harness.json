@@ -24,7 +24,7 @@
   },
   "VenvHarness.install": {
     "baseline_code_signature_text": "def install(self) -> subprocess.CompletedProcess:",
-    "baseline_code_structure_hash": "46372cb94bc0288df6e2597a64aed836e4d9037a396e693ec6218016acb244e3",
+    "baseline_code_structure_hash": "b518cfae0280c11e5b6014caeb92cc965498db3e6582591b8f92cc0724dd06a5",
     "baseline_yaml_content_hash": "ce1e97ae972da44bdcbf475be583ede00dd96338a12e0670bf5ac1f91cb450cd"
   },
   "VenvHarness.pip_list": {

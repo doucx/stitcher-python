@@ -107,18 +107,18 @@ class TestStubGenerator:
         """
         # Module attribute
         mod_attr = Attribute(name="CONST", annotation="int", value="42")
-        
+
         # Class attribute (simulating self.param = param injection)
         cls_attr = Attribute(name="param", annotation="str", value="param")
         cls = ClassDef(name="MyClass", attributes=[cls_attr])
-        
+
         module = ModuleDef(file_path="test.py", attributes=[mod_attr], classes=[cls])
-        
+
         output = generator.generate(module)
-        
+
         # Module level: "CONST: int = 42"
         assert "CONST: int = 42" in output
-        
+
         # Class level: "    param: str" (No "= param")
         assert "    param: str" in output
         assert " = param" not in output

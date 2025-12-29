@@ -4,7 +4,7 @@
   },
   "PatchedMessageBus._render": {
     "baseline_code_signature_text": "def _render(self, level: str, msg_id: SemanticPointer, **kwargs: Any) -> None:",
-    "baseline_code_structure_hash": "002a70b661de55bd8af631157cb46c71db504272970a6b2dae1cfef68a729cb1"
+    "baseline_code_structure_hash": "c4bd9c9ec0f179608166809f641b3bd7cc5a38407df738140affd35448eacfad"
   },
   "SpyBus": {
     "baseline_yaml_content_hash": "9712bad7601f0f71e4909ff18f4bbfe8426d881f75d6707281859fd20ee3c7dd"

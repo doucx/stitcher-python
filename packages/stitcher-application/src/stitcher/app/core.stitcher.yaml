@@ -31,6 +31,22 @@ StitcherApp: |-
 
   This class coordinates the scanner, document manager, signature manager, and
   stub generator to execute high-level commands like check, generate, and pump.
+StitcherApp.doc_manager: |-
+  Service for managing documentation assets.
+StitcherApp.generator: |-
+  The stub generator instance.
+StitcherApp.interaction_handler: |-
+  The handler for user interactions during conflict resolution.
+StitcherApp.parser: |-
+  The language parser instance.
+StitcherApp.root_path: |-
+  The root path of the project being processed.
+StitcherApp.sig_manager: |-
+  Service for managing code signatures.
+StitcherApp.stub_pkg_manager: |-
+  Service for managing PEP 561 stub packages.
+StitcherApp.transformer: |-
+  The language transformer instance.
 StitcherApp.run_check: |-
   Verify the structural and content consistency between source code and external YAML documentation.
 

@@ -14,6 +14,6 @@
   },
   "DictOperator._flatten": {
     "baseline_code_signature_text": "def _flatten(self, data: Dict[str, Any], prefix: str = \"\") -> Dict[str, Any]:",
-    "baseline_code_structure_hash": "54eebe866f1ce044189cd4370b293320d9caecbbec89f8e763a7e5aa5ab2c280"
+    "baseline_code_structure_hash": "0a3408728fd9d509d7f76c76b28f3a5c310600d04b5a8c4303fdd78f276948d6"
   }
 }
