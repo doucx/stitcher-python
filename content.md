@@ -1,80 +1,56 @@
-好的，任务完成。我们已经成功实现了 `check` 命令后的自动格式化功能，并彻底统一了 CLI 输出的视觉风格。
+简要回答：
+问题的根源在于 Python 命名空间包 (Namespace Packages) 的实现策略不一致。`pyneedle` 和 `pyneedle-runtime` 使用了 `pkgutil` 风格的显式命名空间（包含 `__init__.py`），而 `pyneedle-pointer` 和 `pyneedle-spec` 却使用了 PEP 420 风格的隐式命名空间（缺失 `__init__.py`）。这种混合状态导致静态分析工具（如 Pyright 和 Pyrefly）在解析 `needle` 这一顶层包时产生歧义，优先锁定了那些包含 `__init__.py` 的路径，从而无法发现其他路径下的子模块。
 
-以下是本次变更的提交计划。
+## [WIP] fix(build): 统一命名空间包策略以修复静态分析解析错误
 
-## [COMMIT] feat: 在 check 中添加自动格式化并统一消息视觉风格
+### 错误分析
+静态分析工具（Pyright, Pyrefly）在处理分散在多个目录下的同一个顶层包（这里是 `needle`）时，需要一致的信号来识别它们属于同一个命名空间。
+
+当前项目存在混合策略：
+1.  **显式策略 (pkgutil)**: `packages/pyneedle/src/needle/__init__.py` 和 `packages/pyneedle-runtime/src/needle/__init__.py` 存在，且包含 `extend_path` 逻辑。
+2.  **隐式策略 (PEP 420)**: `packages/pyneedle-pointer/src/needle/` 和 `packages/pyneedle-spec/src/needle/` 目录下**没有** `__init__.py`。
+
+当 Pyright 解析 `from needle.pointer import ...` 时，它扫描了配置中的 `extraPaths`。一旦它在 `pyneedle` 或 `pyneedle-runtime` 中发现了一个确切的 `needle/__init__.py`，它往往会认为这就定义了该包的“全部”，而不会继续将那些**没有** `__init__.py` 的目录合并进来（因为它们看起来像是隐式命名空间，而工具此时已认定 `needle` 是一个显式包）。
+
+修复方法是在所有参与 `needle` 命名空间的子包根目录中添加相同的 `pkgutil` 风格 `__init__.py`。
 
 ### 用户需求
-1. 在 `stitcher check` 运行结束后，自动对涉及的 YAML 文档和 JSON 签名文件进行重新格式化和排序。
-2. 统一所有语言（en/zh）下 CLI 输出消息的表情符号、缩进和标签格式。
+修复 `pyrefly check` 和 `pyright` 无法解析 `needle.pointer` 和 `needle.spec` 等跨包导入的问题，确保静态分析管道畅通。
 
 ### 评论
-这是一次重要的 DX（开发者体验）和 UX（用户体验）升级。
-- **Git 优化**：自动格式化确保了无论在何种环境下运行 `check`，生成的文件始终保持规范、有序的状态。这极大地减少了因格式差异引起的无意义 Git diff，使代码审查更加高效。
-- **视觉一致性**：通过统一 `check` 输出中的缩进、方括号标签和表情符号，我们为用户提供了一个清晰、层次分明的反馈系统。现在，文件级摘要和问题级详情在视觉上得到了完美的区分和对齐。
+这是一个在 Python Monorepo 开发中非常典型的陷阱。虽然 Python 运行时（尤其是在正确配置的虚拟环境中）通常能容忍这种混合，但静态分析工具要求更严格的一致性。
 
 ### 目标
-1.  提交 `doc_manager` 和 `signature_manager` 中新增的 reformat 逻辑。
-2.  提交 `StitcherApp.run_check` 中新增的格式化阶段调用代码。
-3.  提交所有经过视觉风格统一后的 `en` 和 `zh` 语言包 JSON 文件。
+1.  在 `packages/pyneedle-pointer/src/needle/` 创建缺失的 `__init__.py`。
+2.  在 `packages/pyneedle-spec/src/needle/` 创建缺失的 `__init__.py`。
+3.  确保所有 `needle` 命名空间入口都包含标准的 `pkgutil` 扩展代码。
 
 ### 基本原理
-我们通过在 `StitcherApp.run_check` 的主逻辑末尾插入一个遍历 `all_modules` 的循环，调用新封装的 `reformat_*` 方法来实现目标。这些方法利用了底层 Adapter 已有的、带排序功能的保存逻辑，实现了“原地规范化”。同时，通过对消息模板的全局重构，确保了所有输出在逻辑层级和视觉呈现上的一致性。
+通过统一所有 `needle` 包目录下的 `__init__.py` 文件，我们明确告知所有工具：无论该目录位于文件系统的何处，它都是 `needle` 命名空间的一部分，需要被动态合并。这消除了静态分析工具在“常规包”与“命名空间包”之间判定逻辑的冲突。
 
 ### 标签
-#intent/build #intent/tune #flow/ready #priority/high #comp/application #comp/common #scope/dx #scope/ux #task/domain/cli #task/object/check-output-refinement #task/action/implementation #task/state/end #task/status/completed
+#intent/fix #flow/ready #priority/medium #comp/build #concept/config #scope/dx #ai/instruct #task/domain/build #task/object/namespace-packages #task/action/unification #task/state/begin
 
 ---
+
 ### Script
 
-#### Acts 1: 提交所有代码和资源文件变更
+#### Acts 1: 补全缺失的命名空间声明文件
 
-我们将把涉及业务逻辑修改的文件和所有已更新的国际化资源文件添加到暂存区并提交。
+我们在 `pyneedle-pointer` 和 `pyneedle-spec` 的根命名空间目录下添加 `__init__.py`，内容与项目中其他 `needle` 包保持一致。
 
 ~~~~~act
-git_add
-packages/stitcher-application/src/stitcher/app/services/doc_manager.py
-packages/stitcher-application/src/stitcher/app/services/doc_manager.stitcher.yaml
-packages/stitcher-application/src/stitcher/app/services/signature_manager.py
-packages/stitcher-application/src/stitcher/app/services/signature_manager.stitcher.yaml
-packages/stitcher-application/src/stitcher/app/core.py
-packages/stitcher-common/src/stitcher/common/assets/needle/en/check/file.json
-packages/stitcher-common/src/stitcher/common/assets/needle/en/check/issue.json
-packages/stitcher-common/src/stitcher/common/assets/needle/en/check/run.json
-packages/stitcher-common/src/stitcher/common/assets/needle/en/check/state.json
-packages/stitcher-common/src/stitcher/common/assets/needle/en/cli/option.json
-packages/stitcher-common/src/stitcher/common/assets/needle/en/init/__init__.json
-packages/stitcher-common/src/stitcher/common/assets/needle/en/inject/__init__.json
-packages/stitcher-common/src/stitcher/common/assets/needle/en/pump/error.json
-packages/stitcher-common/src/stitcher/common/assets/needle/en/pump/info.json
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/check/file.json
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/check/issue.json
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/check/run.json
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/check/state.json
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/cli/option.json
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/init/__init__.json
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/inject/__init__.json
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/pump/error.json
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/pump/info.json
+write_file
+packages/pyneedle-pointer/src/needle/__init__.py
+~~~~~
+~~~~~python
+__path__ = __import__("pkgutil").extend_path(__path__, __name__)
 ~~~~~
 
 ~~~~~act
-git_commit
+write_file
+packages/pyneedle-spec/src/needle/__init__.py
 ~~~~~
-~~~~~text
-feat(cli): auto-reformat files after check and unify message style
-
-This commit introduces two major quality-of-life improvements to the Stitcher CLI:
-
-1. Automatic Reformatting: The 'check' command now includes a reformatting phase that runs before reporting. It re-reads and re-saves all YAML documentation and JSON signature files involved in the check. Utilizing existing adapter logic, this ensures consistent key sorting and block styling, significantly reducing Git diff noise.
-
-2. Visual Style Unification: All CLI output messages across English and Chinese localizations have been harmonized.
-   - Unified emoji prefixes (❌, ⚠️, ✅, ℹ️) based on message severity.
-   - Standardized indentation and labeling for check issues (e.g., "   - [SIG DRIFT] ").
-   - Improved visual hierarchy between file-level summaries and entity-level details.
-
-These changes enhance both the maintainability of metadata in version control and the overall readability of CLI feedback.
+~~~~~python
+__path__ = __import__("pkgutil").extend_path(__path__, __name__)
 ~~~~~
-
-### 下一步建议
-变更已成功提交。现在你可以尝试运行 `stitcher check`，你将会看到更加整洁、对齐的输出。同时，你可以检查 Git 状态，你会发现相关的 YAML 和 JSON 文件已经被自动整理成了最规范的格式。
