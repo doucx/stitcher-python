@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import re
 import libcst as cst
@@ -209,9 +209,7 @@ class IRBuildingVisitor(cst.CSTVisitor):
         result = []
         dummy_module = cst.Module([])
 
-        def extract_arg(
-            param: cst.Param, kind: ArgumentKind
-        ) -> Argument:
+        def extract_arg(param: cst.Param, kind: ArgumentKind) -> Argument:
             # cst.Param has 'name' (Name), 'annotation' (Annotation), 'default' (Expr)
 
             # Normal cst.Param

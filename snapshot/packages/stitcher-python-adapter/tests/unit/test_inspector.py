@@ -3,7 +3,6 @@ from stitcher.adapter.python.inspector import parse_plugin_entry, InspectionErro
 
 # Mock module for testing
 import sys
-from types import ModuleType
 
 
 class MockModule:

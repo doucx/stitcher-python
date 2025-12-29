@@ -77,16 +77,12 @@ class StripperTransformer(cst.CSTTransformer):
     def leave_FunctionDef(
         self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
     ) -> cst.FunctionDef:
-        return updated_node.with_changes(
-            body=self._process_body(updated_node.body)
-        )
+        return updated_node.with_changes(body=self._process_body(updated_node.body))
 
     def leave_ClassDef(
         self, original_node: cst.ClassDef, updated_node: cst.ClassDef
     ) -> cst.ClassDef:
-        return updated_node.with_changes(
-            body=self._process_body(updated_node.body)
-        )
+        return updated_node.with_changes(body=self._process_body(updated_node.body))
 
 
 class InjectorTransformer(cst.CSTTransformer):

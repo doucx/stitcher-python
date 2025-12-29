@@ -498,7 +498,9 @@ class StitcherApp:
                     if fqn in new_hashes:
                         new_yaml_hash = current_yaml_map.get(fqn)
                         if new_yaml_hash is not None:
-                            new_hashes[fqn]["baseline_yaml_content_hash"] = new_yaml_hash
+                            new_hashes[fqn]["baseline_yaml_content_hash"] = (
+                                new_yaml_hash
+                            )
                         elif "baseline_yaml_content_hash" in new_hashes[fqn]:
                             del new_hashes[fqn]["baseline_yaml_content_hash"]
 
