@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 
 
 from stitcher.common.messaging.bus import MessageBus
@@ -24,9 +24,20 @@ class SpyRenderer(Renderer):
 
 
 class PatchedMessageBus(MessageBus):
-    def _render(self, level: str, msg_id: SemanticPointer, **kwargs: Any) -> None:
+    def _render(
+        self, level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any
+    ) -> None:
         # Instead of rendering to string, we record the semantic call
+        # We need to handle str msg_id gracefully or convert to string for key
+        msg_key = msg_id if isinstance(msg_id, SemanticPointer) else SemanticPointer(msg_id)
+        
         if isinstance(self._renderer, SpyRenderer):
+            # We pass original msg_id (even if str) and let record handle it or assume SemanticPointer
+            # SpyRenderer.record expects SemanticPointer, so let's use the object
+            self._renderer.record(level, msg_key, kwargs)
+
+        # We can still call the original render to a string if we want to test that too
+        super()._render(level, msg_id, **kwargs)
             self._renderer.record(level, msg_id, kwargs)
 
         # We can still call the original render to a string if we want to test that too
