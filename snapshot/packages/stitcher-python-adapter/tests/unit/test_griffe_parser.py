@@ -48,3 +48,57 @@ def my_func(a: int, b: str = "default") -> bool:
         assert args[0].kind == ArgumentKind.POSITIONAL_ONLY
         assert args[1].name == "b"
         assert args[1].kind == ArgumentKind.POSITIONAL_OR_KEYWORD
+
+class TestGriffeParserStructure:
+    @pytest.fixture
+    def parser(self):
+        return GriffePythonParser()
+
+    def test_parse_module_attributes(self, parser):
+        code = """
+CONST_VAL: int = 42
+\"\"\"Constant docstring.\"\"\"
+simple_var = "hello"
+"""
+        module = parser.parse(code)
+        
+        assert len(module.attributes) == 2
+        
+        attr1 = next(a for a in module.attributes if a.name == "CONST_VAL")
+        assert attr1.annotation == "int"
+        assert attr1.value == "42"
+        assert attr1.docstring == "Constant docstring."
+
+        attr2 = next(a for a in module.attributes if a.name == "simple_var")
+        assert attr2.value == "'hello'"  # Normalized quotes
+
+    def test_parse_class_def(self, parser):
+        code = """
+class MyClass(Base1, Base2):
+    \"\"\"Class doc.\"\"\"
+    field: str = "init"
+    
+    def method(self):
+        pass
+"""
+        module = parser.parse(code)
+        assert len(module.classes) == 1
+        cls = module.classes[0]
+        
+        assert cls.name == "MyClass"
+        assert cls.docstring == "Class doc."
+        assert cls.bases == ["Base1", "Base2"]
+        
+        # Check Attribute
+        assert len(cls.attributes) == 1
+        attr = cls.attributes[0]
+        assert attr.name == "field"
+        assert attr.annotation == "str"
+        assert attr.value == "'init'"
+        
+        # Check Method
+        assert len(cls.methods) == 1
+        method = cls.methods[0]
+        assert method.name == "method"
+        assert len(method.args) == 1
+        assert method.args[0].name == "self"

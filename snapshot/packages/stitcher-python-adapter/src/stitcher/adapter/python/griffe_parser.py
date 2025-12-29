@@ -25,11 +25,9 @@ class GriffePythonParser(LanguageParserProtocol):
         try:
             tree = ast.parse(source_code)
         except SyntaxError as e:
-            # Wrap SyntaxError or let it bubble? For now, standard behavior.
             raise ValueError(f"Syntax error in {file_path}: {e}") from e
 
         # 2. Visit with Griffe
-        # We use a virtual module name based on file path or default
         module_name = file_path.replace("/", ".").replace(".py", "") or "module"
         griffe_module = griffe.visit(module_name, filepath=None, code=source_code)
 
@@ -38,37 +36,69 @@ class GriffePythonParser(LanguageParserProtocol):
 
     def _map_module(self, gm: griffe.Module, file_path: str) -> ModuleDef:
         functions = []
-        # Filter and map top-level functions
+        classes = []
+        attributes = []
+
         for member in gm.members.values():
             if member.is_function:
                 functions.append(self._map_function(member))
-            # TODO: Add Class handling in next iteration
-            # if member.is_class:
-            #     classes.append(self._map_class(member))
+            elif member.is_class:
+                classes.append(self._map_class(member))
+            elif member.is_attribute:
+                attributes.append(self._map_attribute(member))
 
-        # TODO: Extract module-level docstring and attributes
-        # Griffe module docstring parsing
         docstring = gm.docstring.value if gm.docstring else None
 
         return ModuleDef(
             file_path=file_path,
             docstring=docstring,
             functions=functions,
-            # Placeholders for future iterations
-            classes=[],
-            attributes=[],
-            imports=[]
+            classes=classes,
+            attributes=attributes,
+            imports=[] # Imports handling to be added later
+        )
+
+    def _map_class(self, gc: griffe.Class) -> ClassDef:
+        methods = []
+        attributes = []
+
+        for member in gc.members.values():
+            if member.is_function:
+                methods.append(self._map_function(member))
+            elif member.is_attribute:
+                attributes.append(self._map_attribute(member))
+
+        docstring = gc.docstring.value if gc.docstring else None
+        
+        # Bases are expressions, we stringify them
+        bases = [str(b) for b in gc.bases]
+
+        return ClassDef(
+            name=gc.name,
+            bases=bases,
+            decorators=[str(d.value) for d in gc.decorators],
+            docstring=docstring,
+            attributes=attributes,
+            methods=methods
+        )
+
+    def _map_attribute(self, ga: griffe.Attribute) -> Attribute:
+        annotation = str(ga.annotation) if ga.annotation else None
+        value = str(ga.value) if ga.value else None
+        docstring = ga.docstring.value if ga.docstring else None
+
+        return Attribute(
+            name=ga.name,
+            annotation=annotation,
+            value=value,
+            docstring=docstring
         )
 
     def _map_function(self, gf: griffe.Function) -> FunctionDef:
         args = [self._map_argument(p) for p in gf.parameters]
         
-        # Griffe stores return annotation object, we need source string or name
         return_annotation = None
         if gf.returns:
-            # gf.returns is typically an ExprName or similar. We want the string representation.
-            # Griffe < 1.0 might act differently, assuming modern/stable API behavior:
-            # We use .source or try to stringify
              return_annotation = str(gf.returns)
 
         docstring = gf.docstring.value if gf.docstring else None
@@ -85,8 +115,6 @@ class GriffePythonParser(LanguageParserProtocol):
         )
 
     def _map_argument(self, param: griffe.Parameter) -> Argument:
-        # Map Kind
-        # Griffe kind is usually string-like or inspect.Parameter.kind compatible
         kind_map = {
             "positional-only": ArgumentKind.POSITIONAL_ONLY,
             "positional-or-keyword": ArgumentKind.POSITIONAL_OR_KEYWORD,
@@ -95,13 +123,8 @@ class GriffePythonParser(LanguageParserProtocol):
             "variadic keyword": ArgumentKind.VAR_KEYWORD,
         }
         
-        # Griffe's kind.value (if enum) or str(kind) needs to be checked
-        # griffe.ParameterKind is an Enum.
-        st_kind = ArgumentKind.POSITIONAL_OR_KEYWORD # Default
+        st_kind = ArgumentKind.POSITIONAL_OR_KEYWORD
         if param.kind:
-             # Convert Griffe kind to our enum. 
-             # Logic simplifies depending on Griffe version. 
-             # We assume param.kind.name or param.kind.value matches convention
              slug = str(param.kind.value)
              st_kind = kind_map.get(slug, ArgumentKind.POSITIONAL_OR_KEYWORD)
 
