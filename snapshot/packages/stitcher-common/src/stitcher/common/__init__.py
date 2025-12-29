@@ -3,7 +3,8 @@ __path__ = __import__("pkgutil").extend_path(__path__, __name__)
 import os
 from pathlib import Path
 from typing import Dict
-from needle.pointer import L, SemanticPointerProtocol
+from needle.pointer import L
+from needle.spec import SemanticPointerProtocol
 from needle.nexus import OverlayOperator
 from needle.operators import I18NFactoryOperator
 from needle.runtime import _find_project_root
