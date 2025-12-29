@@ -1,5 +1,4 @@
-from needle.nexus import OverlayOperator
-from needle.operators import DictOperator
+from needle.operators import OverlayOperator, DictOperator
 
 
 def test_overlay_priority_and_fallback():

@@ -10,6 +10,8 @@ from needle.spec import (
     SemanticPointerProtocol,
     PointerSetProtocol,
 )
+from needle.operators import OverlayOperator
+
 
 __all__ = [
     "L",
@@ -19,4 +21,5 @@ __all__ = [
     "OperatorProtocol",
     "SemanticPointerProtocol",
     "PointerSetProtocol",
+    "OverlayOperator",
 ]
