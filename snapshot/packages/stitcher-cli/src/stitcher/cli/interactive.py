@@ -16,15 +16,15 @@ class SemanticMenuOption:
 
 
 class TyperInteractiveRenderer:
-    def __init__(self, nexus):
-        self.nexus = nexus
+    def __init__(self, operator):
+        self.operator = operator
 
     def show_summary(self, count: int) -> None:
-        msg = self.nexus.get(L.interactive.summary).format(count=count)
+        msg = self.operator(L.interactive.summary).format(count=count)
         typer.echo(msg)
 
     def show_message(self, msg_id: SemanticPointer, color=None, **kwargs) -> None:
-        msg = self.nexus.get(msg_id).format(**kwargs)
+        msg = self.operator(msg_id).format(**kwargs)
         typer.secho(msg, fg=color)
 
     def prompt(
@@ -36,7 +36,7 @@ class TyperInteractiveRenderer:
         default_action: Any,
     ) -> Any:
         # Header
-        header_fmt = self.nexus.get(L.interactive.header.title)
+        header_fmt = self.operator(L.interactive.header.title)
         typer.echo("\n" + ("-" * 20))
         typer.secho(
             header_fmt.format(
@@ -45,7 +45,7 @@ class TyperInteractiveRenderer:
             fg=typer.colors.CYAN,
         )
 
-        symbol_fmt = self.nexus.get(L.interactive.header.symbol)
+        symbol_fmt = self.operator(L.interactive.header.symbol)
         typer.secho("  " + symbol_fmt.format(fqn=context.fqn), bold=True)
 
         # Reason
@@ -56,7 +56,7 @@ class TyperInteractiveRenderer:
         }
         reason_l = reason_map.get(context.conflict_type)
         if reason_l:
-            typer.secho("  " + self.nexus.get(reason_l), fg=typer.colors.YELLOW)
+            typer.secho("  " + self.operator(reason_l), fg=typer.colors.YELLOW)
 
         # View Diff
         if context.signature_diff:
@@ -82,12 +82,12 @@ class TyperInteractiveRenderer:
                 typer.secho(f"  {line}", fg=color)
 
         # Prompt
-        typer.echo("\n  " + self.nexus.get(L.interactive.prompt))
+        typer.echo("\n  " + self.operator(L.interactive.prompt))
 
         # Options
         for opt in options:
-            label = self.nexus.get(opt.label_id)
-            desc = self.nexus.get(opt.desc_id)
+            label = self.operator(opt.label_id)
+            desc = self.operator(opt.desc_id)
             is_default = opt.action == default_action
             prefix = "> " if is_default else "  "
             # Label format assumes "[K]Label" style roughly
