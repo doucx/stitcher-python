@@ -20,7 +20,7 @@ def test_pump_does_not_corrupt_code_signature_baseline(tmp_path, monkeypatch):
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/main.py", "def func(a: int): ...")
+        .with_source("src/main.py", 'def func(a: int):\n    """Initial doc."""')
         .build()
     )
 

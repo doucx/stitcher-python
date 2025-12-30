@@ -1,44 +1,4 @@
-简要回答
-上次的修复因为 `patch_file` 操作导致了 `pump.py` 结构严重损坏（不同阶段的代码块错位），引发了 `UnboundLocalError`。同时，`test_pump_state_integrity.py` 的修复并未正确应用到有问题的代码块。
-
-本次计划将采取 **Write File** 策略重写 `pump.py` 以彻底修复其结构和逻辑错误，并重新正确 Patch 测试文件。
-
-## [WIP] fix(pump): 重构损坏的 PumpRunner 并修复测试数据
-
-### 错误分析
-1.  **`pump.py` 结构损坏**: `pump.py` 在之前的修改中，Analysis 阶段代码被错误替换为了 Stripping 阶段代码，导致 `strip_jobs` 变量在使用前未定义 (`UnboundLocalError`)。且 Phase 1 逻辑完全丢失。
-2.  **测试数据未修复**: `test_pump_state_integrity.py` 中用于生成测试文件的代码使用了错误的转义字符 (`\\n`)，导致生成的 Python 文件非法。上一次修复尝试定位了错误的上下文（定位到了另一个测试函数），导致修复失败。
-
-### 用户需求
-恢复 `pump` 命令的正常功能，消除 `UnboundLocalError`，并使相关集成测试通过。
-
-### 评论
-使用 `write_file` 重写 `pump.py` 是最安全、最直接的恢复手段，能确保代码结构的完整性和顺序的正确性。
-
-### 目标
-1.  **重写 `pump.py`**: 恢复正常的执行流：Analysis (force/reconcile=False) -> Decision -> Execution -> Stripping -> Signature Refresh -> Reporting。
-2.  **修复测试用例**: 修正 `test_pump_state_integrity.py` 中 `test_pump_is_atomic_per_file` 函数内的字符串转义问题。
-
-### 基本原理
-按照标准的 Quipu 执行模型，`pump` 流程应当是线性的。我们需要确保：
-1.  **Analysis**: 先做一次"预演"，不带任何副作用地检测冲突。
-2.  **Execution**: 应用变更，并收集需要 Strip 的文件列表。
-3.  **Stripping**: 处理 Strip 列表，并发出相应的 `strip.file.success` 消息。
-4.  **Reporting**: 综合统计各类操作结果，给出最终报告。
-
-### 标签
-#intent/fix #flow/ready #priority/high #comp/runtime #comp/tests
-#concept/state #scope/core
-#ai/instruct
-#task/domain/testing #task/object/pump-runner #task/action/recovery #task/state/continue
-
----
-
-### Script
-
-#### Acts 1: 重构 `pump.py`
-
-我们将完整重写 `packages/stitcher-application/src/stitcher/app/runners/pump.py`，确保各阶段逻辑顺序正确且完整。
+#### Acts 1: 增强 PumpRunner 逻辑
 
 ~~~~~act
 write_file
@@ -198,12 +158,14 @@ class PumpRunner:
             new_hashes = copy.deepcopy(stored_hashes)
             
             file_had_updates = False
+            file_has_errors = False # Check for atomic writes
             updated_keys_in_file = []
             reconciled_keys_in_file = []
 
             for fqn, plan in file_plan.items():
                 if fqn in decisions and decisions[fqn] == ResolutionAction.SKIP:
                     unresolved_conflicts_count += 1
+                    file_has_errors = True # Mark file as having issues, preventing partial save
                     bus.error(L.pump.error.conflict, path=module.file_path, key=fqn)
                     continue
 
@@ -219,7 +181,8 @@ class PumpRunner:
                     if fqn in source_docs:
                         doc_hash = self.doc_manager.compute_yaml_content_hash(source_docs[fqn])
                         fp["baseline_yaml_content_hash"] = doc_hash
-                        # If we have a new key, we should try to grab its code hash too if available
+                        # If we have a new key (or recovering from invalid legacy), 
+                        # we should try to grab its code hash too if available
                         if fqn not in stored_hashes:
                              current_fp = self.sig_manager.compute_fingerprints(module).get(fqn, Fingerprint())
                              if "current_code_structure_hash" in current_fp:
@@ -233,11 +196,19 @@ class PumpRunner:
                 if plan.strip_source_docstring:
                     strip_jobs[module.file_path].append(fqn)
 
-            if file_had_updates:
-                module_path = self.root_path / module.file_path
-                doc_path = module_path.with_suffix(".stitcher.yaml")
-                self.doc_manager.adapter.save(doc_path, new_yaml_docs)
-                self.sig_manager.save_composite_hashes(module, new_hashes)
+            # Atomic save logic: Only save if there were updates AND no errors in this file.
+            # We also check if new_hashes != stored_hashes to support recovering legacy/corrupt signature files
+            # even if 'file_had_updates' (meaning doc updates) is False.
+            signatures_need_save = (new_hashes != stored_hashes)
+            
+            if not file_has_errors:
+                if file_had_updates:
+                    module_path = self.root_path / module.file_path
+                    doc_path = module_path.with_suffix(".stitcher.yaml")
+                    self.doc_manager.adapter.save(doc_path, new_yaml_docs)
+                
+                if file_had_updates or signatures_need_save:
+                    self.sig_manager.save_composite_hashes(module, new_hashes)
                 
             if updated_keys_in_file:
                 total_updated_keys += len(updated_keys_in_file)
@@ -267,16 +238,21 @@ class PumpRunner:
                 bus.success(L.strip.run.complete, count=total_stripped_files)
         
         # Phase 6: Ensure Signatures Integrity
-        # Refresh all signatures to latest format, even if no docs changed.
-        for module in all_modules:
-            self.sig_manager.reformat_hashes_for_module(module)
+        # This is a safety sweep. In most cases, Phase 4 handles it via 'signatures_need_save'.
+        # But if files were skipped or other edge cases, we might want to check again? 
+        # Actually, Phase 4 covers the main "Update Logic". 
+        # Doing a reformat here might mask atomic failures if we aren't careful.
+        # Let's rely on Phase 4's explicit save logic for now to respect atomicity.
         
         # Final Reporting
         if unresolved_conflicts_count > 0:
             bus.error(L.pump.run.conflict, count=unresolved_conflicts_count)
             return PumpResult(success=False)
         
-        has_activity = (total_updated_keys > 0) or (total_reconciled_keys > 0) or strip_jobs
+        # We define activity as actual changes to data (updates or strips). 
+        # Reconciliation is a resolution state change but not a data "pump", so we respect 
+        # existing test expectations that reconciliation alone = "no changes" in terms of content output.
+        has_activity = (total_updated_keys > 0) or strip_jobs
         
         if not has_activity:
             bus.info(L.pump.run.no_changes)
@@ -286,26 +262,33 @@ class PumpRunner:
         return PumpResult(success=True, redundant_files=[])
 ~~~~~
 
-#### Acts 2: 修复测试数据
+#### Acts 3: 修正 Baseline Corruption 测试设置
 
-精确修复 `test_pump_state_integrity.py` 中的 `test_pump_is_atomic_per_file` 方法。
+为 `init` 步骤提供带有文档的代码，以确保 Signature 文件被正确创建。
 
 ~~~~~act
 patch_file
 packages/stitcher-application/tests/integration/test_pump_state_integrity.py
 ~~~~~
 ~~~~~python
-    # 2. Act: Modify the code to create a mixed state
-    (project_root / "src/main.py").write_text(
-        'def func_clean():\\n    """New clean doc."""\\n'
-        'def func_conflict():\\n    """New conflicting doc."""'
+    # 1. Arrange: Initialize a workspace to create a baseline.
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/main.py", "def func(a: int): ...")
+        .build()
     )
+
+    # Use the LibCST parser for init, simulating the old state
 ~~~~~
 ~~~~~python
-    # 2. Act: Modify the code to create a mixed state
-    (project_root / "src/main.py").write_text(
-        'def func_clean():\n    """New clean doc."""\n'
-        'def func_conflict():\n    """New conflicting doc."""',
-        encoding="utf-8"
+    # 1. Arrange: Initialize a workspace to create a baseline.
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source("src/main.py", 'def func(a: int):\n    """Initial doc."""')
+        .build()
     )
+
+    # Use the LibCST parser for init, simulating the old state
 ~~~~~

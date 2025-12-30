@@ -151,12 +151,14 @@ class PumpRunner:
             new_hashes = copy.deepcopy(stored_hashes)
             
             file_had_updates = False
+            file_has_errors = False # Check for atomic writes
             updated_keys_in_file = []
             reconciled_keys_in_file = []
 
             for fqn, plan in file_plan.items():
                 if fqn in decisions and decisions[fqn] == ResolutionAction.SKIP:
                     unresolved_conflicts_count += 1
+                    file_has_errors = True # Mark file as having issues, preventing partial save
                     bus.error(L.pump.error.conflict, path=module.file_path, key=fqn)
                     continue
 
@@ -172,7 +174,8 @@ class PumpRunner:
                     if fqn in source_docs:
                         doc_hash = self.doc_manager.compute_yaml_content_hash(source_docs[fqn])
                         fp["baseline_yaml_content_hash"] = doc_hash
-                        # If we have a new key, we should try to grab its code hash too if available
+                        # If we have a new key (or recovering from invalid legacy), 
+                        # we should try to grab its code hash too if available
                         if fqn not in stored_hashes:
                              current_fp = self.sig_manager.compute_fingerprints(module).get(fqn, Fingerprint())
                              if "current_code_structure_hash" in current_fp:
@@ -186,11 +189,19 @@ class PumpRunner:
                 if plan.strip_source_docstring:
                     strip_jobs[module.file_path].append(fqn)
 
-            if file_had_updates:
-                module_path = self.root_path / module.file_path
-                doc_path = module_path.with_suffix(".stitcher.yaml")
-                self.doc_manager.adapter.save(doc_path, new_yaml_docs)
-                self.sig_manager.save_composite_hashes(module, new_hashes)
+            # Atomic save logic: Only save if there were updates AND no errors in this file.
+            # We also check if new_hashes != stored_hashes to support recovering legacy/corrupt signature files
+            # even if 'file_had_updates' (meaning doc updates) is False.
+            signatures_need_save = (new_hashes != stored_hashes)
+            
+            if not file_has_errors:
+                if file_had_updates:
+                    module_path = self.root_path / module.file_path
+                    doc_path = module_path.with_suffix(".stitcher.yaml")
+                    self.doc_manager.adapter.save(doc_path, new_yaml_docs)
+                
+                if file_had_updates or signatures_need_save:
+                    self.sig_manager.save_composite_hashes(module, new_hashes)
                 
             if updated_keys_in_file:
                 total_updated_keys += len(updated_keys_in_file)
@@ -220,16 +231,21 @@ class PumpRunner:
                 bus.success(L.strip.run.complete, count=total_stripped_files)
         
         # Phase 6: Ensure Signatures Integrity
-        # Refresh all signatures to latest format, even if no docs changed.
-        for module in all_modules:
-            self.sig_manager.reformat_hashes_for_module(module)
+        # This is a safety sweep. In most cases, Phase 4 handles it via 'signatures_need_save'.
+        # But if files were skipped or other edge cases, we might want to check again? 
+        # Actually, Phase 4 covers the main "Update Logic". 
+        # Doing a reformat here might mask atomic failures if we aren't careful.
+        # Let's rely on Phase 4's explicit save logic for now to respect atomicity.
         
         # Final Reporting
         if unresolved_conflicts_count > 0:
             bus.error(L.pump.run.conflict, count=unresolved_conflicts_count)
             return PumpResult(success=False)
         
-        has_activity = (total_updated_keys > 0) or (total_reconciled_keys > 0) or strip_jobs
+        # We define activity as actual changes to data (updates or strips). 
+        # Reconciliation is a resolution state change but not a data "pump", so we respect 
+        # existing test expectations that reconciliation alone = "no changes" in terms of content output.
+        has_activity = (total_updated_keys > 0) or strip_jobs
         
         if not has_activity:
             bus.info(L.pump.run.no_changes)
