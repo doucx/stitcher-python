@@ -1,9 +1,3 @@
-"PumpResult": |-
-  Data container for the result of a `run_pump` operation.
-"PumpResult.redundant_files": |-
-  A list of files that now contain redundant docstrings after a successful pump.
-"PumpResult.success": |-
-  Indicates whether the pump operation completed without unresolved conflicts.
 "StitcherApp": |-
   The central orchestrator for all Stitcher operations.
 
@@ -11,14 +5,6 @@
   stub generator to execute high-level commands like check, generate, and pump.
 "StitcherApp.doc_manager": |-
   Service for managing documentation assets.
-"StitcherApp.generator": |-
-  The stub generator instance.
-"StitcherApp.interaction_handler": |-
-  The handler for user interactions during conflict resolution.
-"StitcherApp.parser": |-
-  The language parser instance.
-"StitcherApp.root_path": |-
-  The root path of the project being processed.
 "StitcherApp.run_check": |-
   Verify the structural and content consistency between source code and external YAML documentation.
 
@@ -58,5 +44,3 @@
   Service for managing code signatures.
 "StitcherApp.stub_pkg_manager": |-
   Service for managing PEP 561 stub packages.
-"StitcherApp.transformer": |-
-  The language transformer instance.
