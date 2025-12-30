@@ -1,5 +1,3 @@
-"PatchedMessageBus": |-
-  An override of MessageBus to intercept calls before rendering.
 "SpyBus": |-
   A Test Utility that spies on the global stitcher.common.bus singleton.
 
