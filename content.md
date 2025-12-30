@@ -1,300 +1,274 @@
-您是对的，您的直觉非常准确。经过仔细审查，我确认了两个关键问题：
+Excellent. The failing tests confirm that our test suite is now correctly capturing the requirements defined in the truth table, and that the implementation is lagging behind. This is the "Red" state of TDD. Now, we can proceed to the "Green" state by fixing the code.
 
-1.  **测试覆盖率不足**：您是对的，我之前生成的单元测试 `test_execution_planner.py` 并**没有**覆盖真值表的所有情况。具体来说，它完全忽略了对 `update_code_fingerprint` 标志的断言，而这正是新逻辑的核心之一。
-2.  **实现存在偏差**：`pump.py` 中 `_generate_execution_plan` 的当前实现**不符合**真值表。它从未将 `update_code_fingerprint` 设置为 `True`，这是一个明显的 bug。
+My analysis revealed two distinct bugs: one in the planning phase (`_generate_execution_plan`) and one in the execution phase (the `run` method's main loop). I will fix both.
 
-我将严格遵守 TDD 流程和您“绝对禁止混合”的指令。因此，我们当前的首要任务是**增强测试**，使其能够暴露出现有的 bug。只有当我们的测试用例能够因为这个 bug 而失败时，我们才能在下一步中去修复代码。
+## [WIP] fix: 修正 pump 的执行计划和指纹更新逻辑
 
-以下是我的详细分析和修复测试的计划。
-
-`packages/stitcher-application/src/stitcher/app/runners/pump.py` 中的 `_generate_execution_plan` 方法存在逻辑缺陷。代码片段如下：
-
-```python
-# ... (inside _generate_execution_plan)
-elif (
-    decision == ResolutionAction.HYDRATE_OVERWRITE
-    or (decision is None and has_source_doc)
-):
-    exec_plan.hydrate_yaml = True
-    exec_plan.update_doc_fingerprint = True
-    if strip_requested:
-        exec_plan.strip_source_docstring = True
-    # !!! BUG !!!: 缺少 exec_plan.update_code_fingerprint = True
-
-elif decision == ResolutionAction.HYDRATE_KEEP_EXISTING:
-    if strip_requested:
-        exec_plan.strip_source_docstring = True
-    # !!! BUG !!!: 缺少 exec_plan.update_code_fingerprint = True
-```
-如上所示，代码中完全没有设置 `update_code_fingerprint` 的逻辑，导致它始终保持默认值 `False`。这直接违反了我们在真值表中定义的核心行为。
-
-**结论**：我们必须先修复测试，使其能够捕捉到这个 bug。
-
-## [WIP] test: 增强 pump 执行计划器的测试覆盖率
+### 错误分析
+1.  **计划生成器缺陷**: `_generate_execution_plan` 方法未能根据真值表为 `update_code_fingerprint` 标志赋值。除了用户明确选择 `SKIP` 的情况外，所有其他决策（包括无冲突、覆盖、保留）都应将此标志设为 `True`，以确保代码状态与指纹同步。
+2.  **执行器逻辑缺失**: `run` 方法的执行循环完全没有处理 `plan.update_code_fingerprint` 标志的逻辑。它错误地将“为新密钥更新代码指纹”的逻辑与“更新文档指纹”的逻辑混在了一起，并且从未更新现有密钥的代码指纹。
 
 ### 用户需求
-当前的单元测试未能完全覆盖 `_generate_execution_plan` 的真值表，特别是 `update_code_fingerprint` 标志。需要扩展这些测试，使其能够暴露出现有实现中的 bug。
+修复 `pump` 命令的实现，使其完全符合新单元测试和真值表所定义的行为。这包括修正执行计划的生成逻辑和指纹的更新逻辑。
 
 ### 评论
-这是一个完美的 TDD 实践案例。通过首先完善测试用例来精确定义期望的行为，我们不仅能确保代码修复的正确性，还能为未来的重构提供一个坚实的安全网。这个步骤对于保证 `pump` 命令状态管理的正确性至关重要。
+这个修复是本次重构的核心。通过将 `pump` 的行为与清晰的、经过单元测试验证的规范（真值表）对齐，我们确保了其状态管理的一致性和可预测性。将代码和文档指纹的更新逻辑解耦，并正确地执行计划，将消除许多潜在的状态损坏错误。
 
 ### 目标
-1.  修改 `packages/stitcher-application/tests/unit/test_execution_planner.py` 文件。
-2.  为文件中的每一个测试用例（除了 `test_plan_for_skip`）添加 `assert exec_plan.update_code_fingerprint is True` 的断言。
-3.  为 `test_plan_for_skip` 添加 `assert exec_plan.update_code_fingerprint is False` 的断言。
-4.  运行测试，并预期它们会因为代码实现中的 bug 而**失败**。
+1.  **修复计划器**: 修改 `_generate_execution_plan` 方法，使其在所有非 `SKIP` 的情况下都将 `exec_plan.update_code_fingerprint` 设置为 `True`。
+2.  **修复执行器**:
+    *   在 `run` 方法中，为每个模块预先计算其当前的代码指纹，以提高效率。
+    *   重构 `run` 方法的内部循环，使其能够独立地、正确地根据 `plan.update_code_fingerprint` 和 `plan.update_doc_fingerprint` 标志来更新相应的指纹。
 
 ### 基本原理
-我们正在遵循 TDD 的 "Red-Green-Refactor" 循环中的 "Red" 阶段。我们明知代码有误，因此我们的任务是编写一个能够证明其错误的测试。通过向现有测试中添加对 `update_code_fingerprint` 的断言，我们将使测试套件能够检测到 `_generate_execution_plan` 方法与规范（真值表）之间的偏差。这将为下一步的代码修复（"Green" 阶段）提供明确的目标。
+我们将分两步修复 `pump.py` 文件：
+1.  首先，我们将重构 `_generate_execution_plan` 方法，使其逻辑更简洁，并直接映射真值表中的规则。所有非 `SKIP` 的决策路径都将设置 `update_code_fingerprint` 标志。
+2.  其次，我们将重构 `run` 方法中的核心执行循环。我们将解耦当前混乱的指纹更新逻辑，引入一个清晰的流程：检查 `update_code_fingerprint` 标志并更新代码哈希，然后独立地检查 `update_doc_fingerprint` 标志并更新文档哈希。这将确保 `pump` 的行为是原子化且正确的。
 
 ### 标签
-#intent/tooling #flow/ready #priority/high #comp/tests #concept/executor #scope/dx #ai/instruct #task/domain/testing #task/object/pump-runner #task/action/refactor #task/state/continue
+#intent/fix #flow/ready #priority/high #comp/engine #concept/state #concept/executor #scope/core #ai/instruct #task/domain/testing #task/object/pump-runner #task/action/refactor #task/state/continue
 
 ---
 ### Script
 
-#### Acts 1: 增强执行计划器的单元测试
+#### Acts 1: 修正执行计划生成器的逻辑
 
-我们将修改现有的测试文件，为每个测试用例添加对 `update_code_fingerprint` 标志的断言，以确保测试完全覆盖真值表。
+我们首先修复 `_generate_execution_plan` 方法，使其正确地根据真值表生成计划。
 
 ~~~~~act
 patch_file
-packages/stitcher-application/tests/unit/test_execution_planner.py
+packages/stitcher-application/src/stitcher/app/runners/pump.py
 ~~~~~
 ~~~~~python.old
-import pytest
-from unittest.mock import MagicMock
-from stitcher.app.runners import PumpRunner
-from stitcher.app.services import DocumentManager
-from stitcher.spec import (
-    ModuleDef,
-    FunctionDef,
-    ResolutionAction,
-)
+    def _generate_execution_plan(
+        self,
+        module: ModuleDef,
+        decisions: Dict[str, ResolutionAction],
+        strip_requested: bool,
+    ) -> Dict[str, FunctionExecutionPlan]:
+        """根据用户决策和命令行标志，生成最终的函数级执行计划。"""
+        plan: Dict[str, FunctionExecutionPlan] = {}
+        source_docs = self.doc_manager.flatten_module_docs(module)
 
+        for fqn in module.get_all_fqns():
+            decision = decisions.get(fqn)
+            has_source_doc = fqn in source_docs
+            exec_plan = FunctionExecutionPlan(fqn=fqn)
 
-@pytest.fixture
-def sample_module() -> ModuleDef:
-    """一个包含两个函数用于测试的模块IR。"""
-    return ModuleDef(
-        file_path="src/main.py",
-        functions=[
-            FunctionDef(name="func_a", docstring="Source Doc A"),
-            FunctionDef(name="func_b", docstring="Source Doc B"),
-        ],
-    )
+            if decision == ResolutionAction.SKIP:
+                pass  # All flags default to False
+            elif (
+                decision == ResolutionAction.HYDRATE_OVERWRITE
+                or (decision is None and has_source_doc)
+            ):
+                exec_plan.hydrate_yaml = True
+                exec_plan.update_doc_fingerprint = True
+                if strip_requested:
+                    exec_plan.strip_source_docstring = True
+            elif decision == ResolutionAction.HYDRATE_KEEP_EXISTING:
+                if strip_requested:
+                    exec_plan.strip_source_docstring = True
 
+            plan[fqn] = exec_plan
 
-@pytest.fixture
-def runner(tmp_path) -> PumpRunner:
-    """一个用于调用内部方法的PumpRunner实例。"""
-    # _generate_execution_plan 仅依赖 doc_manager
-    doc_manager = DocumentManager(root_path=tmp_path)
-    return PumpRunner(
-        root_path=tmp_path,
-        scanner=MagicMock(),
-        parser=MagicMock(),
-        doc_manager=doc_manager,
-        sig_manager=MagicMock(),
-        transformer=MagicMock(),
-        interaction_handler=None,
-    )
-
-
-def test_plan_for_overwrite_with_strip(runner, sample_module):
-    """测试场景：代码优先 (`HYDRATE_OVERWRITE`) + 请求剥离 (`--strip`)"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_OVERWRITE}
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=True)
-
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is True
-    assert p_a.update_doc_fingerprint is True
-    assert p_a.strip_source_docstring is True
-
-
-def test_plan_for_overwrite_without_strip(runner, sample_module):
-    """测试场景：代码优先 (`HYDRATE_OVERWRITE`) + 不请求剥离"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_OVERWRITE}
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=False)
-
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is True
-    assert p_a.update_doc_fingerprint is True
-    assert p_a.strip_source_docstring is False
-
-
-def test_plan_for_keep_existing_with_strip(runner, sample_module):
-    """测试场景：侧栏优先 (`HYDRATE_KEEP_EXISTING`) + 请求剥离 (`--strip`)"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_KEEP_EXISTING}
-    # 根据真值表，当保留现有YAML时，不应该更新代码指纹，除非存在协同演进。
-    # 但`pump`的冲突检测只看文档内容，所以这里`update_code_fingerprint`应为False
-    # 修正：根据新规则，只要用户没有SKIP，代码指纹就应更新以反映当前状态。
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=True)
-
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is False
-    assert p_a.update_doc_fingerprint is False
-    assert p_a.strip_source_docstring is True
-
-
-def test_plan_for_keep_existing_without_strip(runner, sample_module):
-    """测试场景：侧栏优先 (`HYDRATE_KEEP_EXISTING`) + 不请求剥离"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_KEEP_EXISTING}
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=False)
-
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is False
-    assert p_a.update_doc_fingerprint is False
-    assert p_a.strip_source_docstring is False
-
-
-def test_plan_for_skip(runner, sample_module):
-    """测试场景：用户选择跳过 (`SKIP`)"""
-    decisions = {"func_a": ResolutionAction.SKIP}
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=True)
-
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is False
-    assert p_a.update_doc_fingerprint is False
-    assert p_a.strip_source_docstring is False
-
-
-def test_plan_for_no_conflict(runner, sample_module):
-    """测试场景：无冲突的函数 (在decisions中不存在)"""
-    decisions = {"func_b": ResolutionAction.SKIP}  # func_a is no-conflict
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=True)
-
-    # func_a 应该被正常处理
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is True
-    assert p_a.update_doc_fingerprint is True
-    assert p_a.strip_source_docstring is True
-    
-    # func_b 应该被跳过
-    p_b = plan["func_b"]
-    assert p_b.hydrate_yaml is False
-    assert p_b.update_doc_fingerprint is False
-    assert p_b.strip_source_docstring is False
+        return plan
 ~~~~~
 ~~~~~python.new
-import pytest
-from unittest.mock import MagicMock
-from stitcher.app.runners import PumpRunner
-from stitcher.app.services import DocumentManager
-from stitcher.spec import (
-    ModuleDef,
-    FunctionDef,
-    ResolutionAction,
-)
+    def _generate_execution_plan(
+        self,
+        module: ModuleDef,
+        decisions: Dict[str, ResolutionAction],
+        strip_requested: bool,
+    ) -> Dict[str, FunctionExecutionPlan]:
+        """根据用户决策和命令行标志，生成最终的函数级执行计划。"""
+        plan: Dict[str, FunctionExecutionPlan] = {}
+        source_docs = self.doc_manager.flatten_module_docs(module)
 
+        for fqn in module.get_all_fqns():
+            decision = decisions.get(fqn)
+            has_source_doc = fqn in source_docs
+            exec_plan = FunctionExecutionPlan(fqn=fqn)
 
-@pytest.fixture
-def sample_module() -> ModuleDef:
-    """一个包含两个函数用于测试的模块IR。"""
-    return ModuleDef(
-        file_path="src/main.py",
-        functions=[
-            FunctionDef(name="func_a", docstring="Source Doc A"),
-            FunctionDef(name="func_b", docstring="Source Doc B"),
-        ],
-    )
+            if decision == ResolutionAction.SKIP:
+                pass  # All flags default to False
+            else:
+                # All other cases require updating the code fingerprint.
+                exec_plan.update_code_fingerprint = True
 
+                if (
+                    decision == ResolutionAction.HYDRATE_OVERWRITE
+                    or (decision is None and has_source_doc)
+                ):
+                    exec_plan.hydrate_yaml = True
+                    exec_plan.update_doc_fingerprint = True
+                    if strip_requested:
+                        exec_plan.strip_source_docstring = True
+                elif decision == ResolutionAction.HYDRATE_KEEP_EXISTING:
+                    if strip_requested:
+                        exec_plan.strip_source_docstring = True
+            plan[fqn] = exec_plan
 
-@pytest.fixture
-def runner(tmp_path) -> PumpRunner:
-    """一个用于调用内部方法的PumpRunner实例。"""
-    # _generate_execution_plan 仅依赖 doc_manager
-    doc_manager = DocumentManager(root_path=tmp_path)
-    return PumpRunner(
-        root_path=tmp_path,
-        scanner=MagicMock(),
-        parser=MagicMock(),
-        doc_manager=doc_manager,
-        sig_manager=MagicMock(),
-        transformer=MagicMock(),
-        interaction_handler=None,
-    )
+        return plan
+~~~~~
 
+#### Acts 2: 修正执行器中指纹更新的逻辑
 
-def test_plan_for_overwrite_with_strip(runner, sample_module):
-    """测试场景：代码优先 (`HYDRATE_OVERWRITE`) + 请求剥离 (`--strip`)"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_OVERWRITE}
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=True)
+现在，我们重构 `run` 方法中的循环，以正确地执行计划所指定的指纹更新操作。
 
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is True
-    assert p_a.update_doc_fingerprint is True
-    assert p_a.strip_source_docstring is True
-    assert p_a.update_code_fingerprint is True
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/pump.py
+~~~~~
+~~~~~python.old
+        for module in all_modules:
+            file_plan = self._generate_execution_plan(module, decisions, strip)
+            
+            source_docs = self.doc_manager.flatten_module_docs(module)
+            current_yaml_docs = self.doc_manager.load_docs_for_module(module)
+            stored_hashes = self.sig_manager.load_composite_hashes(module)
+            
+            new_yaml_docs = current_yaml_docs.copy()
+            new_hashes = copy.deepcopy(stored_hashes)
+            
+            file_had_updates = False
+            file_has_errors = False # Check for atomic writes
+            updated_keys_in_file = []
+            reconciled_keys_in_file = []
 
+            for fqn, plan in file_plan.items():
+                if fqn in decisions and decisions[fqn] == ResolutionAction.SKIP:
+                    unresolved_conflicts_count += 1
+                    file_has_errors = True # Mark file as having issues, preventing partial save
+                    bus.error(L.pump.error.conflict, path=module.file_path, key=fqn)
+                    continue
 
-def test_plan_for_overwrite_without_strip(runner, sample_module):
-    """测试场景：代码优先 (`HYDRATE_OVERWRITE`) + 不请求剥离"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_OVERWRITE}
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=False)
+                if plan.hydrate_yaml:
+                    if fqn in source_docs and new_yaml_docs.get(fqn) != source_docs[fqn]:
+                        new_yaml_docs[fqn] = source_docs[fqn]
+                        updated_keys_in_file.append(fqn)
+                        file_had_updates = True
 
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is True
-    assert p_a.update_doc_fingerprint is True
-    assert p_a.strip_source_docstring is False
-    assert p_a.update_code_fingerprint is True
+                fp = new_hashes.get(fqn) or Fingerprint()
+                
+                if plan.update_doc_fingerprint:
+                    if fqn in source_docs:
+                        doc_hash = self.doc_manager.compute_yaml_content_hash(source_docs[fqn])
+                        fp["baseline_yaml_content_hash"] = doc_hash
+                        # If we have a new key (or recovering from invalid legacy), 
+                        # we should try to grab its code hash too if available
+                        if fqn not in stored_hashes:
+                             current_fp = self.sig_manager.compute_fingerprints(module).get(fqn, Fingerprint())
+                             if "current_code_structure_hash" in current_fp:
+                                 fp["baseline_code_structure_hash"] = current_fp["current_code_structure_hash"]
+                        new_hashes[fqn] = fp
+                        file_had_updates = True
+                
+                if fqn in decisions and decisions[fqn] == ResolutionAction.HYDRATE_KEEP_EXISTING:
+                    reconciled_keys_in_file.append(fqn)
 
+                if plan.strip_source_docstring:
+                    strip_jobs[module.file_path].append(fqn)
 
-def test_plan_for_keep_existing_with_strip(runner, sample_module):
-    """测试场景：侧栏优先 (`HYDRATE_KEEP_EXISTING`) + 请求剥离 (`--strip`)"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_KEEP_EXISTING}
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=True)
+            # Atomic save logic: Only save if there were updates AND no errors in this file.
+            # We also check if new_hashes != stored_hashes to support recovering legacy/corrupt signature files
+            # even if 'file_had_updates' (meaning doc updates) is False.
+            signatures_need_save = (new_hashes != stored_hashes)
+            
+            if not file_has_errors:
+                if file_had_updates:
+                    module_path = self.root_path / module.file_path
+                    doc_path = module_path.with_suffix(".stitcher.yaml")
+                    self.doc_manager.adapter.save(doc_path, new_yaml_docs)
+                
+                if file_had_updates or signatures_need_save:
+                    self.sig_manager.save_composite_hashes(module, new_hashes)
+                
+            if updated_keys_in_file:
+                total_updated_keys += len(updated_keys_in_file)
+                bus.success(L.pump.file.success, path=module.file_path, count=len(updated_keys_in_file))
+            
+            if reconciled_keys_in_file:
+                total_reconciled_keys += len(reconciled_keys_in_file)
+                bus.info(L.pump.info.reconciled, path=module.file_path, count=len(reconciled_keys_in_file))
+~~~~~
+~~~~~python.new
+        for module in all_modules:
+            file_plan = self._generate_execution_plan(module, decisions, strip)
+            
+            source_docs = self.doc_manager.flatten_module_docs(module)
+            current_yaml_docs = self.doc_manager.load_docs_for_module(module)
+            stored_hashes = self.sig_manager.load_composite_hashes(module)
+            
+            # Pre-compute current fingerprints for efficiency
+            current_fingerprints = self.sig_manager.compute_fingerprints(module)
 
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is False
-    assert p_a.update_doc_fingerprint is False
-    assert p_a.strip_source_docstring is True
-    assert p_a.update_code_fingerprint is True
+            new_yaml_docs = current_yaml_docs.copy()
+            new_hashes = copy.deepcopy(stored_hashes)
+            
+            file_had_updates = False
+            file_has_errors = False # Check for atomic writes
+            updated_keys_in_file = []
+            reconciled_keys_in_file = []
 
+            for fqn, plan in file_plan.items():
+                if fqn in decisions and decisions[fqn] == ResolutionAction.SKIP:
+                    unresolved_conflicts_count += 1
+                    file_has_errors = True # Mark file as having issues, preventing partial save
+                    bus.error(L.pump.error.conflict, path=module.file_path, key=fqn)
+                    continue
 
-def test_plan_for_keep_existing_without_strip(runner, sample_module):
-    """测试场景：侧栏优先 (`HYDRATE_KEEP_EXISTING`) + 不请求剥离"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_KEEP_EXISTING}
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=False)
+                if plan.hydrate_yaml:
+                    if fqn in source_docs and new_yaml_docs.get(fqn) != source_docs[fqn]:
+                        new_yaml_docs[fqn] = source_docs[fqn]
+                        updated_keys_in_file.append(fqn)
+                        file_had_updates = True
 
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is False
-    assert p_a.update_doc_fingerprint is False
-    assert p_a.strip_source_docstring is False
-    assert p_a.update_code_fingerprint is True
+                fp = new_hashes.get(fqn) or Fingerprint()
+                fqn_was_updated = False
+                
+                if plan.update_code_fingerprint:
+                    current_fp = current_fingerprints.get(fqn, Fingerprint())
+                    if "current_code_structure_hash" in current_fp:
+                        fp["baseline_code_structure_hash"] = current_fp["current_code_structure_hash"]
+                    if "current_code_signature_text" in current_fp:
+                        fp["baseline_code_signature_text"] = current_fp["current_code_signature_text"]
+                    fqn_was_updated = True
 
+                if plan.update_doc_fingerprint:
+                    if fqn in source_docs:
+                        doc_hash = self.doc_manager.compute_yaml_content_hash(source_docs[fqn])
+                        fp["baseline_yaml_content_hash"] = doc_hash
+                        fqn_was_updated = True
+                
+                if fqn_was_updated:
+                    new_hashes[fqn] = fp
+                
+                if fqn in decisions and decisions[fqn] == ResolutionAction.HYDRATE_KEEP_EXISTING:
+                    reconciled_keys_in_file.append(fqn)
 
-def test_plan_for_skip(runner, sample_module):
-    """测试场景：用户选择跳过 (`SKIP`)"""
-    decisions = {"func_a": ResolutionAction.SKIP}
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=True)
+                if plan.strip_source_docstring:
+                    strip_jobs[module.file_path].append(fqn)
 
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is False
-    assert p_a.update_doc_fingerprint is False
-    assert p_a.strip_source_docstring is False
-    assert p_a.update_code_fingerprint is False
-
-
-def test_plan_for_no_conflict(runner, sample_module):
-    """测试场景：无冲突的函数 (在decisions中不存在)"""
-    decisions = {"func_b": ResolutionAction.SKIP}  # func_a is no-conflict
-    plan = runner._generate_execution_plan(sample_module, decisions, strip_requested=True)
-
-    # func_a 应该被正常处理
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is True
-    assert p_a.update_doc_fingerprint is True
-    assert p_a.strip_source_docstring is True
-    assert p_a.update_code_fingerprint is True
-    
-    # func_b 应该被跳过
-    p_b = plan["func_b"]
-    assert p_b.hydrate_yaml is False
-    assert p_b.update_doc_fingerprint is False
-    assert p_b.strip_source_docstring is False
-    assert p_b.update_code_fingerprint is False
+            # Atomic save logic: Only save if there were updates AND no errors in this file.
+            signatures_need_save = (new_hashes != stored_hashes)
+            
+            if not file_has_errors:
+                if file_had_updates:
+                    module_path = self.root_path / module.file_path
+                    doc_path = module_path.with_suffix(".stitcher.yaml")
+                    self.doc_manager.adapter.save(doc_path, new_yaml_docs)
+                
+                if signatures_need_save:
+                    self.sig_manager.save_composite_hashes(module, new_hashes)
+                
+            if updated_keys_in_file:
+                total_updated_keys += len(updated_keys_in_file)
+                bus.success(L.pump.file.success, path=module.file_path, count=len(updated_keys_in_file))
+            
+            if reconciled_keys_in_file:
+                total_reconciled_keys += len(reconciled_keys_in_file)
+                bus.info(L.pump.info.reconciled, path=module.file_path, count=len(reconciled_keys_in_file))
 ~~~~~
 
 ### 下一步建议
-请运行测试。我们预期的结果是测试会**失败**，因为 `update_code_fingerprint` 的断言会暴露出现有代码的缺陷。一旦我们确认了失败，我将立即生成下一个计划来修复 `pump.py` 中的 bug，使测试通过。
+现在，代码已经被修正以符合我们增强后的测试规范。请再次运行测试套件。我们预期的结果是所有测试都将通过。一旦通过，我们就可以生成一个 `[COMMIT]` 计划来正式地将这项重构工作记录到版本历史中。

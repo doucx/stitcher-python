@@ -73,18 +73,21 @@ class PumpRunner:
 
             if decision == ResolutionAction.SKIP:
                 pass  # All flags default to False
-            elif (
-                decision == ResolutionAction.HYDRATE_OVERWRITE
-                or (decision is None and has_source_doc)
-            ):
-                exec_plan.hydrate_yaml = True
-                exec_plan.update_doc_fingerprint = True
-                if strip_requested:
-                    exec_plan.strip_source_docstring = True
-            elif decision == ResolutionAction.HYDRATE_KEEP_EXISTING:
-                if strip_requested:
-                    exec_plan.strip_source_docstring = True
+            else:
+                # All other cases require updating the code fingerprint.
+                exec_plan.update_code_fingerprint = True
 
+                if (
+                    decision == ResolutionAction.HYDRATE_OVERWRITE
+                    or (decision is None and has_source_doc)
+                ):
+                    exec_plan.hydrate_yaml = True
+                    exec_plan.update_doc_fingerprint = True
+                    if strip_requested:
+                        exec_plan.strip_source_docstring = True
+                elif decision == ResolutionAction.HYDRATE_KEEP_EXISTING:
+                    if strip_requested:
+                        exec_plan.strip_source_docstring = True
             plan[fqn] = exec_plan
 
         return plan
@@ -147,6 +150,9 @@ class PumpRunner:
             current_yaml_docs = self.doc_manager.load_docs_for_module(module)
             stored_hashes = self.sig_manager.load_composite_hashes(module)
             
+            # Pre-compute current fingerprints for efficiency
+            current_fingerprints = self.sig_manager.compute_fingerprints(module)
+
             new_yaml_docs = current_yaml_docs.copy()
             new_hashes = copy.deepcopy(stored_hashes)
             
@@ -169,19 +175,24 @@ class PumpRunner:
                         file_had_updates = True
 
                 fp = new_hashes.get(fqn) or Fingerprint()
+                fqn_was_updated = False
                 
+                if plan.update_code_fingerprint:
+                    current_fp = current_fingerprints.get(fqn, Fingerprint())
+                    if "current_code_structure_hash" in current_fp:
+                        fp["baseline_code_structure_hash"] = current_fp["current_code_structure_hash"]
+                    if "current_code_signature_text" in current_fp:
+                        fp["baseline_code_signature_text"] = current_fp["current_code_signature_text"]
+                    fqn_was_updated = True
+
                 if plan.update_doc_fingerprint:
                     if fqn in source_docs:
                         doc_hash = self.doc_manager.compute_yaml_content_hash(source_docs[fqn])
                         fp["baseline_yaml_content_hash"] = doc_hash
-                        # If we have a new key (or recovering from invalid legacy), 
-                        # we should try to grab its code hash too if available
-                        if fqn not in stored_hashes:
-                             current_fp = self.sig_manager.compute_fingerprints(module).get(fqn, Fingerprint())
-                             if "current_code_structure_hash" in current_fp:
-                                 fp["baseline_code_structure_hash"] = current_fp["current_code_structure_hash"]
-                        new_hashes[fqn] = fp
-                        file_had_updates = True
+                        fqn_was_updated = True
+                
+                if fqn_was_updated:
+                    new_hashes[fqn] = fp
                 
                 if fqn in decisions and decisions[fqn] == ResolutionAction.HYDRATE_KEEP_EXISTING:
                     reconciled_keys_in_file.append(fqn)
@@ -190,8 +201,6 @@ class PumpRunner:
                     strip_jobs[module.file_path].append(fqn)
 
             # Atomic save logic: Only save if there were updates AND no errors in this file.
-            # We also check if new_hashes != stored_hashes to support recovering legacy/corrupt signature files
-            # even if 'file_had_updates' (meaning doc updates) is False.
             signatures_need_save = (new_hashes != stored_hashes)
             
             if not file_has_errors:
@@ -200,7 +209,7 @@ class PumpRunner:
                     doc_path = module_path.with_suffix(".stitcher.yaml")
                     self.doc_manager.adapter.save(doc_path, new_yaml_docs)
                 
-                if file_had_updates or signatures_need_save:
+                if signatures_need_save:
                     self.sig_manager.save_composite_hashes(module, new_hashes)
                 
             if updated_keys_in_file:
