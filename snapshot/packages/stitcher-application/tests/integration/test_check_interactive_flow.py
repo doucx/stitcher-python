@@ -211,4 +211,6 @@ def test_check_interactive_purge_deletes_empty_yaml(tmp_path, monkeypatch):
     # 3. Assert
     assert success is True
     spy_bus.assert_id_called(L.check.state.purged, level="success")
-    assert not doc_file.exists(), "YAML file should have been deleted after last entry was purged."
+    assert not doc_file.exists(), (
+        "YAML file should have been deleted after last entry was purged."
+    )

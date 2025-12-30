@@ -26,15 +26,9 @@
     "baseline_yaml_content_hash": "d7f2634e2871aa3cb1129ae9711e63a42eab6cd69f513c3a9390d819dcd44e77"
   },
   "FileCheckResult.warnings": {},
-  "PumpResult": {
-    "baseline_yaml_content_hash": "5effea5a9812353c7c495546a50ec415d5bc7f503ad3ba9c7904bc7defa664b5"
-  },
-  "PumpResult.redundant_files": {
-    "baseline_yaml_content_hash": "2f8f4d8f73d16cc808279e59babd0b58c2c9c1026a340ce93300dba0b4017690"
-  },
-  "PumpResult.success": {
-    "baseline_yaml_content_hash": "8db84ff52425d04b98487ed586553864ff9fcbe5916879c1ea538fb2f241ecbd"
-  },
+  "PumpResult": {},
+  "PumpResult.redundant_files": {},
+  "PumpResult.success": {},
   "StitcherApp": {
     "baseline_yaml_content_hash": "56ba56645ae8bc442c435ee789bb3cfbddd0eaefc0e0a33b11b20ba6d391dc55"
   },
