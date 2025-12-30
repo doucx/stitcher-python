@@ -40,6 +40,15 @@ class TyperInteractionHandler(InteractionHandler):
                         desc_id=L.interactive.option.relink.desc,
                     )
                 )
+            elif context.conflict_type == ConflictType.DANGLING_DOC:
+                options.append(
+                    SemanticMenuOption(
+                        key="p",
+                        action=ResolutionAction.PURGE_DOC,
+                        label_id=L.interactive.option.purge.label,
+                        desc_id=L.interactive.option.purge.desc,
+                    )
+                )
             elif context.conflict_type == ConflictType.CO_EVOLUTION:
                 options.append(
                     SemanticMenuOption(

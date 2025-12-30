@@ -137,6 +137,7 @@ class ConflictType(str, Enum):
     SIGNATURE_DRIFT = "SIGNATURE_DRIFT"
     CO_EVOLUTION = "CO_EVOLUTION"
     DOC_CONTENT_CONFLICT = "DOC_CONTENT_CONFLICT"
+    DANGLING_DOC = "DANGLING_DOC"
 
 
 class ResolutionAction(str, Enum):
@@ -146,6 +147,7 @@ class ResolutionAction(str, Enum):
     HYDRATE_KEEP_EXISTING = (
         "HYDRATE_KEEP_EXISTING"  # Equivalent to --reconcile (YAML wins)
     )
+    PURGE_DOC = "PURGE_DOC"
     SKIP = "SKIP"
     ABORT = "ABORT"
 

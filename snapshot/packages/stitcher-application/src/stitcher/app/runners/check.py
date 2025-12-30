@@ -57,14 +57,18 @@ class CheckRunner:
         result = FileCheckResult(path=module.file_path)
         unresolved_conflicts: list[InteractionContext] = []
 
-        # Content checks (unchanged)
+        # Content checks
         if (self.root_path / module.file_path).with_suffix(".stitcher.yaml").exists():
             doc_issues = self.doc_manager.check_module(module)
             result.warnings["missing"].extend(doc_issues["missing"])
             result.warnings["redundant"].extend(doc_issues["redundant"])
             result.errors["pending"].extend(doc_issues["pending"])
             result.errors["conflict"].extend(doc_issues["conflict"])
-            result.errors["extra"].extend(doc_issues["extra"])
+            # extra is now handled as a potential interactive conflict
+            for fqn in doc_issues["extra"]:
+                unresolved_conflicts.append(
+                    InteractionContext(module.file_path, fqn, ConflictType.DANGLING_DOC)
+                )
 
         # State machine analysis
         is_tracked = (
@@ -141,7 +145,20 @@ class CheckRunner:
     def _apply_resolutions(
         self, resolutions: dict[str, list[tuple[str, ResolutionAction]]]
     ):
+        # --- Handle Signature Updates ---
+        sig_updates_by_file = defaultdict(list)
+        # --- Handle Doc Purges ---
+        purges_by_file = defaultdict(list)
+
         for file_path, fqn_actions in resolutions.items():
+            for fqn, action in fqn_actions:
+                if action in [ResolutionAction.RELINK, ResolutionAction.RECONCILE]:
+                    sig_updates_by_file[file_path].append((fqn, action))
+                elif action == ResolutionAction.PURGE_DOC:
+                    purges_by_file[file_path].append(fqn)
+
+        # Apply signature updates
+        for file_path, fqn_actions in sig_updates_by_file.items():
             module_def = ModuleDef(file_path=file_path)  # Minimal def for path logic
             stored_hashes = self.sig_manager.load_composite_hashes(module_def)
             new_hashes = copy.deepcopy(stored_hashes)
@@ -175,6 +192,25 @@ class CheckRunner:
 
             if new_hashes != stored_hashes:
                 self.sig_manager.save_composite_hashes(module_def, new_hashes)
+
+        # Apply doc purges
+        for file_path, fqns_to_purge in purges_by_file.items():
+            module_def = ModuleDef(file_path=file_path)
+            docs = self.doc_manager.load_docs_for_module(module_def)
+            original_len = len(docs)
+
+            for fqn in fqns_to_purge:
+                if fqn in docs:
+                    del docs[fqn]
+
+            if len(docs) < original_len:
+                doc_path = (self.root_path / file_path).with_suffix(".stitcher.yaml")
+                if not docs:
+                    # If all docs are purged, delete the file
+                    if doc_path.exists():
+                        doc_path.unlink()
+                else:
+                    self.doc_manager.adapter.save(doc_path, docs)
 
     def run(self, force_relink: bool = False, reconcile: bool = False) -> bool:
         configs, _ = load_config_from_path(self.root_path)
@@ -242,14 +278,17 @@ class CheckRunner:
                     reconciled_results[context.file_path]["reconcile"].append(
                         context.fqn
                     )
+                elif action == ResolutionAction.PURGE_DOC:
+                    resolutions_by_file[context.file_path].append((context.fqn, action))
+                    reconciled_results[context.file_path]["purged"].append(context.fqn)
                 elif action == ResolutionAction.SKIP:
                     for res in all_results:
                         if res.path == context.file_path:
-                            error_key = (
-                                "signature_drift"
-                                if context.conflict_type == ConflictType.SIGNATURE_DRIFT
-                                else "co_evolution"
-                            )
+                            error_key = {
+                                ConflictType.SIGNATURE_DRIFT: "signature_drift",
+                                ConflictType.CO_EVOLUTION: "co_evolution",
+                                ConflictType.DANGLING_DOC: "extra",
+                            }.get(context.conflict_type, "unknown")
                             res.errors[error_key].append(context.fqn)
                             break
                 elif action == ResolutionAction.ABORT:
@@ -266,6 +305,9 @@ class CheckRunner:
                     res.reconciled["reconcile"] = reconciled_results[res.path][
                         "reconcile"
                     ]
+                    res.reconciled["purged"] = reconciled_results[res.path].get(
+                        "purged", []
+                    )
         else:
             handler = NoOpInteractionHandler(force_relink, reconcile)
             chosen_actions = handler.process_interactive_session(all_conflicts)
@@ -284,11 +326,11 @@ class CheckRunner:
                 else:
                     for res in all_results:
                         if res.path == context.file_path:
-                            error_key = (
-                                "signature_drift"
-                                if context.conflict_type == ConflictType.SIGNATURE_DRIFT
-                                else "co_evolution"
-                            )
+                            error_key = {
+                                ConflictType.SIGNATURE_DRIFT: "signature_drift",
+                                ConflictType.CO_EVOLUTION: "co_evolution",
+                                ConflictType.DANGLING_DOC: "extra",
+                            }.get(context.conflict_type, "unknown")
                             res.errors[error_key].append(context.fqn)
             self._apply_resolutions(dict(resolutions_by_file))
             for res in all_results:
@@ -319,6 +361,8 @@ class CheckRunner:
                     bus.success(L.check.state.relinked, key=key, path=res.path)
                 for key in res.reconciled.get("reconcile", []):
                     bus.success(L.check.state.reconciled, key=key, path=res.path)
+                for key in res.reconciled.get("purged", []):
+                    bus.success(L.check.state.purged, key=key, path=res.path)
             if res.error_count > 0:
                 global_failed_files += 1
                 bus.error(L.check.file.fail, path=res.path, count=res.error_count)
