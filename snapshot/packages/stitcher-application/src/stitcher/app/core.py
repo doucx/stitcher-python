@@ -702,7 +702,7 @@ class StitcherApp:
         all_modules: List[ModuleDef] = []
         all_conflicts: List[InteractionContext] = []
 
-        # 1. Analysis Phase (Dry Run)
+        # --- Phase 1: Analysis ---
         for config in configs:
             if config.name != "default":
                 bus.info(L.generate.target.processing, name=config.name)
@@ -718,17 +718,12 @@ class StitcherApp:
                     module, force=force, reconcile=reconcile, dry_run=True
                 )
                 if not res["success"]:
-                    # Generate content diffs for conflicts
                     source_docs = self.doc_manager.flatten_module_docs(module)
                     yaml_docs = self.doc_manager.load_docs_for_module(module)
-
                     for key in res["conflicts"]:
-                        doc_diff = None
-                        if key in source_docs and key in yaml_docs:
-                            doc_diff = self._generate_diff(
-                                yaml_docs[key], source_docs[key], "yaml", "code"
-                            )
-
+                        doc_diff = self._generate_diff(
+                            yaml_docs.get(key, ""), source_docs.get(key, ""), "yaml", "code"
+                        )
                         all_conflicts.append(
                             InteractionContext(
                                 module.file_path,
@@ -738,182 +733,107 @@ class StitcherApp:
                             )
                         )
 
-        # 2. Decision Phase
-        resolutions_by_file: Dict[str, Dict[str, ResolutionAction]] = defaultdict(dict)
-
+        # --- Phase 2: Decision ---
+        decisions: Dict[str, ResolutionAction] = {}
         if all_conflicts:
-            if self.interaction_handler:
-                chosen_actions = self.interaction_handler.process_interactive_session(
-                    all_conflicts
-                )
-            else:
-                handler = NoOpInteractionHandler(
-                    hydrate_force=force, hydrate_reconcile=reconcile
-                )
-                chosen_actions = handler.process_interactive_session(all_conflicts)
+            handler = self.interaction_handler or NoOpInteractionHandler(
+                hydrate_force=force, hydrate_reconcile=reconcile
+            )
+            chosen_actions = handler.process_interactive_session(all_conflicts)
 
             for i, context in enumerate(all_conflicts):
                 action = chosen_actions[i]
                 if action == ResolutionAction.ABORT:
                     bus.error(L.pump.run.aborted)
                     return PumpResult(success=False)
-                resolutions_by_file[context.file_path][context.fqn] = action
+                decisions[context.fqn] = action
 
-        # 3. Execution Phase
-        total_updated = 0
-        total_conflicts_remaining = 0
+        # --- Phase 3 & 4: Planning & Execution ---
+        strip_jobs = defaultdict(list)
+        total_updated_files = 0
+        total_unresolved_conflicts = 0
         redundant_files: List[Path] = []
-        files_to_strip_now = []
 
         for module in all_modules:
-            resolution_map = resolutions_by_file.get(module.file_path, {})
+            # Phase 3: Planning
+            file_plan = self._generate_execution_plan(module, decisions, strip)
+            
+            # Prepare for execution
+            source_docs = self.doc_manager.flatten_module_docs(module)
+            current_yaml_docs = self.doc_manager.load_docs_for_module(module)
+            stored_hashes = self.sig_manager.load_composite_hashes(module)
+            current_fingerprints = self.sig_manager.compute_fingerprints(module)
+            
+            new_yaml_docs = current_yaml_docs.copy()
+            new_hashes = copy.deepcopy(stored_hashes)
+            
+            file_was_modified = False
+            
+            # Phase 4: Execution (per-file)
+            for fqn, plan in file_plan.items():
+                if plan.hydrate_yaml:
+                    if fqn in source_docs:
+                        new_yaml_docs[fqn] = source_docs[fqn]
+                        file_was_modified = True
+                
+                fp = new_hashes.get(fqn, Fingerprint())
+                current_fp = current_fingerprints.get(fqn, Fingerprint())
 
-            # Execute hydration with resolutions
-            result = self.doc_manager.hydrate_module(
-                module,
-                force=force,
-                reconcile=reconcile,
-                resolution_map=resolution_map,
-                dry_run=False,
-            )
+                if plan.update_doc_fingerprint:
+                    if fqn in source_docs:
+                        doc_hash = self.doc_manager.compute_yaml_content_hash(source_docs[fqn])
+                        fp["baseline_yaml_content_hash"] = doc_hash
+                        file_was_modified = True
 
-            if not result["success"]:
-                # If conflicts persist, it's a failure for this file.
-                # Do not update anything for this module. This ensures file-level atomicity.
-                total_conflicts_remaining += len(result["conflicts"])
-                for conflict_key in result["conflicts"]:
-                    bus.error(
-                        L.pump.error.conflict,
-                        path=module.file_path,
-                        key=conflict_key,
-                    )
-                continue
-
-            # --- ATOMIC SIGNATURE UPDATE ---
-            # This block only runs if hydrate_module succeeded for the entire file.
-
-            if result["reconciled_keys"]:
-                bus.info(
-                    L.pump.info.reconciled,
-                    path=module.file_path,
-                    count=len(result["reconciled_keys"]),
-                )
-            if result["updated_keys"]:
-                total_updated += 1
-                bus.success(
-                    L.pump.file.success,
-                    path=module.file_path,
-                    count=len(result["updated_keys"]),
-                )
-
-            # Only update signatures if something was actually hydrated or reconciled.
-            if result["updated_keys"] or result["reconciled_keys"]:
-                stored_hashes = self.sig_manager.load_composite_hashes(module)
-                new_hashes = copy.deepcopy(stored_hashes)
-                computed_fingerprints = self.sig_manager.compute_fingerprints(module)
-                current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
-                    module
-                )
-
-                # For keys where code doc was authoritative (updated/force-hydrated)
-                for fqn in result["updated_keys"]:
-                    fp = computed_fingerprints.get(fqn, Fingerprint())
-
-                    # Check for existing baseline to preserve
-                    stored_fp = new_hashes.get(fqn)
-
-                    # Atomically convert current to baseline, BUT preserve existing code baselines
-                    # to prevent implicit acceptance of signature drift.
-                    if "current_code_structure_hash" in fp:
-                        if stored_fp and "baseline_code_structure_hash" in stored_fp:
-                            fp["baseline_code_structure_hash"] = stored_fp[
-                                "baseline_code_structure_hash"
-                            ]
-                        else:
-                            fp["baseline_code_structure_hash"] = fp[
-                                "current_code_structure_hash"
-                            ]
-                        del fp["current_code_structure_hash"]
-
-                    if "current_code_signature_text" in fp:
-                        if stored_fp and "baseline_code_signature_text" in stored_fp:
-                            fp["baseline_code_signature_text"] = stored_fp[
-                                "baseline_code_signature_text"
-                            ]
-                        else:
-                            fp["baseline_code_signature_text"] = fp[
-                                "current_code_signature_text"
-                            ]
-                        del fp["current_code_signature_text"]
-
-                    if fqn in current_yaml_map:
-                        fp["baseline_yaml_content_hash"] = current_yaml_map[fqn]
-                    new_hashes[fqn] = fp
-
-                # For keys where yaml doc was authoritative (reconciled)
-                for fqn in result["reconciled_keys"]:
-                    # Start with the existing hash to preserve yaml_content_hash
-                    fp = new_hashes.get(fqn, Fingerprint())
-                    current_fp = computed_fingerprints.get(fqn, Fingerprint())
-                    # Only update the code baseline, leaving yaml baseline intact
+                if plan.update_code_fingerprint:
                     if "current_code_structure_hash" in current_fp:
-                        fp["baseline_code_structure_hash"] = current_fp[
-                            "current_code_structure_hash"
-                        ]
+                        fp["baseline_code_structure_hash"] = current_fp["current_code_structure_hash"]
                     if "current_code_signature_text" in current_fp:
-                        fp["baseline_code_signature_text"] = current_fp[
-                            "current_code_signature_text"
-                        ]
-                    new_hashes[fqn] = fp
+                        fp["baseline_code_signature_text"] = current_fp["current_code_signature_text"]
+                    file_was_modified = True
+                
+                new_hashes[fqn] = fp
+                
+                if plan.strip_source_docstring:
+                    strip_jobs[module.file_path].append(fqn)
 
+            # Atomic writes for metadata
+            if file_was_modified:
+                total_updated_files += 1
+                module_path = self.root_path / module.file_path
+                doc_path = module_path.with_suffix(".stitcher.yaml")
+                self.doc_manager.adapter.save(doc_path, new_yaml_docs)
                 self.sig_manager.save_composite_hashes(module, new_hashes)
 
-            # Collect candidates for stripping
-            if strip:
-                files_to_strip_now.append(module)
-            else:
-                # If we are NOT stripping now, we check if there are docs in code
-                # that are redundant (meaning they are safe to strip later)
-                # We check this by seeing if the file content would change if stripped
-                source_path = self.root_path / module.file_path
-                try:
-                    original = source_path.read_text(encoding="utf-8")
-                    stripped = self.transformer.strip(original)
-                    if original != stripped:
-                        redundant_files.append(source_path)
-                except Exception:
-                    pass
+            # Check for unresolved conflicts
+            for fqn, plan in file_plan.items():
+                is_unresolved = not any([plan.hydrate_yaml, plan.update_code_fingerprint, plan.strip_source_docstring]) and fqn in decisions
+                if is_unresolved:
+                     total_unresolved_conflicts += 1
+                     bus.error(L.pump.error.conflict, path=module.file_path, key=fqn)
 
-        # 4. Strip Phase (Immediate)
-        if files_to_strip_now:
-            stripped_count = 0
-            for module in files_to_strip_now:
-                source_path = self.root_path / module.file_path
+        # --- Phase 5: Stripping ---
+        if strip_jobs:
+            for file_path, whitelist in strip_jobs.items():
+                source_path = self.root_path / file_path
                 try:
-                    original_content = source_path.read_text(encoding="utf-8")
-                    stripped_content = self.transformer.strip(original_content)
+                    original_content = source_path.read_text("utf-8")
+                    stripped_content = self.transformer.strip(original_content, whitelist=whitelist)
                     if original_content != stripped_content:
-                        source_path.write_text(stripped_content, encoding="utf-8")
-                        stripped_count += 1
-                        relative_path = source_path.relative_to(self.root_path)
-                        bus.success(L.strip.file.success, path=relative_path)
+                        source_path.write_text(stripped_content, "utf-8")
+                        bus.success(L.strip.file.success, path=source_path.relative_to(self.root_path))
                 except Exception as e:
                     bus.error(L.error.generic, error=e)
-            if stripped_count > 0:
-                bus.success(L.strip.run.complete, count=stripped_count)
-
-        if total_conflicts_remaining > 0:
-            bus.error(L.pump.run.conflict, count=total_conflicts_remaining)
+        
+        # Final Reporting
+        if total_unresolved_conflicts > 0:
+            bus.error(L.pump.run.conflict, count=total_unresolved_conflicts)
             return PumpResult(success=False)
-
-        if total_updated == 0:
+        
+        if total_updated_files == 0 and not strip_jobs:
             bus.info(L.pump.run.no_changes)
         else:
-            bus.success(L.pump.run.complete, count=total_updated)
-
-        # Reformat Phase: Ensure all processed modules have up-to-date signature schema
-        for module in all_modules:
-            self.sig_manager.reformat_hashes_for_module(module)
+            bus.success(L.pump.run.complete, count=total_updated_files)
 
         return PumpResult(success=True, redundant_files=redundant_files)
 
@@ -932,7 +852,8 @@ class StitcherApp:
         for file_path in files_to_process:
             try:
                 original_content = file_path.read_text(encoding="utf-8")
-                stripped_content = self.transformer.strip(original_content)
+                # Call strip with whitelist=None for global stripping
+                stripped_content = self.transformer.strip(original_content, whitelist=None)
                 if original_content != stripped_content:
                     file_path.write_text(stripped_content, encoding="utf-8")
                     all_modified_files.append(file_path)

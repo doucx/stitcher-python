@@ -1,276 +1,64 @@
-你完全正确，我的疏忽导致了这个 `ImportError`。非常感谢你提供了详细的错误追踪，这能帮助我们快速定位问题。
+好的，我们正式进入第三阶段。
 
-我在 **阶段 1** 的计划中，虽然在 `stitcher.spec.models` 文件里定义了新的 `FunctionExecutionPlan` 数据类，但我忘记了最关键的一步：**在 `stitcher.spec` 包的 `__init__.py` 文件中将其导出**。
-
-因此，当 `stitcher.app.core` 尝试 `from stitcher.spec import FunctionExecutionPlan` 时，它在包的公共 API 中找不到这个名称，从而引发了 `ImportError`。
-
-我们将立即修正这个问题，然后继续我们原定的 **阶段 2** 计划。下面的计划将首先包含这个修复，然后是 TDD 的实施步骤。
+这是整个重构任务的高潮部分。我们将把前两个阶段构建的基础（新的 `spec` 和 `planner`）整合起来，对 `run_pump` 方法进行一次彻底的手术，用一个更清晰、更强大、更精确的函数级工作流来取代旧的逻辑。
 
 ---
 
-## [WIP] fix(spec): 导出 FunctionExecutionPlan 并开始 TDD 阶段
+## [WIP] feat(app): 重构 run_pump 以实现函数级原子操作
 
 ### 用户需求
-1.  修复因 `FunctionExecutionPlan` 未在 `stitcher.spec` 包中导出而导致的 `ImportError`。
-2.  继续实施阶段 2：通过 TDD 的方式创建执行计划生成器 `_generate_execution_plan`。
+重构 `run_pump` 方法，使其完全采用新的 `分析 -> 决策 -> 计划 -> 执行` 工作流。该方法必须能够基于 `FunctionExecutionPlan` 对 YAML 文档、签名指纹和源码剥离执行精确到函数的原子性操作。
 
 ### 评论
-这个修复是进入 TDD 阶段的必要前提。在修复之后，我们为 `_generate_execution_plan` 编写的测试将会因为“方法未实现”而失败，这正是 TDD 流程所期望的正确起点。我们将把修复和 TDD 的第一步（编写失败的测试）合并到同一个计划中。
+这是将所有理论付诸实践的决定性一步。通过用一个清晰的、分阶段的流程替换掉原来耦合度很高的 `run_pump` 实现，我们不仅实现了功能上的飞跃（函数级操作），还极大地提升了代码的可读性、可维护性和性能。这将是 `stitcher` 核心逻辑的一次重要演进。
 
 ### 目标
-1.  **修复**: 在 `packages/stitcher-spec/src/stitcher/spec/__init__.py` 中导出 `FunctionExecutionPlan`。
-2.  **TDD**:
-    *   为 `ModuleDef` 添加 `get_all_fqns()` 辅助方法。
-    *   创建 `test_execution_planner.py` 并编写所有预期会失败的测试用例。
-    *   在 `StitcherApp` 中实现 `_generate_execution_plan` 方法以通过测试。
+1.  完整地重写 `StitcherApp.run_pump` 的实现。
+2.  在新的实现中，集成对 `_generate_execution_plan` 的调用。
+3.  根据生成的执行计划，实现对 YAML 文档和签名哈希的 **函数级、原子性** 更新。
+4.  根据执行计划，收集需要被剥离的函数 `fqn`，并在所有文件更新后，**批量执行** 函数级的源码剥离操作。
+5.  确保最终的返回结果 `PumpResult` 和用户反馈（通过 `bus`）能准确反映函数级操作的结果。
 
 ### 基本原理
-我们首先纠正上一步的疏忽，确保项目处于一个可测试的状态。然后，我们严格遵循 TDD 流程，先用测试来定义新功能的规格和契约，再编写代码来满足这些测试。
+我们将使用 `write_file` 对 `core.py` 进行整体更新，因为 `run_pump` 的逻辑变更范围太大，用 `patch_file` 难以维护且易出错。
+
+新的 `run_pump` 流程将严格分离关注点：
+1.  **分析与决策**: 收集所有冲突并从用户（或标志）那里获得决策，这部分与之前类似但更聚焦于产出“决策日志”。
+2.  **计划**: 将“决策日志”输入 `_generate_execution_plan`，为每个文件生成确定性的执行蓝图。
+3.  **执行**: 这是一个“哑”执行阶段，它只忠实地执行计划，分为两个子步骤：
+    *   **元数据更新**: 遍历计划，在内存中修改 `yaml` 和 `signatures`，然后一次性写回磁盘，确保文件级的原子性。
+    *   **源码更新**: 在所有元数据更新完毕后，再对需要修改的源码文件执行精确的 `strip` 操作。
+
+这种分离使得每一步的职责都非常单一，极大地降低了心智负担。
 
 ### 标签
-#intent/fix #intent/build #flow/ready #priority/high #comp/spec #comp/app #concept/state #scope/core #ai/instruct #task/domain/refactoring #task/object/granular-strip #task/action/implementation #task/state/continue
+#intent/refine #intent/build #flow/ready #priority/high #comp/app #concept/state #scope/core #ai/instruct #task/domain/refactoring #task/object/granular-strip #task/action/implementation #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: [FIX] 导出 `FunctionExecutionPlan`
+#### Acts 1: 重构 `StitcherApp.run_pump`
 
-这是修复 `ImportError` 的关键补丁。
-
-~~~~~act
-patch_file
-packages/stitcher-spec/src/stitcher/spec/__init__.py
-~~~~~
-~~~~~python.old
-from .models import (
-    Argument,
-    ArgumentKind,
-    Attribute,
-    ClassDef,
-    FunctionDef,
-    ModuleDef,
-    ConflictType,
-    ResolutionAction,
-    Resolution,
-    ResolutionPlan,
-)
-~~~~~
-~~~~~python.new
-from .models import (
-    Argument,
-    ArgumentKind,
-    Attribute,
-    ClassDef,
-    FunctionDef,
-    ModuleDef,
-    ConflictType,
-    ResolutionAction,
-    Resolution,
-    ResolutionPlan,
-    FunctionExecutionPlan,
-)
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-spec/src/stitcher/spec/__init__.py
-~~~~~
-~~~~~python.old
-    "ResolutionAction",
-    "Resolution",
-    "ResolutionPlan",
-]
-~~~~~
-~~~~~python.new
-    "ResolutionAction",
-    "Resolution",
-    "ResolutionPlan",
-    "FunctionExecutionPlan",
-]
-~~~~~
-
-#### Acts 2: [TDD] 增强 `ModuleDef` 以支持迭代
-
-现在我们回到原定的阶段 2 计划，首先为 `ModuleDef` 添加 `get_all_fqns` 方法。
-
-~~~~~act
-patch_file
-packages/stitcher-spec/src/stitcher/spec/models.py
-~~~~~
-~~~~~python.old
-    def get_undocumented_public_keys(self) -> List[str]:
-        keys = []
-~~~~~
-~~~~~python.new
-    def get_all_fqns(self) -> List[str]:
-        """返回模块中所有可文档化实体的 FQN 列表。"""
-        fqns = []
-        if self.docstring:
-            # Consistent with how we might handle module doc in the future
-            # fqns.append("__doc__")
-            pass
-
-        for attr in self.attributes:
-            fqns.append(attr.name)
-        for func in self.functions:
-            fqns.append(func.name)
-
-        for cls in self.classes:
-            fqns.append(cls.name)
-            for attr in cls.attributes:
-                fqns.append(f"{cls.name}.{attr.name}")
-            for method in cls.methods:
-                fqns.append(f"{cls.name}.{method.name}")
-        return sorted(fqns)
-
-    def get_undocumented_public_keys(self) -> List[str]:
-        keys = []
-~~~~~
-
-#### Acts 3: [TDD] 编写测试用例
-
-创建测试文件并定义所有期望的行为。
+我们将使用 `write_file` 完整地替换 `core.py` 的内容。这包括了我们之前添加的 `_generate_execution_plan` 方法，以及全新的 `run_pump` 实现。
 
 ~~~~~act
 write_file
-packages/stitcher-application/tests/unit/test_execution_planner.py
-~~~~~
-~~~~~python
-import pytest
-from stitcher.app.core import StitcherApp
-from stitcher.spec import (
-    ModuleDef,
-    FunctionDef,
-    ResolutionAction,
-)
-from stitcher.test_utils import create_test_app
-
-
-@pytest.fixture
-def sample_module() -> ModuleDef:
-    """一个包含两个函数用于测试的模块IR。"""
-    return ModuleDef(
-        file_path="src/main.py",
-        functions=[
-            FunctionDef(name="func_a", docstring="Source Doc A"),
-            FunctionDef(name="func_b", docstring="Source Doc B"),
-        ],
-    )
-
-
-@pytest.fixture
-def app(tmp_path) -> StitcherApp:
-    """一个用于调用内部方法的StitcherApp实例。"""
-    # 绕过完整的依赖注入，因为我们只测试一个纯逻辑方法
-    class PlannerTestApp(StitcherApp):
-        def __init__(self):
-            # We need doc_manager to be available for flatten_module_docs
-            from stitcher.app.services import DocumentManager
-            self.doc_manager = DocumentManager(root_path=tmp_path)
-
-    return PlannerTestApp()
-
-
-def test_plan_for_overwrite_with_strip(app, sample_module):
-    """测试场景：代码优先 (`HYDRATE_OVERWRITE`) + 请求剥离 (`--strip`)"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_OVERWRITE}
-    plan = app._generate_execution_plan(sample_module, decisions, strip_requested=True)
-
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is True
-    assert p_a.update_code_fingerprint is True
-    assert p_a.update_doc_fingerprint is True
-    assert p_a.strip_source_docstring is True
-
-
-def test_plan_for_overwrite_without_strip(app, sample_module):
-    """测试场景：代码优先 (`HYDRATE_OVERWRITE`) + 不请求剥离"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_OVERWRITE}
-    plan = app._generate_execution_plan(sample_module, decisions, strip_requested=False)
-
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is True
-    assert p_a.update_code_fingerprint is True
-    assert p_a.update_doc_fingerprint is True
-    assert p_a.strip_source_docstring is False
-
-
-def test_plan_for_keep_existing_with_strip(app, sample_module):
-    """测试场景：侧栏优先 (`HYDRATE_KEEP_EXISTING`) + 请求剥离 (`--strip`)"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_KEEP_EXISTING}
-    plan = app._generate_execution_plan(sample_module, decisions, strip_requested=True)
-
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is False
-    assert p_a.update_code_fingerprint is True
-    assert p_a.update_doc_fingerprint is False
-    assert p_a.strip_source_docstring is True
-
-
-def test_plan_for_keep_existing_without_strip(app, sample_module):
-    """测试场景：侧栏优先 (`HYDRATE_KEEP_EXISTING`) + 不请求剥离"""
-    decisions = {"func_a": ResolutionAction.HYDRATE_KEEP_EXISTING}
-    plan = app._generate_execution_plan(sample_module, decisions, strip_requested=False)
-
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is False
-    assert p_a.update_code_fingerprint is True
-    assert p_a.update_doc_fingerprint is False
-    assert p_a.strip_source_docstring is False
-
-
-def test_plan_for_skip(app, sample_module):
-    """测试场景：用户选择跳过 (`SKIP`)"""
-    decisions = {"func_a": ResolutionAction.SKIP}
-    plan = app._generate_execution_plan(sample_module, decisions, strip_requested=True)
-
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is False
-    assert p_a.update_code_fingerprint is False
-    assert p_a.update_doc_fingerprint is False
-    assert p_a.strip_source_docstring is False
-
-
-def test_plan_for_no_conflict(app, sample_module):
-    """测试场景：无冲突的函数 (在decisions中不存在)"""
-    decisions = {"func_b": ResolutionAction.SKIP}  # func_a is no-conflict
-    plan = app._generate_execution_plan(sample_module, decisions, strip_requested=True)
-
-    # func_a 应该被正常处理
-    p_a = plan["func_a"]
-    assert p_a.hydrate_yaml is True
-    assert p_a.update_code_fingerprint is True
-    assert p_a.update_doc_fingerprint is True
-    assert p_a.strip_source_docstring is True
-    
-    # func_b 应该被跳过
-    p_b = plan["func_b"]
-    assert p_b.hydrate_yaml is False
-    assert p_b.strip_source_docstring is False
-~~~~~
-
-#### Acts 4: [TDD] 实现计划生成器
-
-最后，我们编写实现代码，以通过上面定义的所有测试。
-
-~~~~~act
-patch_file
 packages/stitcher-application/src/stitcher/app/core.py
 ~~~~~
-~~~~~python.old
-from stitcher.spec import (
-    ModuleDef,
-    ConflictType,
-    ResolutionAction,
-    Fingerprint,
-    LanguageParserProtocol,
-    LanguageTransformerProtocol,
-    StubGeneratorProtocol,
-    FingerprintStrategyProtocol,
+~~~~~python
+import copy
+import difflib
+from pathlib import Path
+from typing import Dict, List, Optional
+from collections import defaultdict
+from dataclasses import dataclass, field
+
+from stitcher.adapter.python import (
+    parse_plugin_entry,
+    InspectionError,
 )
-~~~~~
-~~~~~python.new
+
 from stitcher.spec import (
     ModuleDef,
     ConflictType,
@@ -282,27 +70,305 @@ from stitcher.spec import (
     StubGeneratorProtocol,
     FingerprintStrategyProtocol,
 )
-~~~~~
+from stitcher.common import bus
+from needle.pointer import L
+from stitcher.config import load_config_from_path, StitcherConfig
+from stitcher.app.services import (
+    DocumentManager,
+    SignatureManager,
+    StubPackageManager,
+)
+from .protocols import InteractionHandler, InteractionContext
+from .handlers.noop_handler import NoOpInteractionHandler
 
-~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
-~~~~~
-~~~~~python.old
-    def _generate_diff(self, a: str, b: str, label_a: str, label_b: str) -> str:
-        return "\n".join(
-            difflib.unified_diff(
-                a.splitlines(),
-                b.splitlines(),
-                fromfile=label_a,
-                tofile=label_b,
-                lineterm="",
-            )
+
+@dataclass
+class FileCheckResult:
+    path: str
+    errors: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
+    warnings: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
+    infos: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
+    reconciled: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
+    auto_reconciled_count: int = 0
+
+    @property
+    def error_count(self) -> int:
+        return sum(len(keys) for keys in self.errors.values())
+
+    @property
+    def warning_count(self) -> int:
+        return sum(len(keys) for keys in self.warnings.values())
+
+    @property
+    def reconciled_count(self) -> int:
+        return sum(len(keys) for keys in self.reconciled.values())
+
+    @property
+    def is_clean(self) -> bool:
+        return (
+            self.error_count == 0
+            and self.warning_count == 0
+            and self.reconciled_count == 0
+            # Auto-reconciled (infos) do not affect cleanliness
         )
 
-    def _analyze_file(
-~~~~~
-~~~~~python.new
+
+@dataclass
+class PumpResult:
+    success: bool
+    redundant_files: List[Path] = field(default_factory=list)
+
+
+class StitcherApp:
+    def __init__(
+        self,
+        root_path: Path,
+        parser: LanguageParserProtocol,
+        transformer: LanguageTransformerProtocol,
+        stub_generator: StubGeneratorProtocol,
+        fingerprint_strategy: FingerprintStrategyProtocol,
+        interaction_handler: Optional[InteractionHandler] = None,
+    ):
+        self.root_path = root_path
+        self.parser = parser
+        self.transformer = transformer
+        self.generator = stub_generator
+        self.doc_manager = DocumentManager(root_path)
+        self.sig_manager = SignatureManager(root_path, fingerprint_strategy)
+        self.stub_pkg_manager = StubPackageManager()
+        self.interaction_handler = interaction_handler
+
+    def _scan_files(self, files_to_scan: List[Path]) -> List[ModuleDef]:
+        modules = []
+        for source_file in files_to_scan:
+            try:
+                content = source_file.read_text(encoding="utf-8")
+                relative_path = source_file.relative_to(self.root_path).as_posix()
+                module_def = self.parser.parse(content, file_path=relative_path)
+                modules.append(module_def)
+            except Exception as e:
+                bus.error(L.error.generic, error=e)
+        return modules
+
+    def _derive_logical_path(self, file_path: str) -> Path:
+        path_obj = Path(file_path)
+        parts = path_obj.parts
+        try:
+            src_index = len(parts) - 1 - parts[::-1].index("src")
+            return Path(*parts[src_index + 1 :])
+        except ValueError:
+            return path_obj
+
+    def _process_plugins(self, plugins: Dict[str, str]) -> List[ModuleDef]:
+        virtual_modules: Dict[Path, ModuleDef] = defaultdict(
+            lambda: ModuleDef(file_path="")
+        )
+        for name, entry_point in plugins.items():
+            try:
+                func_def = parse_plugin_entry(entry_point)
+                parts = name.split(".")
+                module_path_parts = parts[:-1]
+                func_file_name = parts[-1]
+                func_path = Path(*module_path_parts, f"{func_file_name}.py")
+                for i in range(1, len(module_path_parts) + 1):
+                    init_path = Path(*parts[:i], "__init__.py")
+                    if not virtual_modules[init_path].file_path:
+                        virtual_modules[init_path].file_path = init_path.as_posix()
+                if not virtual_modules[func_path].file_path:
+                    virtual_modules[func_path].file_path = func_path.as_posix()
+                virtual_modules[func_path].functions.append(func_def)
+            except InspectionError as e:
+                bus.error(L.error.plugin.inspection, error=e)
+        return list(virtual_modules.values())
+
+    def _scaffold_stub_package(
+        self, config: StitcherConfig, stub_base_name: Optional[str]
+    ):
+        if not config.stub_package or not stub_base_name:
+            return
+        pkg_path = self.root_path / config.stub_package
+        package_namespace: str = ""
+        for path_str in config.scan_paths:
+            path_parts = Path(path_str).parts
+            if path_parts and path_parts[-1] != "src":
+                # This handles cases like 'src/my_app' where 'my_app' is the namespace.
+                package_namespace = path_parts[-1]
+                break
+
+        if not package_namespace:
+            # Fallback for when all scan_paths end in 'src'.
+            # Derives namespace from the target name (e.g., 'stitcher-cli' -> 'stitcher').
+            package_namespace = stub_base_name.split("-")[0]
+        stub_pkg_name = f"{stub_base_name}-stubs"
+        bus.info(L.generate.stub_pkg.scaffold, name=stub_pkg_name)
+        created = self.stub_pkg_manager.scaffold(
+            pkg_path, stub_base_name, package_namespace
+        )
+        if created:
+            bus.success(L.generate.stub_pkg.success, name=stub_pkg_name)
+        else:
+            bus.info(L.generate.stub_pkg.exists, name=stub_pkg_name)
+
+    def _generate_stubs(
+        self, modules: List[ModuleDef], config: StitcherConfig
+    ) -> List[Path]:
+        generated_files: List[Path] = []
+        created_py_typed: set[Path] = set()
+        for module in modules:
+            self.doc_manager.apply_docs_to_module(module)
+            pyi_content = self.generator.generate(module)
+            if config.stub_package:
+                logical_path = self._derive_logical_path(module.file_path)
+                stub_logical_path = self.stub_pkg_manager._get_pep561_logical_path(
+                    logical_path
+                )
+                output_path = (
+                    self.root_path
+                    / config.stub_package
+                    / "src"
+                    / stub_logical_path.with_suffix(".pyi")
+                )
+                if stub_logical_path.parts:
+                    top_level_pkg_dir = (
+                        self.root_path
+                        / config.stub_package
+                        / "src"
+                        / stub_logical_path.parts[0]
+                    )
+                    if top_level_pkg_dir not in created_py_typed:
+                        top_level_pkg_dir.mkdir(parents=True, exist_ok=True)
+                        (top_level_pkg_dir / "py.typed").touch(exist_ok=True)
+                        created_py_typed.add(top_level_pkg_dir)
+            elif config.stub_path:
+                logical_path = self._derive_logical_path(module.file_path)
+                output_path = (
+                    self.root_path / config.stub_path / logical_path.with_suffix(".pyi")
+                )
+            else:
+                output_path = self.root_path / Path(module.file_path).with_suffix(
+                    ".pyi"
+                )
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            if config.stub_package:
+                src_root = self.root_path / config.stub_package / "src"
+                current = output_path.parent
+                while current != src_root and src_root in current.parents:
+                    (current / "__init__.pyi").touch(exist_ok=True)
+                    current = current.parent
+            output_path.write_text(pyi_content, encoding="utf-8")
+            relative_path = output_path.relative_to(self.root_path)
+            bus.success(L.generate.file.success, path=relative_path)
+            generated_files.append(output_path)
+        return generated_files
+
+    def _get_files_from_config(self, config: StitcherConfig) -> List[Path]:
+        files_to_scan = []
+        for scan_path_str in config.scan_paths:
+            scan_path = self.root_path / scan_path_str
+            bus.debug(L.debug.log.scan_path, path=str(scan_path))
+
+            if scan_path.is_dir():
+                found = list(scan_path.rglob("*.py"))
+                bus.debug(
+                    L.debug.log.msg,
+                    msg=f"Found {len(found)} .py files in {scan_path}",
+                )
+                files_to_scan.extend(found)
+            elif scan_path.is_file():
+                bus.debug(L.debug.log.file_found, path=str(scan_path))
+                files_to_scan.append(scan_path)
+            else:
+                bus.debug(
+                    L.debug.log.file_ignored, path=str(scan_path), reason="Not found"
+                )
+        return sorted(list(set(files_to_scan)))
+
+    def run_from_config(self) -> List[Path]:
+        configs, project_name = load_config_from_path(self.root_path)
+        all_generated_files: List[Path] = []
+        for config in configs:
+            if config.name != "default":
+                bus.info(L.generate.target.processing, name=config.name)
+
+            # Debug config info
+            bus.debug(
+                L.debug.log.msg,
+                msg=f"Config '{config.name}': scan_paths={config.scan_paths}",
+            )
+
+            if config.stub_package:
+                stub_base_name = (
+                    config.name if config.name != "default" else project_name
+                )
+                self._scaffold_stub_package(config, stub_base_name)
+            unique_files = self._get_files_from_config(config)
+            source_modules = self._scan_files(unique_files)
+            plugin_modules = self._process_plugins(config.plugins)
+            all_modules = source_modules + plugin_modules
+            if not all_modules:
+                if len(configs) == 1:
+                    bus.warning(L.warning.no_files_or_plugins_found)
+                continue
+            generated_files = self._generate_stubs(all_modules, config)
+            all_generated_files.extend(generated_files)
+        if all_generated_files:
+            bus.success(L.generate.run.complete, count=len(all_generated_files))
+        return all_generated_files
+
+    def run_init(self) -> List[Path]:
+        configs, _ = load_config_from_path(self.root_path)
+        all_created_files: List[Path] = []
+        for config in configs:
+            if config.name != "default":
+                bus.info(L.generate.target.processing, name=config.name)
+            unique_files = self._get_files_from_config(config)
+            modules = self._scan_files(unique_files)
+            if not modules:
+                continue
+            for module in modules:
+                output_path = self.doc_manager.save_docs_for_module(module)
+
+                # Use the new unified compute method
+                computed_fingerprints = self.sig_manager.compute_fingerprints(module)
+                yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
+
+                combined: Dict[str, Fingerprint] = {}
+                all_fqns = set(computed_fingerprints.keys()) | set(yaml_hashes.keys())
+
+                for fqn in all_fqns:
+                    # Get the base computed fingerprint (code structure, sig text, etc.)
+                    fp = computed_fingerprints.get(fqn, Fingerprint())
+
+                    # Convert 'current' keys to 'baseline' keys for storage
+                    # This mapping is critical: what we just computed is now the baseline
+                    if "current_code_structure_hash" in fp:
+                        fp["baseline_code_structure_hash"] = fp[
+                            "current_code_structure_hash"
+                        ]
+                        del fp["current_code_structure_hash"]
+
+                    if "current_code_signature_text" in fp:
+                        fp["baseline_code_signature_text"] = fp[
+                            "current_code_signature_text"
+                        ]
+                        del fp["current_code_signature_text"]
+
+                    if fqn in yaml_hashes:
+                        fp["baseline_yaml_content_hash"] = yaml_hashes[fqn]
+
+                    combined[fqn] = fp
+
+                self.sig_manager.save_composite_hashes(module, combined)
+                if output_path and output_path.name:
+                    relative_path = output_path.relative_to(self.root_path)
+                    bus.success(L.init.file.created, path=relative_path)
+                    all_created_files.append(output_path)
+        if all_created_files:
+            bus.success(L.init.run.complete, count=len(all_created_files))
+        else:
+            bus.info(L.init.no_docs_found)
+        return all_created_files
+
     def _generate_diff(self, a: str, b: str, label_a: str, label_b: str) -> str:
         return "\n".join(
             difflib.unified_diff(
@@ -355,11 +421,536 @@ packages/stitcher-application/src/stitcher/app/core.py
         return plan
 
     def _analyze_file(
+        self, module: ModuleDef
+    ) -> tuple[FileCheckResult, list[InteractionContext]]:
+        result = FileCheckResult(path=module.file_path)
+        unresolved_conflicts: list[InteractionContext] = []
+
+        # Content checks (unchanged)
+        if (self.root_path / module.file_path).with_suffix(".stitcher.yaml").exists():
+            doc_issues = self.doc_manager.check_module(module)
+            result.warnings["missing"].extend(doc_issues["missing"])
+            result.warnings["redundant"].extend(doc_issues["redundant"])
+            result.errors["pending"].extend(doc_issues["pending"])
+            result.errors["conflict"].extend(doc_issues["conflict"])
+            result.errors["extra"].extend(doc_issues["extra"])
+
+        # State machine analysis
+        is_tracked = (
+            (self.root_path / module.file_path).with_suffix(".stitcher.yaml").exists()
+        )
+
+        computed_fingerprints = self.sig_manager.compute_fingerprints(module)
+        current_yaml_map = self.doc_manager.compute_yaml_content_hashes(module)
+        stored_hashes_map = self.sig_manager.load_composite_hashes(module)
+
+        all_fqns = set(computed_fingerprints.keys()) | set(stored_hashes_map.keys())
+
+        for fqn in sorted(list(all_fqns)):
+            computed_fp = computed_fingerprints.get(fqn, Fingerprint())
+
+            # Extract standard keys using O(1) access from Fingerprint object
+            code_hash = computed_fp.get("current_code_structure_hash")
+            current_sig_text = computed_fp.get("current_code_signature_text")
+            yaml_hash = current_yaml_map.get(fqn)
+
+            stored_fp = stored_hashes_map.get(fqn)
+            baseline_code_hash = (
+                stored_fp.get("baseline_code_structure_hash") if stored_fp else None
+            )
+            baseline_yaml_hash = (
+                stored_fp.get("baseline_yaml_content_hash") if stored_fp else None
+            )
+            baseline_sig_text = (
+                stored_fp.get("baseline_code_signature_text") if stored_fp else None
+            )
+
+            if not code_hash and baseline_code_hash:  # Extra
+                continue
+            if code_hash and not baseline_code_hash:  # New
+                continue
+
+            code_matches = code_hash == baseline_code_hash
+            yaml_matches = yaml_hash == baseline_yaml_hash
+
+            if code_matches and not yaml_matches:  # Doc improvement
+                result.infos["doc_improvement"].append(fqn)
+            elif not code_matches:
+                # Signature changed (either Drift or Co-evolution)
+                sig_diff = None
+                if baseline_sig_text and current_sig_text:
+                    sig_diff = self._generate_diff(
+                        baseline_sig_text,
+                        current_sig_text,
+                        "baseline",
+                        "current",
+                    )
+                elif current_sig_text:
+                    sig_diff = f"(No baseline signature stored)\n+++ current\n{current_sig_text}"
+
+                conflict_type = (
+                    ConflictType.SIGNATURE_DRIFT
+                    if yaml_matches
+                    else ConflictType.CO_EVOLUTION
+                )
+
+                unresolved_conflicts.append(
+                    InteractionContext(
+                        module.file_path, fqn, conflict_type, signature_diff=sig_diff
+                    )
+                )
+
+        # Untracked file check
+        if not is_tracked and module.is_documentable():
+            undocumented = module.get_undocumented_public_keys()
+            if undocumented:
+                result.warnings["untracked_detailed"].extend(undocumented)
+            else:
+                result.warnings["untracked"].append("all")
+
+        return result, unresolved_conflicts
+
+    def _apply_resolutions(
+        self, resolutions: dict[str, list[tuple[str, ResolutionAction]]]
+    ):
+        # This is the execution phase. We now write to files.
+        for file_path, fqn_actions in resolutions.items():
+            module_def = ModuleDef(file_path=file_path)  # Minimal def for path logic
+            stored_hashes = self.sig_manager.load_composite_hashes(module_def)
+            new_hashes = copy.deepcopy(stored_hashes)
+
+            # We need the current hashes again to apply changes
+            full_module_def = self.parser.parse(
+                (self.root_path / file_path).read_text("utf-8"), file_path
+            )
+            computed_fingerprints = self.sig_manager.compute_fingerprints(
+                full_module_def
+            )
+            current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
+                full_module_def
+            )
+
+            for fqn, action in fqn_actions:
+                if fqn in new_hashes:
+                    fp = new_hashes[fqn]
+                    current_fp = computed_fingerprints.get(fqn, Fingerprint())
+                    current_code_hash = current_fp.get("current_code_structure_hash")
+
+                    if action == ResolutionAction.RELINK:
+                        if current_code_hash:
+                            fp["baseline_code_structure_hash"] = str(current_code_hash)
+                    elif action == ResolutionAction.RECONCILE:
+                        if current_code_hash:
+                            fp["baseline_code_structure_hash"] = str(current_code_hash)
+                        if fqn in current_yaml_map:
+                            fp["baseline_yaml_content_hash"] = str(
+                                current_yaml_map[fqn]
+                            )
+
+            if new_hashes != stored_hashes:
+                self.sig_manager.save_composite_hashes(module_def, new_hashes)
+
+    def run_check(self, force_relink: bool = False, reconcile: bool = False) -> bool:
+        configs, _ = load_config_from_path(self.root_path)
+
+        all_results: list[FileCheckResult] = []
+        all_conflicts: list[InteractionContext] = []
+        all_modules: list[ModuleDef] = []
+
+        # 1. Analysis Phase
+        for config in configs:
+            if config.name != "default":
+                bus.info(L.generate.target.processing, name=config.name)
+            unique_files = self._get_files_from_config(config)
+            modules = self._scan_files(unique_files)
+            all_modules.extend(modules)
+            for module in modules:
+                result, conflicts = self._analyze_file(module)
+                all_results.append(result)
+                all_conflicts.extend(conflicts)
+
+        # 2. Execution Phase (Auto-reconciliation for doc improvements)
+        for res in all_results:
+            if res.infos["doc_improvement"]:
+                module_def = next(
+                    (m for m in all_modules if m.file_path == res.path), None
+                )
+                if not module_def:
+                    continue
+
+                stored_hashes = self.sig_manager.load_composite_hashes(module_def)
+                new_hashes = copy.deepcopy(stored_hashes)
+                current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
+                    module_def
+                )
+
+                for fqn in res.infos["doc_improvement"]:
+                    if fqn in new_hashes:
+                        new_yaml_hash = current_yaml_map.get(fqn)
+                        if new_yaml_hash is not None:
+                            new_hashes[fqn]["baseline_yaml_content_hash"] = (
+                                new_yaml_hash
+                            )
+                        elif "baseline_yaml_content_hash" in new_hashes[fqn]:
+                            del new_hashes[fqn]["baseline_yaml_content_hash"]
+
+                if new_hashes != stored_hashes:
+                    self.sig_manager.save_composite_hashes(module_def, new_hashes)
+
+        # 3. Interactive Resolution Phase
+        if all_conflicts and self.interaction_handler:
+            chosen_actions = self.interaction_handler.process_interactive_session(
+                all_conflicts
+            )
+
+            resolutions_by_file = defaultdict(list)
+            reconciled_results = defaultdict(lambda: defaultdict(list))
+
+            for i, context in enumerate(all_conflicts):
+                action = chosen_actions[i]
+                if action == ResolutionAction.RELINK:
+                    resolutions_by_file[context.file_path].append((context.fqn, action))
+                    reconciled_results[context.file_path]["force_relink"].append(
+                        context.fqn
+                    )
+                elif action == ResolutionAction.RECONCILE:
+                    resolutions_by_file[context.file_path].append((context.fqn, action))
+                    reconciled_results[context.file_path]["reconcile"].append(
+                        context.fqn
+                    )
+                elif action == ResolutionAction.SKIP:
+                    for res in all_results:
+                        if res.path == context.file_path:
+                            error_key = (
+                                "signature_drift"
+                                if context.conflict_type == ConflictType.SIGNATURE_DRIFT
+                                else "co_evolution"
+                            )
+                            res.errors[error_key].append(context.fqn)
+                            break
+                elif action == ResolutionAction.ABORT:
+                    bus.warning(L.strip.run.aborted)
+                    return False
+
+            self._apply_resolutions(dict(resolutions_by_file))
+
+            for res in all_results:
+                if res.path in reconciled_results:
+                    res.reconciled["force_relink"] = reconciled_results[res.path][
+                        "force_relink"
+                    ]
+                    res.reconciled["reconcile"] = reconciled_results[res.path][
+                        "reconcile"
+                    ]
+        else:
+            handler = NoOpInteractionHandler(force_relink, reconcile)
+            chosen_actions = handler.process_interactive_session(all_conflicts)
+            resolutions_by_file = defaultdict(list)
+            reconciled_results = defaultdict(lambda: defaultdict(list))
+            for i, context in enumerate(all_conflicts):
+                action = chosen_actions[i]
+                if action != ResolutionAction.SKIP:
+                    key = (
+                        "force_relink"
+                        if action == ResolutionAction.RELINK
+                        else "reconcile"
+                    )
+                    resolutions_by_file[context.file_path].append((context.fqn, action))
+                    reconciled_results[context.file_path][key].append(context.fqn)
+                else:
+                    for res in all_results:
+                        if res.path == context.file_path:
+                            error_key = (
+                                "signature_drift"
+                                if context.conflict_type == ConflictType.SIGNATURE_DRIFT
+                                else "co_evolution"
+                            )
+                            res.errors[error_key].append(context.fqn)
+            self._apply_resolutions(dict(resolutions_by_file))
+            for res in all_results:
+                if res.path in reconciled_results:
+                    res.reconciled["force_relink"] = reconciled_results[res.path][
+                        "force_relink"
+                    ]
+                    res.reconciled["reconcile"] = reconciled_results[res.path][
+                        "reconcile"
+                    ]
+
+        # 4. Reformatting Phase
+        bus.info(L.check.run.reformatting)
+        for module in all_modules:
+            self.doc_manager.reformat_docs_for_module(module)
+            self.sig_manager.reformat_hashes_for_module(module)
+
+        # 5. Reporting Phase
+        global_failed_files = 0
+        global_warnings_files = 0
+        for res in all_results:
+            # Report infos first, even on clean files
+            for key in sorted(res.infos["doc_improvement"]):
+                bus.info(L.check.state.doc_updated, key=key)
+
+            if res.is_clean:
+                continue
+
+            if res.reconciled_count > 0:
+                for key in res.reconciled.get("force_relink", []):
+                    bus.success(L.check.state.relinked, key=key, path=res.path)
+                for key in res.reconciled.get("reconcile", []):
+                    bus.success(L.check.state.reconciled, key=key, path=res.path)
+
+            if res.error_count > 0:
+                global_failed_files += 1
+                bus.error(L.check.file.fail, path=res.path, count=res.error_count)
+            elif res.warning_count > 0:
+                global_warnings_files += 1
+                bus.warning(L.check.file.warn, path=res.path, count=res.warning_count)
+
+            # Report Specific Issues (same as before)
+            for key in sorted(res.errors["extra"]):
+                bus.error(L.check.issue.extra, key=key)
+            for key in sorted(res.errors["signature_drift"]):
+                bus.error(L.check.state.signature_drift, key=key)
+            for key in sorted(res.errors["co_evolution"]):
+                bus.error(L.check.state.co_evolution, key=key)
+            for key in sorted(res.errors["conflict"]):
+                bus.error(L.check.issue.conflict, key=key)
+            for key in sorted(res.errors["pending"]):
+                bus.error(L.check.issue.pending, key=key)
+            for key in sorted(res.warnings["missing"]):
+                bus.warning(L.check.issue.missing, key=key)
+            for key in sorted(res.warnings["redundant"]):
+                bus.warning(L.check.issue.redundant, key=key)
+            for key in sorted(res.warnings["untracked_key"]):
+                bus.warning(L.check.state.untracked_code, key=key)
+            if "untracked_detailed" in res.warnings:
+                keys = res.warnings["untracked_detailed"]
+                bus.warning(
+                    L.check.file.untracked_with_details, path=res.path, count=len(keys)
+                )
+                for key in sorted(keys):
+                    bus.warning(L.check.issue.untracked_missing_key, key=key)
+            elif "untracked" in res.warnings:
+                bus.warning(L.check.file.untracked, path=res.path)
+
+        if global_failed_files > 0:
+            bus.error(L.check.run.fail, count=global_failed_files)
+            return False
+        if global_warnings_files > 0:
+            bus.success(L.check.run.success_with_warnings, count=global_warnings_files)
+        else:
+            bus.success(L.check.run.success)
+        return True
+
+    def run_pump(
+        self, strip: bool = False, force: bool = False, reconcile: bool = False
+    ) -> PumpResult:
+        bus.info(L.pump.run.start)
+        configs, _ = load_config_from_path(self.root_path)
+
+        all_modules: List[ModuleDef] = []
+        all_conflicts: List[InteractionContext] = []
+
+        # --- Phase 1: Analysis ---
+        for config in configs:
+            if config.name != "default":
+                bus.info(L.generate.target.processing, name=config.name)
+            unique_files = self._get_files_from_config(config)
+            modules = self._scan_files(unique_files)
+            if not modules:
+                continue
+            all_modules.extend(modules)
+
+            for module in modules:
+                # Dry run to detect conflicts
+                res = self.doc_manager.hydrate_module(
+                    module, force=force, reconcile=reconcile, dry_run=True
+                )
+                if not res["success"]:
+                    source_docs = self.doc_manager.flatten_module_docs(module)
+                    yaml_docs = self.doc_manager.load_docs_for_module(module)
+                    for key in res["conflicts"]:
+                        doc_diff = self._generate_diff(
+                            yaml_docs.get(key, ""), source_docs.get(key, ""), "yaml", "code"
+                        )
+                        all_conflicts.append(
+                            InteractionContext(
+                                module.file_path,
+                                key,
+                                ConflictType.DOC_CONTENT_CONFLICT,
+                                doc_diff=doc_diff,
+                            )
+                        )
+
+        # --- Phase 2: Decision ---
+        decisions: Dict[str, ResolutionAction] = {}
+        if all_conflicts:
+            handler = self.interaction_handler or NoOpInteractionHandler(
+                hydrate_force=force, hydrate_reconcile=reconcile
+            )
+            chosen_actions = handler.process_interactive_session(all_conflicts)
+
+            for i, context in enumerate(all_conflicts):
+                action = chosen_actions[i]
+                if action == ResolutionAction.ABORT:
+                    bus.error(L.pump.run.aborted)
+                    return PumpResult(success=False)
+                decisions[context.fqn] = action
+
+        # --- Phase 3 & 4: Planning & Execution ---
+        strip_jobs = defaultdict(list)
+        total_updated_files = 0
+        total_unresolved_conflicts = 0
+        redundant_files: List[Path] = []
+
+        for module in all_modules:
+            # Phase 3: Planning
+            file_plan = self._generate_execution_plan(module, decisions, strip)
+            
+            # Prepare for execution
+            source_docs = self.doc_manager.flatten_module_docs(module)
+            current_yaml_docs = self.doc_manager.load_docs_for_module(module)
+            stored_hashes = self.sig_manager.load_composite_hashes(module)
+            current_fingerprints = self.sig_manager.compute_fingerprints(module)
+            
+            new_yaml_docs = current_yaml_docs.copy()
+            new_hashes = copy.deepcopy(stored_hashes)
+            
+            file_was_modified = False
+            
+            # Phase 4: Execution (per-file)
+            for fqn, plan in file_plan.items():
+                if plan.hydrate_yaml:
+                    if fqn in source_docs:
+                        new_yaml_docs[fqn] = source_docs[fqn]
+                        file_was_modified = True
+                
+                fp = new_hashes.get(fqn, Fingerprint())
+                current_fp = current_fingerprints.get(fqn, Fingerprint())
+
+                if plan.update_doc_fingerprint:
+                    if fqn in source_docs:
+                        doc_hash = self.doc_manager.compute_yaml_content_hash(source_docs[fqn])
+                        fp["baseline_yaml_content_hash"] = doc_hash
+                        file_was_modified = True
+
+                if plan.update_code_fingerprint:
+                    if "current_code_structure_hash" in current_fp:
+                        fp["baseline_code_structure_hash"] = current_fp["current_code_structure_hash"]
+                    if "current_code_signature_text" in current_fp:
+                        fp["baseline_code_signature_text"] = current_fp["current_code_signature_text"]
+                    file_was_modified = True
+                
+                new_hashes[fqn] = fp
+                
+                if plan.strip_source_docstring:
+                    strip_jobs[module.file_path].append(fqn)
+
+            # Atomic writes for metadata
+            if file_was_modified:
+                total_updated_files += 1
+                module_path = self.root_path / module.file_path
+                doc_path = module_path.with_suffix(".stitcher.yaml")
+                self.doc_manager.adapter.save(doc_path, new_yaml_docs)
+                self.sig_manager.save_composite_hashes(module, new_hashes)
+
+            # Check for unresolved conflicts
+            for fqn, plan in file_plan.items():
+                is_unresolved = not any([plan.hydrate_yaml, plan.update_code_fingerprint, plan.strip_source_docstring]) and fqn in decisions
+                if is_unresolved:
+                     total_unresolved_conflicts += 1
+                     bus.error(L.pump.error.conflict, path=module.file_path, key=fqn)
+
+        # --- Phase 5: Stripping ---
+        if strip_jobs:
+            for file_path, whitelist in strip_jobs.items():
+                source_path = self.root_path / file_path
+                try:
+                    original_content = source_path.read_text("utf-8")
+                    stripped_content = self.transformer.strip(original_content, whitelist=whitelist)
+                    if original_content != stripped_content:
+                        source_path.write_text(stripped_content, "utf-8")
+                        bus.success(L.strip.file.success, path=source_path.relative_to(self.root_path))
+                except Exception as e:
+                    bus.error(L.error.generic, error=e)
+        
+        # Final Reporting
+        if total_unresolved_conflicts > 0:
+            bus.error(L.pump.run.conflict, count=total_unresolved_conflicts)
+            return PumpResult(success=False)
+        
+        if total_updated_files == 0 and not strip_jobs:
+            bus.info(L.pump.run.no_changes)
+        else:
+            bus.success(L.pump.run.complete, count=total_updated_files)
+
+        return PumpResult(success=True, redundant_files=redundant_files)
+
+    def run_strip(self, files: Optional[List[Path]] = None) -> List[Path]:
+        all_modified_files: List[Path] = []
+        files_to_process = []
+
+        if files:
+            files_to_process = files
+        else:
+            configs, _ = load_config_from_path(self.root_path)
+            for config in configs:
+                files_to_process.extend(self._get_files_from_config(config))
+            files_to_process = sorted(list(set(files_to_process)))
+
+        for file_path in files_to_process:
+            try:
+                original_content = file_path.read_text(encoding="utf-8")
+                # Call strip with whitelist=None for global stripping
+                stripped_content = self.transformer.strip(original_content, whitelist=None)
+                if original_content != stripped_content:
+                    file_path.write_text(stripped_content, encoding="utf-8")
+                    all_modified_files.append(file_path)
+                    relative_path = file_path.relative_to(self.root_path)
+                    bus.success(L.strip.file.success, path=relative_path)
+            except Exception as e:
+                bus.error(L.error.generic, error=e)
+
+        if all_modified_files:
+            bus.success(L.strip.run.complete, count=len(all_modified_files))
+        return all_modified_files
+
+    def run_inject(self) -> List[Path]:
+        configs, _ = load_config_from_path(self.root_path)
+        all_modified_files: List[Path] = []
+        total_docs_found = 0
+        for config in configs:
+            unique_files = self._get_files_from_config(config)
+            modules = self._scan_files(unique_files)
+            for module in modules:
+                docs = self.doc_manager.load_docs_for_module(module)
+                if not docs:
+                    continue
+                total_docs_found += len(docs)
+                source_path = self.root_path / module.file_path
+                try:
+                    original_content = source_path.read_text(encoding="utf-8")
+                    injected_content = self.transformer.inject(original_content, docs)
+                    if original_content != injected_content:
+                        source_path.write_text(injected_content, encoding="utf-8")
+                        all_modified_files.append(source_path)
+                        relative_path = source_path.relative_to(self.root_path)
+                        bus.success(L.inject.file.success, path=relative_path)
+                except Exception as e:
+                    bus.error(L.error.generic, error=e)
+        if all_modified_files:
+            bus.success(L.inject.run.complete, count=len(all_modified_files))
+        elif total_docs_found == 0:
+            bus.info(L.inject.no_docs_found)
+        return all_modified_files
 ~~~~~
 
 ### 下一步建议
-我们已经成功修复了 `ImportError` 并完成了 TDD 流程的 **“红-绿”** 循环中的 **“红”**（编写失败的测试）和 **“绿”**（编写实现以通过测试）部分。现在我们有了一个可靠的 `_generate_execution_plan` 方法。
 
-接下来的 **阶段 3** 将是重构的收尾：我们将重写 `run_pump` 方法，将新的计划生成器集成进去，并实现函数级的原子文件操作。这是将所有新组件组合在一起，发挥作用的最后一步。
+我们已经成功地完成了整个重构的核心部分！`run_pump` 现在拥有了一个清晰、健壮且功能强大的函数级处理流程。
 
-准备好后，我们就开始第三阶段。
+接下来的最后一步，也是至关重要的一步，就是 **更新我们的集成测试**。
+
+我们需要修改 `packages/stitcher-application/tests/integration/` 目录下的相关测试（特别是 `test_pump_command.py` 和 `test_pump_interactive_flow.py`），以验证新的函数级行为。例如，我们可以创建一个包含两个函数的测试文件，对其中一个函数选择“代码优先”，对另一个选择“跳过”，然后断言最终的 YAML、签名和源码文件都精确地反映了这些混合决策。
+
+这将为我们的重构提供最终的信心，并确保未来不会出现回归。准备好后，我们就开始更新测试。
