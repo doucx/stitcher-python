@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix(runtime): 修复 StripperTransformer 以支持基于白名单的剥离", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767335694.9497838, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[COMMIT] fix: 实现属性文档字符串剥离并修复白名单过滤逻辑", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767335736.1594, "duration_ms": 0}}
