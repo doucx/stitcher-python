@@ -10,6 +10,8 @@ class FileSystemAdapter(Protocol):
     def move(self, src: Path, dest: Path) -> None: ...
     def exists(self, path: Path) -> bool: ...
     def read_text(self, path: Path) -> str: ...
+    def rmtree(self, path: Path) -> None: ...
+    def remove(self, path: Path) -> None: ...
 
 
 class RealFileSystem:
@@ -23,6 +25,14 @@ class RealFileSystem:
 
     def exists(self, path: Path) -> bool:
         return path.exists()
+
+    def rmtree(self, path: Path) -> None:
+        if path.exists():
+            shutil.rmtree(path)
+
+    def remove(self, path: Path) -> None:
+        if path.exists():
+            path.unlink()
 
     def read_text(self, path: Path) -> str:
         return path.read_text(encoding="utf-8")
@@ -61,6 +71,24 @@ class MoveFileOp(FileOp):
         return f"[MOVE] {self.path} -> {self.dest}"
 
 
+@dataclass
+class DeleteFileOp(FileOp):
+    def execute(self, fs: FileSystemAdapter, root: Path) -> None:
+        fs.remove(root / self.path)
+
+    def describe(self) -> str:
+        return f"[DELETE] {self.path}"
+
+
+@dataclass
+class DeleteDirectoryOp(FileOp):
+    def execute(self, fs: FileSystemAdapter, root: Path) -> None:
+        fs.rmtree(root / self.path)
+
+    def describe(self) -> str:
+        return f"[DELETE_DIR] {self.path}"
+
+
 class TransactionManager:
     def __init__(self, root_path: Path, fs: Optional[FileSystemAdapter] = None):
         self.root_path = root_path
@@ -72,6 +100,12 @@ class TransactionManager:
 
     def add_move(self, src: Union[str, Path], dest: Union[str, Path]) -> None:
         self._ops.append(MoveFileOp(Path(src), Path(dest)))
+
+    def add_delete_file(self, path: Union[str, Path]) -> None:
+        self._ops.append(DeleteFileOp(Path(path)))
+
+    def add_delete_dir(self, path: Union[str, Path]) -> None:
+        self._ops.append(DeleteDirectoryOp(Path(path)))
 
     def preview(self) -> List[str]:
         return [op.describe() for op in self._ops]

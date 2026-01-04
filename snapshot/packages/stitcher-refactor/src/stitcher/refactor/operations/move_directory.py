@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import List
 
 from stitcher.refactor.engine.context import RefactorContext
-from stitcher.refactor.engine.transaction import FileOp
+from stitcher.refactor.engine.transaction import FileOp, MoveFileOp, DeleteDirectoryOp
 from stitcher.refactor.operations.base import AbstractOperation
 from stitcher.refactor.operations.move_file import MoveFileOperation
 
@@ -18,21 +18,31 @@ class MoveDirectoryOperation(AbstractOperation):
 
     def analyze(self, ctx: RefactorContext) -> List[FileOp]:
         """
-        Analyzes the directory move by creating a MoveFileOperation for each file.
+        Analyzes the directory move by planning moves for all contents
+        and scheduling the source directory for deletion.
         """
         all_ops: List[FileOp] = []
 
-        # Find all Python files within the source directory
-        for src_file in self.src_dir.rglob("*.py"):
-            # Calculate the corresponding destination path for the file
-            relative_path = src_file.relative_to(self.src_dir)
-            dest_file = self.dest_dir / relative_path
+        # Iterate over all items (files and directories)
+        for src_item in self.src_dir.rglob("*"):
+            relative_path = src_item.relative_to(self.src_dir)
+            dest_item = self.dest_dir / relative_path
+            rel_src_item = src_item.relative_to(ctx.graph.root_path)
 
-            # Delegate the complex analysis to the existing MoveFileOperation
-            file_mover = MoveFileOperation(src_file, dest_file)
+            if src_item.is_file():
+                if src_item.suffix == ".py":
+                    # Smart move for Python files
+                    file_mover = MoveFileOperation(src_item, dest_item)
+                    file_specific_ops = file_mover.analyze(ctx)
+                    all_ops.extend(file_specific_ops)
+                else:
+                    # Simple move for all other files
+                    rel_dest_item = dest_item.relative_to(ctx.graph.root_path)
+                    all_ops.append(MoveFileOp(rel_src_item, rel_dest_item))
 
-            # Analyze the individual file move and collect the resulting operations
-            file_specific_ops = file_mover.analyze(ctx)
-            all_ops.extend(file_specific_ops)
+        # After planning all moves, schedule the source directory for deletion
+        all_ops.append(
+            DeleteDirectoryOp(self.src_dir.relative_to(ctx.graph.root_path))
+        )
 
         return all_ops
