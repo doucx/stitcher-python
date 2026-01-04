@@ -1,197 +1,48 @@
-你提出了一个非常深刻且关键的观点，完全正确。
+好的，我来分析这个 `FileNotFoundError`。这是一个非常微妙但典型的并发逻辑错误，即使在单线程代码中也会出现。
 
-我的前一个方案过于简单，只考虑了 `.py` 文件，**这可能导致数据丢失**——任何非 Python 文件（如配置文件、文档、资源文件）都会被留在旧目录中，然后旧目录被删除。你的方案——**移动所有内容，但对 Python 文件进行特殊处理**——是唯一正确且健壮的方法。
+## [WIP] fix(refactor): 消除 MoveDirectoryOperation 中的重复文件操作
 
-我将立即采纳你的建议，并生成一个实现此增强逻辑的计划。
+### 错误分析
 
-## [WIP] refactor(refactor): 增强 MoveDirectoryOperation 以处理非代码文件并清理源目录
+**观察到的失败**: `FileNotFoundError: [Errno 2] No such file or directory: '.../mypkg/core/utils.stitcher.yaml'`。
+
+**直接原因**: 当 `TransactionManager` 尝试执行一个 `MoveFileOp` 来移动 `utils.stitcher.yaml` 时，该文件已不存在于源位置。
+
+**根本原因**: 这是一个**重复操作 (Double Operation)** 的逻辑缺陷。`MoveDirectoryOperation` 的 `analyze` 方法中存在两种机制，它们会**为同一个 Sidecar 文件创建两个独立的 `MoveFileOp`**：
+
+1.  **智能路径 (Smart Path)**: 当 `rglob` 循环找到 `utils.py` 时，它会创建一个 `MoveFileOperation` 实例。这个实例的 `analyze` 方法非常智能，它会自动查找 `utils.py` 的所有 Sidecar 文件（包括 `utils.stitcher.yaml`）并为它们创建 `MoveFileOp`。这是我们期望的行为。
+2.  **朴素路径 (Naive Path)**: `rglob("*")` 循环会继续执行，并且它会**再次**找到 `utils.stitcher.yaml` 文件本身。由于这个文件不是 `.py` 文件，代码会进入 `else` 块，为它创建一个**第二个、重复的** `MoveFileOp`。
+
+**执行时的冲突**: `TransactionManager` 的操作队列中现在包含了两个完全相同的 `MoveFileOp(src=".../utils.stitcher.yaml", ...)`。
+-   第一个 `MoveFileOp` 成功执行，文件被移动。
+-   当轮到第二个 `MoveFileOp` 执行时，它尝试再次移动同一个源文件，但该文件已经被第一个操作移走了，因此 `shutil.move` 无法找到源文件，抛出 `FileNotFoundError`。
 
 ### 用户需求
-`MoveDirectoryOperation` 必须能够：
-1.  移动源目录下的**所有**内容（包括子目录、非 Python 文件和隐藏文件）。
-2.  对 `.py` 文件应用智能重构逻辑（更新代码引用和 Sidecar）。
-3.  对所有其他文件执行简单的物理移动。
-4.  在所有内容成功移动后，安全地删除空的源目录。
+修复 `MoveDirectoryOperation` 的逻辑，确保每个文件（包括代码文件和 Sidecar 文件）在整个事务中只被计划移动一次。
 
 ### 评论
-这是一个关键的健壮性改进，它将 `MoveDirectoryOperation` 从一个特定于 Python 的工具，转变为一个通用的、同时具备语义感知能力的文件系统重构工具。通过处理所有文件类型，我们确保了操作的完整性，避免了任何潜在的数据丢失风险，这完全符合用户对一个可靠的自动化工具的期望。
+这是一个很好的例子，说明了在组合操作时，确保每个操作的幂等性或唯一性是多么重要。这个 bug 暴露了当前实现中的一个隐藏的逻辑重叠。修复它将使重构引擎的行为更加可预测和健壮。
 
 ### 目标
-1.  为 `TransactionManager` 增加 `DeleteDirectoryOp` 和 `DeleteFileOp`，使其具备删除文件和目录的能力。
-2.  重写 `MoveDirectoryOperation.analyze` 的逻辑，使其能够遍历源目录下的所有文件和目录，并根据文件类型应用不同的移动策略。
-3.  扩展集成测试，使其包含非 Python 文件和隐藏文件，并验证它们是否被正确移动，以及源目录最终是否被删除。
+1.  修改 `MoveDirectoryOperation.analyze` 方法。
+2.  引入一个机制（例如一个 `set`）来跟踪已经被处理过的文件路径，以防止重复生成移动操作。
 
 ### 基本原理
-新的 `MoveDirectoryOperation` 将遵循以下策略：
-1.  **全面扫描**: 使用 `rglob("*")` 遍历源目录下的所有路径。
-2.  **分类处理**:
-    -   如果路径是 `.py` 文件，则委托给 `MoveFileOperation` 进行“智能移动”，这会处理代码和 Sidecar 的重构。
-    -   如果路径是任何其他文件（非 `.py`），则为其生成一个简单的 `MoveFileOp`，只进行物理移动。
-3.  **最终清理**: 在规划完所有文件的移动后，为源目录本身和其所有子目录添加 `DeleteDirectoryOp`。`TransactionManager` 将在最后执行这些删除操作，此时这些目录应该已经为空。
+我们将重构 `analyze` 方法的逻辑。我们将采用一个两阶段的方法来确保每个文件只被处理一次：
+1.  **第一阶段 (智能处理)**: 我们将首先只遍历 `.py` 文件。为每个 `.py` 文件调用 `MoveFileOperation`，它会智能地处理该文件及其所有关联的 Sidecar 文件。我们将把所有这些被处理过的文件（`.py` 和 Sidecars）的路径添加到一个 `handled_paths` 集合中。
+2.  **第二阶段 (通用处理)**: 接下来，我们将遍历目录中的所有文件（`*`）。对于每个文件，我们首先检查它是否已经在 `handled_paths` 集合中。如果是，就跳过它。如果不是，那么它就是一个独立的非 Python 文件（如 `config.txt`），我们为它创建一个简单的 `MoveFileOp`。
+这种方法确保了 `.py` 文件的 Sidecar 由其主文件负责处理，而所有其他文件则被单独处理，从而完美地消除了操作重叠。
+
+### 标签
+#intent/fix #flow/ready #priority/critical #comp/engine #concept/executor #scope/core #ai/instruct #task/domain/refactoring #task/object/directory-move #task/action/bug-fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 扩展 `TransactionManager` 以支持删除操作
+#### Acts 1: 修正 `MoveDirectoryOperation` 的逻辑
 
-首先，我们需要赋予事务管理器删除文件和目录的能力。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/transaction.py
-~~~~~
-~~~~~python.old
-import shutil
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Union, Protocol, Optional
-
-
-class FileSystemAdapter(Protocol):
-    def write_text(self, path: Path, content: str) -> None: ...
-    def move(self, src: Path, dest: Path) -> None: ...
-    def exists(self, path: Path) -> bool: ...
-    def read_text(self, path: Path) -> str: ...
-
-
-class RealFileSystem:
-    def write_text(self, path: Path, content: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-
-    def move(self, src: Path, dest: Path) -> None:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dest))
-
-    def exists(self, path: Path) -> bool:
-        return path.exists()
-~~~~~
-~~~~~python.new
-import shutil
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Union, Protocol, Optional
-
-
-class FileSystemAdapter(Protocol):
-    def write_text(self, path: Path, content: str) -> None: ...
-    def move(self, src: Path, dest: Path) -> None: ...
-    def exists(self, path: Path) -> bool: ...
-    def read_text(self, path: Path) -> str: ...
-    def rmtree(self, path: Path) -> None: ...
-    def remove(self, path: Path) -> None: ...
-
-
-class RealFileSystem:
-    def write_text(self, path: Path, content: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
-
-    def move(self, src: Path, dest: Path) -> None:
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dest))
-
-    def exists(self, path: Path) -> bool:
-        return path.exists()
-
-    def rmtree(self, path: Path) -> None:
-        if path.exists():
-            shutil.rmtree(path)
-
-    def remove(self, path: Path) -> None:
-        if path.exists():
-            path.unlink()
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/transaction.py
-~~~~~
-~~~~~python.old
-@dataclass
-class MoveFileOp(FileOp):
-    dest: Path
-
-    def execute(self, fs: FileSystemAdapter, root: Path) -> None:
-        fs.move(root / self.path, root / self.dest)
-
-    def describe(self) -> str:
-        return f"[MOVE] {self.path} -> {self.dest}"
-
-
-class TransactionManager:
-    def __init__(self, root_path: Path, fs: Optional[FileSystemAdapter] = None):
-        self.root_path = root_path
-        self.fs = fs or RealFileSystem()
-        self._ops: List[FileOp] = []
-
-    def add_write(self, path: Union[str, Path], content: str) -> None:
-        self._ops.append(WriteFileOp(Path(path), content))
-
-    def add_move(self, src: Union[str, Path], dest: Union[str, Path]) -> None:
-        self._ops.append(MoveFileOp(Path(src), Path(dest)))
-
-    def preview(self) -> List[str]:
-        return [op.describe() for op in self._ops]
-~~~~~
-~~~~~python.new
-@dataclass
-class MoveFileOp(FileOp):
-    dest: Path
-
-    def execute(self, fs: FileSystemAdapter, root: Path) -> None:
-        fs.move(root / self.path, root / self.dest)
-
-    def describe(self) -> str:
-        return f"[MOVE] {self.path} -> {self.dest}"
-
-
-@dataclass
-class DeleteFileOp(FileOp):
-    def execute(self, fs: FileSystemAdapter, root: Path) -> None:
-        fs.remove(root / self.path)
-
-    def describe(self) -> str:
-        return f"[DELETE] {self.path}"
-
-
-@dataclass
-class DeleteDirectoryOp(FileOp):
-    def execute(self, fs: FileSystemAdapter, root: Path) -> None:
-        fs.rmtree(root / self.path)
-
-    def describe(self) -> str:
-        return f"[DELETE_DIR] {self.path}"
-
-
-class TransactionManager:
-    def __init__(self, root_path: Path, fs: Optional[FileSystemAdapter] = None):
-        self.root_path = root_path
-        self.fs = fs or RealFileSystem()
-        self._ops: List[FileOp] = []
-
-    def add_write(self, path: Union[str, Path], content: str) -> None:
-        self._ops.append(WriteFileOp(Path(path), content))
-
-    def add_move(self, src: Union[str, Path], dest: Union[str, Path]) -> None:
-        self._ops.append(MoveFileOp(Path(src), Path(dest)))
-
-    def add_delete_file(self, path: Union[str, Path]) -> None:
-        self._ops.append(DeleteFileOp(Path(path)))
-
-    def add_delete_dir(self, path: Union[str, Path]) -> None:
-        self._ops.append(DeleteDirectoryOp(Path(path)))
-
-    def preview(self) -> List[str]:
-        return [op.describe() for op in self._ops]
-~~~~~
-
-#### Acts 2: 重写 `MoveDirectoryOperation` 以处理所有文件
-
-现在，我将更新 `move_directory.py` 以实现新的、更健壮的逻辑。
+我将使用 `write_file` 来替换 `move_directory.py` 的全部内容，以实现上述的防重叠逻辑。
 
 ~~~~~act
 write_file
@@ -199,7 +50,7 @@ packages/stitcher-refactor/src/stitcher/refactor/operations/move_directory.py
 ~~~~~
 ~~~~~python
 from pathlib import Path
-from typing import List
+from typing import List, Set
 
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.refactor.engine.transaction import FileOp, MoveFileOp, DeleteDirectoryOp
@@ -218,29 +69,48 @@ class MoveDirectoryOperation(AbstractOperation):
 
     def analyze(self, ctx: RefactorContext) -> List[FileOp]:
         """
-        Analyzes the directory move by planning moves for all contents
-        and scheduling the source directory for deletion.
+        Analyzes the directory move by planning moves for all contents,
+        ensuring each file is processed exactly once, and scheduling the
+        source directory for deletion.
         """
         all_ops: List[FileOp] = []
+        handled_paths: Set[Path] = set()
 
-        # Iterate over all items (files and directories)
+        # Phase 1: Smart-process all Python files and their sidecars
+        for src_file in self.src_dir.rglob("*.py"):
+            relative_path = src_file.relative_to(self.src_dir)
+            dest_file = self.dest_dir / relative_path
+
+            # Delegate to the smart MoveFileOperation
+            file_mover = MoveFileOperation(src_file, dest_file)
+            file_specific_ops = file_mover.analyze(ctx)
+            all_ops.extend(file_specific_ops)
+
+            # Mark the source file and its potential sidecars as handled
+            handled_paths.add(src_file)
+            handled_paths.add(src_file.with_suffix(".stitcher.yaml"))
+            sig_rel_path = src_file.relative_to(ctx.graph.root_path).with_suffix(
+                ".json"
+            )
+            sig_abs_path = ctx.graph.root_path / ".stitcher/signatures" / sig_rel_path
+            handled_paths.add(sig_abs_path)
+
+        # Phase 2: Process all remaining items (non-Python files)
         for src_item in self.src_dir.rglob("*"):
+            if src_item in handled_paths or not src_item.is_file():
+                continue
+
+            # This item is a non-Python, non-sidecar file. Do a simple move.
             relative_path = src_item.relative_to(self.src_dir)
             dest_item = self.dest_dir / relative_path
+            
             rel_src_item = src_item.relative_to(ctx.graph.root_path)
+            rel_dest_item = dest_item.relative_to(ctx.graph.root_path)
+            
+            all_ops.append(MoveFileOp(rel_src_item, rel_dest_item))
+            handled_paths.add(src_item)
 
-            if src_item.is_file():
-                if src_item.suffix == ".py":
-                    # Smart move for Python files
-                    file_mover = MoveFileOperation(src_item, dest_item)
-                    file_specific_ops = file_mover.analyze(ctx)
-                    all_ops.extend(file_specific_ops)
-                else:
-                    # Simple move for all other files
-                    rel_dest_item = dest_item.relative_to(ctx.graph.root_path)
-                    all_ops.append(MoveFileOp(rel_src_item, rel_dest_item))
-
-        # After planning all moves, schedule the source directory for deletion
+        # Phase 3: Schedule the now-empty source directory for deletion
         all_ops.append(
             DeleteDirectoryOp(self.src_dir.relative_to(ctx.graph.root_path))
         )
@@ -248,114 +118,7 @@ class MoveDirectoryOperation(AbstractOperation):
         return all_ops
 ~~~~~
 
-#### Acts 3: 扩展集成测试以确保完整性
-
-最后，我将重写测试用例，使其包含非 Python 文件和隐藏文件，并验证所有内容是否都按预期迁移，以及源目录是否最终被删除。
-
-~~~~~act
-write_file
-packages/stitcher-refactor/tests/integration/test_move_directory_e2e.py
-~~~~~
-~~~~~python
-from pathlib import Path
-import yaml
-import json
-
-from stitcher.refactor.engine.graph import SemanticGraph
-from stitcher.refactor.engine.context import RefactorContext
-from stitcher.refactor.engine.transaction import (
-    TransactionManager,
-    MoveFileOp,
-    DeleteDirectoryOp,
-)
-from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
-
-
-def test_move_directory_updates_all_contents_and_references(tmp_path):
-    # 1. SETUP
-    # /
-    # ├── mypkg/
-    # │   └── core/
-    # │       ├── __init__.py
-    # │       ├── utils.py      (Python file)
-    # │       ├── config.txt    (Non-Python file)
-    # │       └── .env          (Hidden file)
-    # └── app.py                (Imports from mypkg.core.utils)
-
-    pkg_dir = tmp_path / "mypkg"
-    core_dir = pkg_dir / "core"
-    core_dir.mkdir(parents=True)
-
-    (core_dir / "__init__.py").touch()
-    utils_py = core_dir / "utils.py"
-    utils_py.write_text("class Helper: pass", encoding="utf-8")
-    (core_dir / "config.txt").write_text("setting=value", encoding="utf-8")
-    (core_dir / ".env").write_text("SECRET=123", encoding="utf-8")
-
-    app_py = tmp_path / "app.py"
-    app_py.write_text(
-        "from mypkg.core.utils import Helper\n\nh = Helper()", encoding="utf-8"
-    )
-
-    # Sidecars for utils.py
-    utils_yaml = utils_py.with_suffix(".stitcher.yaml")
-    utils_yaml.write_text(yaml.dump({"mypkg.core.utils.Helper": "Doc for Helper"}))
-
-    sig_root = tmp_path / ".stitcher/signatures"
-    utils_sig_path = sig_root / "mypkg/core/utils.json"
-    utils_sig_path.parent.mkdir(parents=True)
-    utils_sig_path.write_text(
-        json.dumps({"mypkg.core.utils.Helper": {"hash": "123"}})
-    )
-
-    # 2. ANALYSIS
-    services_dir = pkg_dir / "services"
-    graph = SemanticGraph(root_path=tmp_path)
-    graph.load("mypkg")
-    graph.load("app")
-    ctx = RefactorContext(graph=graph)
-
-    op = MoveDirectoryOperation(core_dir, services_dir)
-    file_ops = op.analyze(ctx)
-
-    # 3. EXECUTION
-    tm = TransactionManager(tmp_path)
-    for fop in file_ops:
-        if isinstance(fop, MoveFileOp):
-            tm.add_move(fop.path, fop.dest)
-        elif isinstance(fop, DeleteDirectoryOp):
-            tm.add_delete_dir(fop.path)
-        else:
-            tm.add_write(fop.path, fop.content)
-    tm.commit()
-
-    # 4. VERIFICATION
-    # A. Source directory is gone
-    assert not core_dir.exists()
-
-    # B. Destination directory and its contents are correct
-    assert services_dir.exists()
-    assert (services_dir / "utils.py").exists()
-    assert (services_dir / "config.txt").exists()
-    assert (services_dir / ".env").exists()
-    assert (services_dir / "config.txt").read_text() == "setting=value"
-    assert (services_dir / ".env").read_text() == "SECRET=123"
-
-    # C. Sidecars are moved and updated
-    assert (services_dir / "utils.stitcher.yaml").exists()
-    new_sig_path = sig_root / "mypkg/services/utils.json"
-    assert new_sig_path.exists()
-    new_yaml_data = yaml.safe_load(
-        (services_dir / "utils.stitcher.yaml").read_text()
-    )
-    assert "mypkg.services.utils.Helper" in new_yaml_data
-    new_sig_data = json.loads(new_sig_path.read_text())
-    assert "mypkg.services.utils.Helper" in new_sig_data
-
-    # D. Code references are updated
-    updated_app_code = app_py.read_text(encoding="utf-8")
-    assert "from mypkg.services.utils import Helper" in updated_app_code
-~~~~~
-
 ### 下一步建议
-我们已经根据你的反馈，实现了一个更加健壮和安全的目录移动功能。在执行并验证此计划后，`stitcher-refactor` 的核心移动/重命名功能将非常完善。下一步，我们应该继续推进**阶段四：迁移包系统与 CLI**，为这个强大的引擎提供一个用户友好的接口。
+该修复是精确且有针对性的。请执行此计划，然后重新运行测试。我非常有信心这次测试将会通过，因为我们已经从根本上解决了重复操作的问题。
+
+测试通过后，我们可以自信地认为 `MoveDirectoryOperation` 已经健壮，并可以继续进行**阶段四**的工作：构建用户接口（CLI）。
