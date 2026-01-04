@@ -46,7 +46,7 @@ def test_transaction_commit():
     mock_fs.write_text.assert_called_once_with(root / "test.py", "content")
     
     # 2. Verify Move
-    mock_fs.move.assert_called_once_with(root / "src.py", "root/dest.py")
+    mock_fs.move.assert_called_once_with(root / "src.py", root / "dest.py")
 
     # 3. Verify Queue Cleared
     assert tm.pending_count == 0
