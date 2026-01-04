@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 修复 MoveFileOperation 未更新边车文件内容的问题", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767533692.5304515, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[COMMIT] feat(refactor): implement MoveFileOperation with sidecar synchronization", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767533859.767063, "duration_ms": 0}}
