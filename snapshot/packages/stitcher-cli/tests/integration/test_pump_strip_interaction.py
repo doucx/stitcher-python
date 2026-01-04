@@ -52,3 +52,42 @@ def func():
     content = (project_root / "src/main.py").read_text()
     assert '"""' not in content
     assert "pass" in content
+
+
+def test_pump_with_strip_flag_executes_strip(tmp_path, monkeypatch):
+    """
+    Verifies that 'pump --strip' directly triggers a strip operation and
+    emits the correct completion signal. This test bypasses interactive prompts.
+    """
+    # 1. Arrange
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source(
+            "src/main.py",
+            '''
+def func():
+    """This docstring should be stripped."""
+    pass
+''',
+        )
+        .build()
+    )
+
+    runner = CliRunner()
+    spy_bus = SpyBus()
+
+    # 2. Act
+    with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
+        monkeypatch.chdir(project_root)
+        result = runner.invoke(app, ["pump", "--strip"])
+
+    # 3. Assert
+    assert result.exit_code == 0, f"CLI command failed: {result.stdout}"
+
+    # Assert that the strip operation was completed
+    spy_bus.assert_id_called(L.strip.run.complete, level="success")
+
+    # Verify physical file content
+    content = (project_root / "src/main.py").read_text()
+    assert '"""' not in content
