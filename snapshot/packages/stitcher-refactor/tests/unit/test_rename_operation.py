@@ -51,7 +51,7 @@ def test_rename_symbol_analyze_orchestration():
     # Use monkeypatch to control Path.read_text
     # This is slightly more integration-y but tests the real interaction with LibCST better.
     from unittest.mock import patch
-    with patch.object(Path, "read_text", side_effect=mock_read_text):
+    with patch.object(Path, "read_text", side_effect=mock_read_text, autospec=True):
         # 3. Execute
         op = RenameSymbolOperation(old_fqn, new_fqn)
         file_ops = op.analyze(ctx)
