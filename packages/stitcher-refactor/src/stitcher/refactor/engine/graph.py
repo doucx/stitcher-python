@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, DefaultDict
 from collections import defaultdict
 import griffe
+from libcst.helpers import get_absolute_module_from_package_for_import, get_full_name_for_node
 
 
 @dataclass
@@ -45,11 +46,28 @@ class _UsageVisitor(cst.CSTVisitor):
     METADATA_DEPENDENCIES = (PositionProvider,)
 
     def __init__(
-        self, file_path: Path, local_symbols: Dict[str, str], registry: UsageRegistry
+        self,
+        file_path: Path,
+        local_symbols: Dict[str, str],
+        registry: UsageRegistry,
+        current_module_fqn: Optional[str] = None,
+        is_init_file: bool = False,
     ):
         self.file_path = file_path
         self.local_symbols = local_symbols  # map: local_name -> target_fqn
         self.registry = registry
+        self.current_module_fqn = current_module_fqn
+        self.is_init_file = is_init_file
+
+        # Calculate current package for relative import resolution
+        self.current_package = None
+        if current_module_fqn:
+            if is_init_file:
+                self.current_package = current_module_fqn
+            elif "." in current_module_fqn:
+                self.current_package = current_module_fqn.rsplit(".", 1)[0]
+            else:
+                self.current_package = ""  # Top-level module, no package
 
     def _register_node(self, node: cst.CSTNode, fqn: str):
         pos = self.get_metadata(PositionProvider, node)
@@ -69,51 +87,102 @@ class _UsageVisitor(cst.CSTVisitor):
         if target_fqn:
             self._register_node(node, target_fqn)
 
-    def visit_ImportFrom(self, node: cst.ImportFrom) -> Optional[bool]:
-        # Handle: from mypkg.core import OldHelper [as OH]
-        # We want to register the usage of 'OldHelper' (the name in the import list)
+    def _register_module_parts(self, node: cst.CSTNode, absolute_module: str):
+        """
+        Recursively register parts of a dotted name (Attribute/Name) against the resolved FQN.
+        e.g., if node is `a.b.c` and absolute_module is `pkg.a.b.c`:
+        - Register `c` (Attribute) -> `pkg.a.b.c`
+        - Register `b` (Attribute) -> `pkg.a.b`
+        - Register `a` (Name) -> `pkg.a`
+        
+        Wait, we only care about exact matches for RenameSymbolOperation.
+        RenameSymbolOperation("pkg.a", "pkg.new_a") will look for usage of "pkg.a".
+        So we should register `Name(a)` as usage of `pkg.a`.
+        
+        However, get_absolute_module_from_package_for_import returns the FQN of the MODULE.
+        If import is `import a.b.c`, module FQN is `a.b.c`.
+        The node structure is Attr(Attr(Name(a), Name(b)), Name(c)).
+        
+        If we want to support renaming `a.b` -> `a.new_b`, we need to register `Name(b)` as usage of `a.b`.
+        """
+        # Simple implementation: flatten the node to string parts and register base Name if applicable?
+        # Actually, let's rely on _UsageVisitor.visit_Attribute generic logic if possible, 
+        # BUT import nodes are special because they might not be in local_symbols yet.
+        
+        # For now, let's register the exact module FQN to the top-level node (which might be Attribute or Name).
+        # This covers `import old` -> `import new` (Name -> Name)
+        # And `from old import X` -> `from new import X` (Name -> Name)
+        # It might miss `import pkg.old` -> `import pkg.new` if we only register `pkg.old` to the Attribute node.
+        # But RenameSymbolOperation handles replacement.
+        
+        # Let's walk down the attribute chain if possible.
+        curr = node
+        curr_fqn = absolute_module
+        
+        while isinstance(curr, cst.Attribute):
+            self._register_node(curr.attr, curr_fqn)
+            curr = curr.value
+            if "." in curr_fqn:
+                curr_fqn = curr_fqn.rsplit(".", 1)[0]
+            else:
+                break
+        
+        if isinstance(curr, cst.Name):
+            self._register_node(curr, curr_fqn)
 
-        # 1. Resolve the module part
-        if not node.module:
-            # Relative import without base? e.g. "from . import x"
-            # Griffe might resolve this via local context, but CST is purely syntactic.
-            # However, for simple absolute imports, we can extract the name.
-            # Handling relative imports properly requires knowing the current module's FQN.
-            # For MVP, we'll try to rely on simple resolution or skip relative if complex.
-            # But wait, local_symbols might have the module? No.
-            # Let's try to reconstruct absolute import if possible, or skip.
-            # For `from mypkg.core ...`
-            pass
-
-        module_name = (
-            helpers.get_full_name_for_node(node.module) if node.module else None
-        )
-
-        if module_name:
-            # If relative import (starts with .), we need context.
-            # Assuming absolute for now or basic relative handling if we knew package structure.
-            # BUT, we can iterate imported names.
-            pass
-
-        # Strategy: We look at the names being imported.
+    def visit_Import(self, node: cst.Import) -> Optional[bool]:
         for alias in node.names:
-            if isinstance(alias, cst.ImportAlias):
-                name_node = alias.name
-                imported_name = helpers.get_full_name_for_node(name_node)
+            # alias.name is the module being imported (Name or Attribute)
+            # e.g. import a.b.c
+            absolute_module = get_full_name_for_node(alias.name)
+            if absolute_module:
+                 self._register_module_parts(alias.name, absolute_module)
+        return True
 
-                # Construct candidate FQN
-                # If module_name is "mypkg.core" and imported_name is "OldHelper" -> "mypkg.core.OldHelper"
-                # Note: This misses relative imports resolution (from . import X).
-                # To support relative imports properly, we'd need to know the current file's module FQN.
-                # Let's assume absolute imports for this test case first.
-                if module_name and imported_name:
-                    full_fqn = f"{module_name}.{imported_name}"
-                    self._register_node(name_node, full_fqn)
+    def visit_ImportFrom(self, node: cst.ImportFrom) -> Optional[bool]:
+        # 1. Resolve absolute module path
+        absolute_module = None
+        
+        # Determine package context for LibCST resolution
+        # If current_package is "", LibCST expects None for 'package' arg usually?
+        # Actually get_absolute_module_from_package_for_import doc says:
+        # package: Optional[str] - The name of the package the module is in.
+        
+        try:
+            # Note: self.current_package might be "" (top level) or "pkg" or None.
+            # If node.relative is non-empty (dots), we need a package.
+            # If node.relative is empty, it's absolute import, package context helps but not strictly required if we just concat?
+            # But we use LibCST helper for robustness.
+            
+            package_ctx = self.current_package if self.current_package != "" else None
+            
+            absolute_module = get_absolute_module_from_package_for_import(
+                package_ctx, node
+            )
+        except Exception:
+            # If LibCST fails (e.g. relative import from top level), ignore
+            pass
 
-        # We allow visiting children to handle AsName if it's a Name?
-        # Actually visit_Name handles the alias target (as OH) if it's used later?
-        # No, visit_Name handles usages of OH.
-        # We just registered the Definition/Reference of OldHelper in the import statement.
+        if absolute_module:
+            # Register the module part itself (e.g. 'mypkg.core' in 'from mypkg.core import ...')
+            if node.module:
+                self._register_module_parts(node.module, absolute_module)
+            
+            # 2. Handle the names being imported
+            # from pkg import A, B -> A is pkg.A
+            for alias in node.names:
+                if isinstance(alias, cst.ImportAlias):
+                    name_node = alias.name
+                    imported_name = get_full_name_for_node(name_node)
+                    
+                    # Handle 'from pkg import *' which is cst.ImportStar (not in node.names)
+                    # Wait, node.names is Sequence[ImportAlias] | ImportStar.
+                    # If it is ImportStar, we can't do much without wildcard expansion (requires full analysis).
+                    
+                    if imported_name:
+                         full_fqn = f"{absolute_module}.{imported_name}"
+                         self._register_node(name_node, full_fqn)
+
         return True
 
     def visit_Attribute(self, node: cst.Attribute) -> Optional[bool]:
