@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Union, Protocol, Optional
+import rmtree
 
 
 class FileSystemAdapter(Protocol):
@@ -61,6 +62,18 @@ class MoveFileOp(FileOp):
         return f"[MOVE] {self.path} -> {self.dest}"
 
 
+@dataclass
+class DeleteDirectoryOp(FileOp):
+    def execute(self, fs: FileSystemAdapter, root: Path) -> None:
+        # We use a simple wrapper around shutil for now
+        dir_to_delete = root / self.path
+        if dir_to_delete.is_dir():
+            shutil.rmtree(dir_to_delete)
+
+    def describe(self) -> str:
+        return f"[DELETE_DIR] {self.path}"
+
+
 class TransactionManager:
     def __init__(self, root_path: Path, fs: Optional[FileSystemAdapter] = None):
         self.root_path = root_path
@@ -72,6 +85,9 @@ class TransactionManager:
 
     def add_move(self, src: Union[str, Path], dest: Union[str, Path]) -> None:
         self._ops.append(MoveFileOp(Path(src), Path(dest)))
+
+    def add_delete_directory(self, path: Union[str, Path]) -> None:
+        self._ops.append(DeleteDirectoryOp(Path(path)))
 
     def preview(self) -> List[str]:
         return [op.describe() for op in self._ops]

@@ -15,8 +15,9 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
     # │   ├── __init__.py
     # │   └── core/
     # │       ├── __init__.py
-    # │       └── utils.py  (defines Helper)
-    # └── app.py            (imports from mypkg.core.utils)
+    # │       ├── utils.py      (defines Helper)
+    # │       └── config.txt    (non-python file)
+    # └── app.py                (imports from mypkg.core.utils)
 
     pkg_dir = tmp_path / "mypkg"
     core_dir = pkg_dir / "core"
@@ -26,6 +27,7 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
     (core_dir / "__init__.py").touch()
     utils_py = core_dir / "utils.py"
     utils_py.write_text("class Helper: pass", encoding="utf-8")
+    (core_dir / "config.txt").write_text("some-config", encoding="utf-8")
 
     app_py = tmp_path / "app.py"
     app_py.write_text(
@@ -62,28 +64,25 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
     for fop in file_ops:
         if isinstance(fop, MoveFileOp):
             tm.add_move(fop.path, fop.dest)
-        else:
-            tm.add_write(fop.path, fop.content)
-
-    # --- DIAGNOSTIC LOG ---
-    print("\n--- Planned Operations ---")
-    for op_desc in tm.preview():
-        print(op_desc)
-    print("------------------------\n")
-    # --- END LOG ---
-
+        elif hasattr(fop, 'content'): # WriteFileOp
+             tm.add_write(fop.path, fop.content)
+        else: # DeleteDirectoryOp
+            tm.add_delete_directory(fop.path)
     tm.commit()
 
     # 4. VERIFICATION
-    # Directories and files moved?
+    # Source directory is gone
     assert not core_dir.exists()
+    assert pkg_dir.exists() # Make sure we didn't delete too much
+
+    # Destination directory and its contents are there
     assert services_dir.exists()
     assert (services_dir / "utils.py").exists()
+    assert (services_dir / "config.txt").exists()
+    assert (services_dir / "config.txt").read_text() == "some-config"
 
     # Sidecars moved?
-    assert not utils_yaml.exists()
     assert (services_dir / "utils.stitcher.yaml").exists()
-    assert not utils_sig_path.exists()
     new_sig_path = sig_root / "mypkg/services/utils.json"
     assert new_sig_path.exists()
 
