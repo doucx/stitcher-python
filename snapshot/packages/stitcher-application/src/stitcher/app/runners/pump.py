@@ -157,6 +157,7 @@ class PumpRunner:
         total_updated_keys = 0
         total_reconciled_keys = 0
         unresolved_conflicts_count = 0
+        files_with_pumped_docs: List[Path] = []
 
         for module in all_modules:
             file_plan = self._generate_execution_plan(module, decisions, strip)
@@ -243,6 +244,7 @@ class PumpRunner:
 
             if updated_keys_in_file:
                 total_updated_keys += len(updated_keys_in_file)
+                files_with_pumped_docs.append(self.root_path / module.file_path)
                 bus.success(
                     L.pump.file.success,
                     path=module.file_path,
@@ -304,4 +306,8 @@ class PumpRunner:
         else:
             bus.success(L.pump.run.complete, count=total_updated_keys)
 
-        return PumpResult(success=True, redundant_files=[])
+        redundant = []
+        if not strip:
+            redundant = files_with_pumped_docs
+
+        return PumpResult(success=True, redundant_files=redundant)
