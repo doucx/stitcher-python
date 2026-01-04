@@ -18,6 +18,7 @@ dev = [
     "stitcher-cli",
     "stitcher-application",
     "stitcher-test-utils",
+    "stitcher-refactor",
 ]
 
 [tool.uv.workspace]
