@@ -140,30 +140,48 @@ class _UsageVisitor(cst.CSTVisitor):
         return True
 
     def visit_ImportFrom(self, node: cst.ImportFrom) -> Optional[bool]:
-        # 1. Handle the module part (from ... import)
-        if self.current_package is not None:
-             try:
-                 absolute_module = get_absolute_module_from_package_for_import(
-                     self.current_package, node
-                 )
-                 if absolute_module and node.module:
-                     self._register_module_parts(node.module, absolute_module)
-                 
-                 # 2. Handle the names being imported
-                 # from pkg import A, B
-                 # If absolute_module is 'pkg', then A is 'pkg.A', B is 'pkg.B'
-                 if absolute_module:
-                     for alias in node.names:
-                         if isinstance(alias, cst.ImportAlias):
-                             name_node = alias.name
-                             imported_name = get_full_name_for_node(name_node)
-                             if imported_name:
-                                 full_fqn = f"{absolute_module}.{imported_name}"
-                                 self._register_node(name_node, full_fqn)
+        # 1. Resolve absolute module path
+        absolute_module = None
+        
+        # Determine package context for LibCST resolution
+        # If current_package is "", LibCST expects None for 'package' arg usually?
+        # Actually get_absolute_module_from_package_for_import doc says:
+        # package: Optional[str] - The name of the package the module is in.
+        
+        try:
+            # Note: self.current_package might be "" (top level) or "pkg" or None.
+            # If node.relative is non-empty (dots), we need a package.
+            # If node.relative is empty, it's absolute import, package context helps but not strictly required if we just concat?
+            # But we use LibCST helper for robustness.
+            
+            package_ctx = self.current_package if self.current_package != "" else None
+            
+            absolute_module = get_absolute_module_from_package_for_import(
+                package_ctx, node
+            )
+        except Exception:
+            # If LibCST fails (e.g. relative import from top level), ignore
+            pass
 
-             except Exception:
-                 # Fallback or ignore if resolution fails
-                 pass
+        if absolute_module:
+            # Register the module part itself (e.g. 'mypkg.core' in 'from mypkg.core import ...')
+            if node.module:
+                self._register_module_parts(node.module, absolute_module)
+            
+            # 2. Handle the names being imported
+            # from pkg import A, B -> A is pkg.A
+            for alias in node.names:
+                if isinstance(alias, cst.ImportAlias):
+                    name_node = alias.name
+                    imported_name = get_full_name_for_node(name_node)
+                    
+                    # Handle 'from pkg import *' which is cst.ImportStar (not in node.names)
+                    # Wait, node.names is Sequence[ImportAlias] | ImportStar.
+                    # If it is ImportStar, we can't do much without wildcard expansion (requires full analysis).
+                    
+                    if imported_name:
+                         full_fqn = f"{absolute_module}.{imported_name}"
+                         self._register_node(name_node, full_fqn)
 
         return True
 

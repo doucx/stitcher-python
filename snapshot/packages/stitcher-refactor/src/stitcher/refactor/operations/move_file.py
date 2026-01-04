@@ -51,23 +51,50 @@ class MoveFileOperation(AbstractOperation):
         return ".".join(parts)
 
     def analyze(self, ctx: RefactorContext) -> List[FileOp]:
-        ops: List[FileOp] = []
+        rename_ops: List[FileOp] = []
+        move_ops: List[FileOp] = []
         
-        # 1. Physical Move
-        # Note: We use the relative path for Ops
+        # 1. Symbol Renaming (Must happen BEFORE moves to modify existing files)
+        # Why? Because RenameSymbolOperation modifies files in place (including Sidecars).
+        # If we move Sidecars first, RenameOp will recreate them at old location or fail.
+        # By modifying first, we update content at old location, THEN move to new location.
+        
+        old_module_fqn = self._path_to_fqn(self.src_path, ctx.graph.root_path)
+        new_module_fqn = self._path_to_fqn(self.dest_path, ctx.graph.root_path)
+        
+        if old_module_fqn and new_module_fqn and old_module_fqn != new_module_fqn:
+            # Rename the module itself (handles "import old_mod")
+            rename_mod_op = RenameSymbolOperation(old_module_fqn, new_module_fqn)
+            rename_ops.extend(rename_mod_op.analyze(ctx))
+            
+            # Rename all members (handles "from old_mod import X")
+            members = ctx.graph.iter_members(old_module_fqn)
+            
+            for member in members:
+                if member.fqn == old_module_fqn:
+                    continue
+                
+                if member.fqn.startswith(old_module_fqn + "."):
+                    suffix = member.fqn[len(old_module_fqn):]
+                    target_new_fqn = new_module_fqn + suffix
+                    
+                    sub_op = RenameSymbolOperation(member.fqn, target_new_fqn)
+                    rename_ops.extend(sub_op.analyze(ctx))
+
+        # 2. Physical Move
         rel_src = self.src_path.relative_to(ctx.graph.root_path)
         rel_dest = self.dest_path.relative_to(ctx.graph.root_path)
         
-        ops.append(MoveFileOp(rel_src, rel_dest))
+        move_ops.append(MoveFileOp(rel_src, rel_dest))
         
-        # 2. Sidecar Moves
+        # 3. Sidecar Moves
         # YAML
         yaml_src = self.src_path.with_suffix(".stitcher.yaml")
         yaml_dest = self.dest_path.with_suffix(".stitcher.yaml")
         if yaml_src.exists():
             rel_yaml_src = yaml_src.relative_to(ctx.graph.root_path)
             rel_yaml_dest = yaml_dest.relative_to(ctx.graph.root_path)
-            ops.append(MoveFileOp(rel_yaml_src, rel_yaml_dest))
+            move_ops.append(MoveFileOp(rel_yaml_src, rel_yaml_dest))
             
         # Signatures
         sig_root = ctx.graph.root_path / ".stitcher/signatures"
@@ -76,43 +103,7 @@ class MoveFileOperation(AbstractOperation):
         if sig_src.exists():
              rel_sig_src = sig_src.relative_to(ctx.graph.root_path)
              rel_sig_dest = sig_dest.relative_to(ctx.graph.root_path)
-             ops.append(MoveFileOp(rel_sig_src, rel_sig_dest))
-
-        # 3. Symbol Renaming
-        old_module_fqn = self._path_to_fqn(self.src_path, ctx.graph.root_path)
-        new_module_fqn = self._path_to_fqn(self.dest_path, ctx.graph.root_path)
+             move_ops.append(MoveFileOp(rel_sig_src, rel_sig_dest))
         
-        if old_module_fqn and new_module_fqn and old_module_fqn != new_module_fqn:
-            # Rename the module itself (handles "import old_mod")
-            rename_mod_op = RenameSymbolOperation(old_module_fqn, new_module_fqn)
-            ops.extend(rename_mod_op.analyze(ctx))
-            
-            # Rename all members (handles "from old_mod import X")
-            # And critically, updates Sidecar keys (mypkg.old.X -> mypkg.new.X)
-            # We iterate members of the OLD module because that's what's currently in the graph.
-            members = ctx.graph.iter_members(old_module_fqn)
-            
-            for member in members:
-                # iter_members returns all nested members.
-                # If we rename 'mypkg.old', do we need to explicitly rename 'mypkg.old.Func'?
-                # For code: 'from mypkg.old import Func'. 
-                #   Visitor registers 'Func' as usage of 'mypkg.old.Func'.
-                #   If we don't rename 'mypkg.old.Func', this usage won't be touched.
-                #   So YES, we must rename it.
-                
-                # However, exclude the module itself as we already added it
-                if member.fqn == old_module_fqn:
-                    continue
-                
-                # Compute new FQN
-                # old_fqn: mypkg.old.Func
-                # suffix: .Func
-                # new_fqn: mypkg.new.Func
-                if member.fqn.startswith(old_module_fqn + "."):
-                    suffix = member.fqn[len(old_module_fqn):]
-                    target_new_fqn = new_module_fqn + suffix
-                    
-                    sub_op = RenameSymbolOperation(member.fqn, target_new_fqn)
-                    ops.extend(sub_op.analyze(ctx))
-                    
-        return ops
+        # Return combined ops: FIRST modify content, THEN move files
+        return rename_ops + move_ops
