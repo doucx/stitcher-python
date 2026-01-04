@@ -8,6 +8,7 @@ from .transforms.rename_transformer import SymbolRenamerTransformer
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.refactor.engine.transaction import FileOp, WriteFileOp
 from stitcher.refactor.engine.graph import UsageLocation
+from stitcher.refactor.sidecar.updater import DocUpdater, SigUpdater
 
 
 class RenameSymbolOperation(AbstractOperation):
@@ -40,7 +41,7 @@ class RenameSymbolOperation(AbstractOperation):
         # 3. For each affected file, apply transformation
         for file_path, file_usages in usages_by_file.items():
             try:
-                # We assume file_path is absolute from Griffe
+                # --- 1. Handle Code Renaming ---
                 original_source = file_path.read_text(encoding="utf-8")
                 
                 module = cst.parse_module(original_source)
@@ -49,14 +50,37 @@ class RenameSymbolOperation(AbstractOperation):
                 transformer = SymbolRenamerTransformer(rename_map, file_usages)
                 modified_module = wrapper.visit(transformer)
 
+                relative_path = file_path.relative_to(ctx.graph.root_path)
                 if modified_module.code != original_source:
-                    # The path in WriteFileOp should be relative to the project root
-                    relative_path = file_path.relative_to(ctx.graph.root_path)
                     ops.append(WriteFileOp(path=relative_path, content=modified_module.code))
 
+                # --- 2. Handle Sidecar Renaming ---
+                doc_updater = DocUpdater()
+                sig_updater = SigUpdater()
+
+                # Doc file
+                doc_path = file_path.with_suffix(".stitcher.yaml")
+                if doc_path.exists():
+                    doc_data = doc_updater.load(doc_path)
+                    new_doc_data = doc_updater.rename_key(doc_data, self.old_fqn, self.new_fqn)
+                    if new_doc_data != doc_data:
+                        ops.append(WriteFileOp(
+                            path=doc_path.relative_to(ctx.graph.root_path),
+                            content=doc_updater.dump(new_doc_data)
+                        ))
+
+                # Signature file
+                sig_path = ctx.graph.root_path / ".stitcher/signatures" / relative_path.with_suffix(".json")
+                if sig_path.exists():
+                    sig_data = sig_updater.load(sig_path)
+                    new_sig_data = sig_updater.rename_key(sig_data, self.old_fqn, self.new_fqn)
+                    if new_sig_data != sig_data:
+                        ops.append(WriteFileOp(
+                            path=sig_path.relative_to(ctx.graph.root_path),
+                            content=sig_updater.dump(new_sig_data)
+                        ))
+
             except Exception:
-                # Log error and continue? For now, let it fail fast.
-                # In a real CLI, we'd collect these errors.
                 raise
 
         return ops

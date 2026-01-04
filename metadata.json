@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] test: 添加 RenameSymbolOperation 的端到端集成测试", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767532258.9470837, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat(refactor): 集成 sidecar 文件更新到 RenameSymbolOperation", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767532346.05825, "duration_ms": 0}}
