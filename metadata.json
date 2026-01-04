@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 修复 Path.read_text Mock 缺失 self 参数的测试错误", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767532201.2694936, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test: 添加 RenameSymbolOperation 的端到端集成测试", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767532258.9470837, "duration_ms": 0}}
