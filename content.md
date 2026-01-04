@@ -1,86 +1,103 @@
 简要回答
-是的，我将执行“提案：引入纯净的应用层”的第一阶段：重构 `pump` 命令。
+好的，我将创建一个集成测试来复现 `pump` 命令在存在冗余文档时未能正确提示用户进行 strip 操作的问题。
 
-目前的 `StitcherApp.run_pump` 方法中包含了一段直接依赖 `typer` 的交互代码，这不仅违反了分层架构原则，还与 CLI 层中已存在的相同逻辑造成了冗余。
+经过代码审查，我发现了潜在的故障点：`PumpRunner.run` 方法似乎始终返回空的 `redundant_files` 列表，导致 CLI 层的交互逻辑 (`if result.redundant_files:`) 永远无法触发。
 
-我将生成一个计划，从应用层核心逻辑中彻底移除这段代码，使其回归纯净。由于 CLI 层 (`stitcher-cli`) 已经具备了处理交互确认和后续调用的逻辑，此修改是安全的。
+我将编写一个测试，模拟一个应当产生冗余文档的场景，并断言 CLI 在用户确认后执行了 strip 操作。由于当前逻辑存在缺陷，预计此测试将失败（Red 阶段）。
 
-## [WIP] refactor(app): 移除 StitcherApp.run_pump 中的 UI 交互逻辑
+## [WIP] test(cli): 添加 pump 命令交互式 strip 提示的集成测试
 
 ### 用户需求
-执行“引入纯净应用层”提案的第一阶段，清理 `stitcher-application` 包中泄露的 CLI 依赖，具体针对 `pump` 命令的执行流程。
+验证 `stitcher pump` 命令在检测到源码中的文档字符串已成功提取到 YAML 后，能够在交互模式下提示用户将其从源码中剥离（Strip）。
 
 ### 评论
-当前 `StitcherApp.run_pump` 方法中包含一段 `if ... import typer ...` 的逻辑。这部分代码不仅难以测试（需要 mock typer），而且在 `stitcher-cli` 中已经有重复实现。移除它将立即使应用层变得更纯净、可测试且可移植。
+这个测试不仅仅是为了覆盖率，它直接针对了一个隐蔽的逻辑缺陷。通过模拟 TTY 环境和用户输入，我们可以验证整个“检测冗余 -> 提示 -> 执行剥离”的链路是否通畅。使用 `SpyBus` 验证最终结果（`L.strip.run.complete`）比匹配脆弱的 stdout 字符串更符合我们的测试哲学。
 
 ### 目标
-1.  修改 `packages/stitcher-application/src/stitcher/app/core.py`。
-2.  移除 `run_pump` 方法尾部的交互式确认（`typer.confirm`）和对 `self.run_strip` 的条件调用。
-3.  确保 `run_pump` 仅负责执行 pump 逻辑并返回 `PumpResult` DTO。
+1.  创建 `packages/stitcher-cli/tests/integration/test_pump_strip_interaction.py`。
+2.  编写测试 `test_pump_prompts_for_strip_when_redundant`。
+    *   **Arrange**: 创建包含 docstring 的源码文件。
+    *   **Act**: 在模拟 TTY 环境下运行 `pump` 命令（不带 `--strip`），并注入 `'y'` 作为确认输入。
+    *   **Assert**: 验证 `SpyBus` 是否收到了 `L.strip.run.complete` 消息（意味着 strip 逻辑被触发并执行了）。
 
 ### 基本原理
-根据架构提案，应用层 (`stitcher-application`) 必须保持对表现层框架（如 `typer`）的无知（Oblivious）。所有的用户交互决策和流程编排（Orchestration）都应上移至 CLI 层。CLI 层目前已经包含了处理 `PumpResult` 并询问用户是否 strip 的逻辑，因此删除下层代码不会导致功能缺失。
+我们利用 `SpyBus` 验证“意图”而非“实现”。如果交互逻辑正常工作，用户确认后必然会触发 `run_strip`，进而产生 `strip.run.complete` 消息。如果 Bus 没有收到该消息，即证明交互逻辑未触发或执行失败，从而在不依赖具体 UI 文案的情况下精准捕获 Bug。
 
 ### 标签
-#intent/refine #flow/ready #priority/high
-#comp/runtime #scope/core
+#intent/tooling #flow/draft #priority/high
+#comp/cli #comp/tests #scope/core
 #ai/instruct
-#task/domain/architecture #task/object/application-layer #task/action/decouple-ui
-#task/state/begin #task/status/active
+#task/domain/testing #task/object/pump-command #task/action/reproduce-bug
+#task/state/continue #task/status/active
 
 ---
 
 ### Script
 
-#### Acts 1: 净化 StitcherApp.run_pump
-
-移除 `run_pump` 中所有关于 `typer` 的导入和交互逻辑。
+#### Acts 1: 创建复现测试
 
 ~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
+write_file
+packages/stitcher-cli/tests/integration/test_pump_strip_interaction.py
 ~~~~~
 ~~~~~python
-    def run_pump(
-        self, strip: bool = False, force: bool = False, reconcile: bool = False
-    ) -> PumpResult:
-        # Pass-through all options to the dedicated runner
-        result = self.pump_runner.run(strip=strip, force=force, reconcile=reconcile)
+import sys
+from typer.testing import CliRunner
+from stitcher.cli.main import app
+from stitcher.test_utils import WorkspaceFactory, SpyBus
+from needle.pointer import L
 
-        # The secondary, interactive strip confirmation logic remains here for now,
-        # as it's a cross-command concern (pump -> strip).
-        # A more advanced implementation might use an event bus or a post-execution hook.
-        if (
-            self.pump_runner.interaction_handler
-            and result.redundant_files
-            and not strip
-        ):
-            import typer  # Lazy import for CLI-specific interaction
 
-            typer.echo("")
-            typer.secho(
-                f"Found {len(result.redundant_files)} file(s) with redundant docstrings in source code.",
-                fg=typer.colors.YELLOW,
-            )
-            if typer.confirm("Do you want to strip them now?", default=True):
-                self.run_strip(files=result.redundant_files)
+def test_pump_prompts_for_strip_when_redundant(tmp_path, monkeypatch):
+    """
+    Verifies that when 'pump' extracts docstrings (making source docs redundant),
+    it prompts the user to strip them, and performs the strip if confirmed.
+    """
+    # 1. Arrange
+    factory = WorkspaceFactory(tmp_path)
+    # Create a file with a docstring that will be extracted
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+        .with_source(
+            "src/main.py",
+            '''
+def func():
+    """This docstring should become redundant."""
+    pass
+''',
+        )
+        .build()
+    )
 
-        return result
+    runner = CliRunner()
+    spy_bus = SpyBus()
 
-    def run_strip(self, files: Optional[List[Path]] = None) -> List[Path]:
-~~~~~
-~~~~~python
-    def run_pump(
-        self, strip: bool = False, force: bool = False, reconcile: bool = False
-    ) -> PumpResult:
-        # Pass-through all options to the dedicated runner
-        return self.pump_runner.run(strip=strip, force=force, reconcile=reconcile)
+    # Mock isatty to True to force interactive mode (so handler is created)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
-    def run_strip(self, files: Optional[List[Path]] = None) -> List[Path]:
+    # 2. Act
+    # Run pump without --strip, but provide 'y' to the potential prompt
+    with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
+        # We need to change cwd so the CLI picks up the pyproject.toml
+        result = runner.invoke(app, ["pump"], input="y\n", cwd=str(project_root))
+
+    # 3. Assert
+    assert result.exit_code == 0
+
+    # Critical Assertion:
+    # If the prompt appeared and worked, 'run_strip' should have been called,
+    # and it should have emitted a success message via the bus.
+    # If this fails, it means the CLI never prompted or never executed the strip.
+    spy_bus.assert_id_called(L.strip.run.complete, level="success")
+
+    # Verify physical file content (docstring should be gone)
+    content = (project_root / "src/main.py").read_text()
+    assert '"""' not in content
+    assert "pass" in content
 ~~~~~
 
 ### 下一步建议
 
-代码修改完成后，建议运行测试以确保重构未引入回归。
-1.  运行 `pytest packages/stitcher-application/tests` 验证应用层逻辑。
-2.  (可选) 手动验证或检查 CLI 层的测试，确保 `stitcher pump` 命令在发现冗余文件时仍能提示用户进行 strip 操作（由 CLI 层逻辑保证）。
+运行测试 `pytest packages/stitcher-cli/tests/integration/test_pump_strip_interaction.py`。
+预计测试将失败，因为 `PumpRunner` 目前返回空的 `redundant_files`。
+确认失败后，我将生成修复计划，修正 `stitcher-application` 中的 `PumpRunner` 逻辑。
