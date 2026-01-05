@@ -1,36 +1,3 @@
-简要回答
-好的，我将创建一个集成测试来复现 `SidecarUpdateMixin` 在处理 sidecar 键名时错误地生成 FQN（全限定名）而非短名称（Short Name）的问题。
-
-## [WIP] test: 添加 Sidecar FQN 格式问题的复现测试
-
-### 用户需求
-用户指出 `stitcher` 在重构过程中更新 sidecar YAML 文件时，错误地将键名（Key）从短名称（例如 `InMemoryCacheBackend`）转换为了全限定名（例如 `cascade.runtime.io.cache.in_memory.InMemoryCacheBackend`）。用户要求创建一个测试用例来复现此行为。
-
-### 评论
-这个问题影响了文档的可读性和一致性。Stitcher 的默认行为应当是尽可能保持 sidecar 文件中的键名为相对于当前模块的短名称。如果目前的逻辑在文件移动或重命名后总是生成 FQN，这是一个需要修复的缺陷。
-
-### 目标
-创建一个集成测试 `packages/stitcher-refactor/src/stitcher/refactor/tests/integration/test_repro_sidecar_fqn.py`，模拟将一个包含短名称键的 sidecar 文件的源文件移动到新位置，并断言更新后的 sidecar 文件中键名仍然保持为短名称。
-
-### 基本原理
-我们将使用 `MoveFileOperation`，因为它会触发 `SidecarUpdateMixin` 的逻辑来更新 sidecar 文件。通过检查操作后的 YAML 内容，我们可以验证键名是否被错误地扩展为 FQN。
-
-### 标签
-#intent/tooling #flow/ready #priority/high #comp/tests #concept/state #scope/core #ai/instruct #task/domain/refactor #task/object/sidecar-updater #task/action/repro-bug #task/state/begin
-
----
-
-### Script
-
-#### Acts 1: 创建复现测试
-
-我们将创建一个新的测试文件，模拟文件移动场景，并明确断言 Sidecar 中的键名不应包含包前缀。
-
-~~~~~act
-write_file
-packages/stitcher-refactor/src/stitcher/refactor/tests/integration/test_repro_sidecar_fqn.py
-~~~~~
-~~~~~python
 import yaml
 from stitcher.refactor.engine.graph import SemanticGraph
 from stitcher.refactor.engine.context import RefactorContext
@@ -125,7 +92,3 @@ def test_repro_sidecar_keys_should_remain_short_names_after_move(tmp_path):
     # Verify content wasn't lost
     assert data["MyClass"] == "Class doc"
     assert data["MyClass.__init__"] == "Init doc"
-~~~~~
-
-### 下一步建议
-执行此测试。如果测试失败（即发现键名变成了 `mypkg.moved.MyClass`），则成功复现了问题。接下来，我们将分析 `stitcher/refactor/operations/base.py` 中的 `SidecarUpdateMixin` 逻辑并进行修复。
