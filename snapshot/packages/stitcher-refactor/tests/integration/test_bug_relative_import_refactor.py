@@ -1,40 +1,3 @@
-# [WIP] test: 添加重现相对导入重构失败的集成测试
-
-### 用户需求
-创建一个集成测试，用于明确捕获（重现）Stitcher 在处理文件移动操作时的两个核心缺陷：
-1.  未能正确更新引用了被移动文件的**相对导入**语句（例如 `from .module import X`）。
-2.  未能自动在新的目标目录层级中创建缺失的 `__init__.py` 文件，导致生成的目录结构不是有效的 Python 包。
-
-### 评论
-这个测试是“冒烟枪”（smoking gun），它将在 CI 环境中失败，从而证实我们对问题的分析。通过断言**期望的正确行为**（导入路径被更新，`__init__.py` 被创建），我们可以将此测试作为后续修复工作的验收标准。
-
-### 目标
-在 `stitcher-refactor` 包中添加一个新的测试文件 `test_bug_relative_import_refactor.py`，模拟将一个被相对导入引用的文件移动到更深层目录的场景。
-
-### 基本原理
-我们使用 `WorkspaceFactory` 构建一个最小化的复现环境。
-- **初始状态**: `mypkg/__init__.py` 通过 `from .core import A` 引用同级文件 `core.py`。
-- **动作**: 将 `core.py` 移动到 `mypkg/services/deep/core.py`。
-- **期望**:
-    1.  `mypkg/__init__.py` 应更新为 `from .services.deep.core import A` 或 `from mypkg.services.deep.core import A`。
-    2.  `mypkg/services/__init__.py` 和 `mypkg/services/deep/__init__.py` 应该被自动创建。
-
-### 标签
-#intent/test #flow/ready #priority/critical #comp/tests #concept/refactor #scope/core #ai/instruct #task/domain/refactoring #task/object/relative-import-fix #task/action/reproduce-bug #task/state/begin
-
----
-
-### Script
-
-#### Acts 1: 创建复现测试
-
-我们将在 `stitcher-refactor` 的集成测试目录中创建一个名为 `test_bug_relative_import_refactor.py` 的文件。
-
-~~~~~act
-write_file
-packages/stitcher-refactor/tests/integration/test_bug_relative_import_refactor.py
-~~~~~
-~~~~~python
 import pytest
 from stitcher.refactor.engine.graph import SemanticGraph
 from stitcher.refactor.engine.context import RefactorContext
@@ -113,13 +76,3 @@ def test_move_file_updates_relative_imports_and_scaffolds_init(tmp_path):
         f"Relative import was not updated correctly.\n"
         f"Content:\n{updated_usage}"
     )
-~~~~~
-
-### 下一步建议
-
-现在测试已经创建，你可以运行它来确认失败：
-`uv run pytest packages/stitcher-refactor/tests/integration/test_bug_relative_import_refactor.py`
-
-确认失败后，我们将开始着手修复：
-1.  修改 `MoveFileOperation` (或其基类) 以检测新创建的目录，并自动生成 `WriteFileOp` 来创建 `__init__.py`。
-2.  修改 `RenameSymbolOperation` 或相关的 Transformer 逻辑，使其能够计算相对路径的差异，正确重写 `ImportFrom` 语句。
