@@ -186,11 +186,11 @@ class SemanticGraph:
         self._build_registry(module)
 
     def _build_registry(self, module: griffe.Module):
-        for member in module.members.values():
-            if isinstance(member, griffe.Module) and not member.is_alias:
-                self._build_registry(member)
-        if module.filepath:
-            self._scan_module_usages(module)
+        # Instead of recursively walking the tree (which is fragile for namespace packages),
+        # we iterate over all modules Griffe has discovered. This is more robust.
+        for mod in self._griffe_loader.modules_by_filepath.values():
+            if mod.filepath:
+                self._scan_module_usages(mod)
 
     def _scan_module_usages(self, module: griffe.Module):
         local_symbols: Dict[str, str] = {}
