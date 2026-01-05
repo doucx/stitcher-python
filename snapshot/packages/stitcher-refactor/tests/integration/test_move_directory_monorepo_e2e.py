@@ -21,7 +21,10 @@ def test_move_directory_in_monorepo_updates_cross_package_references(tmp_path):
         factory
         # --- cascade-engine package ---
         .with_pyproject("cascade-engine")
-        .with_source("cascade-engine/src/cascade/__init__.py", "")
+        .with_source(
+            "cascade-engine/src/cascade/__init__.py",
+            "__path__ = __import__('pkgutil').extend_path(__path__, __name__)",
+        )
         .with_source("cascade-engine/src/cascade/engine/__init__.py", "")
         .with_source("cascade-engine/src/cascade/engine/core/__init__.py", "")
         .with_source(
@@ -37,7 +40,10 @@ def test_move_directory_in_monorepo_updates_cross_package_references(tmp_path):
         )
         # --- cascade-runtime package ---
         .with_pyproject("cascade-runtime")
-        .with_source("cascade-runtime/src/cascade/__init__.py", "")
+        .with_source(
+            "cascade-runtime/src/cascade/__init__.py",
+            "__path__ = __import__('pkgutil').extend_path(__path__, __name__)",
+        )
         .with_source("cascade-runtime/src/cascade/runtime/__init__.py", "")
         .with_source(
             "cascade-runtime/src/cascade/runtime/app.py",
