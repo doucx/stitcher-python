@@ -9,7 +9,7 @@ from stitcher.refactor.engine.intent import (
     RenameIntent,
     MoveFileIntent,
     SidecarUpdateIntent,
-    DeleteDirectoryOp,
+    DeleteDirectoryIntent,
     ScaffoldIntent,
 )
 
@@ -77,8 +77,7 @@ class MoveDirectoryOperation(AbstractOperation, SidecarUpdateMixin):
             intents.append(MoveFileIntent(src_item, dest_item))
 
         # 3. Declare deletion of the source directory
-        # TODO: This should be a `DeleteDirectoryIntent`. For now, this is a placeholder.
-        # intents.append(DeleteDirectoryIntent(self.src_dir))
+        intents.append(DeleteDirectoryIntent(self.src_dir))
 
         # 4. Declare scaffolding of __init__.py files
         intents.extend(self._scaffold_init_intents(self.dest_dir, ctx))

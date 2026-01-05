@@ -10,6 +10,7 @@ from .intent import (
     DeleteFileIntent,
     ScaffoldIntent,
     SidecarUpdateIntent,
+    DeleteDirectoryIntent,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "DeleteFileIntent",
     "ScaffoldIntent",
     "SidecarUpdateIntent",
+    "DeleteDirectoryIntent",
 ]

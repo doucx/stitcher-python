@@ -12,6 +12,7 @@ from stitcher.refactor.engine.transaction import (
     MoveFileOp,
     WriteFileOp,
     DeleteFileOp,
+    DeleteDirectoryOp,
 )
 from stitcher.refactor.engine.intent import (
     RefactorIntent,
@@ -20,6 +21,7 @@ from stitcher.refactor.engine.intent import (
     MoveFileIntent,
     DeleteFileIntent,
     ScaffoldIntent,
+    DeleteDirectoryIntent,
 )
 from stitcher.refactor.engine.renamer import GlobalBatchRenamer
 from stitcher.refactor.operations.base import SidecarUpdateMixin
@@ -78,6 +80,8 @@ class Planner(SidecarUpdateMixin):
                 all_ops.append(MoveFileOp(intent.src_path.relative_to(ctx.graph.root_path), intent.dest_path.relative_to(ctx.graph.root_path)))
             elif isinstance(intent, DeleteFileIntent):
                 all_ops.append(DeleteFileOp(intent.path.relative_to(ctx.graph.root_path)))
+            elif isinstance(intent, DeleteDirectoryIntent):
+                all_ops.append(DeleteDirectoryOp(intent.path.relative_to(ctx.graph.root_path)))
             elif isinstance(intent, ScaffoldIntent):
                 all_ops.append(WriteFileOp(intent.path.relative_to(ctx.graph.root_path), intent.content))
         
