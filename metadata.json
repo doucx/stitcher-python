@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix(refactor): 实现基于 Python 标识符规范的健壮包发现过滤", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767602745.9373617, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix(refactor): Explicitly ignore `__pycache__` during package discovery", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767602787.934286, "duration_ms": 0}}

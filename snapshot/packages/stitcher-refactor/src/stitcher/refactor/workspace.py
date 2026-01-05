@@ -42,8 +42,9 @@ class Workspace:
             return []
 
         for item in src_path.iterdir():
-            # A potential top-level package is a directory whose name is a valid identifier.
-            if item.is_dir() and item.name.isidentifier():
+            # A potential top-level package is a directory whose name is a valid identifier,
+            # explicitly excluding special dunders like __pycache__.
+            if item.is_dir() and item.name.isidentifier() and item.name != "__pycache__":
                 names.add(item.name)
             # A potential top-level module is a .py file whose stem is a valid identifier.
             elif (
