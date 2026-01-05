@@ -1,7 +1,11 @@
 import json
 from stitcher.refactor.engine.graph import SemanticGraph
 from stitcher.refactor.engine.context import RefactorContext
-from stitcher.refactor.engine.transaction import TransactionManager, MoveFileOp
+from stitcher.refactor.engine.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    WriteFileOp,
+)
 from stitcher.refactor.operations.move_file import MoveFileOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
@@ -53,15 +57,20 @@ def test_move_file_flat_layout(tmp_path):
     ctx = RefactorContext(
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = MoveFileOperation(old_py, new_py)
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     # 3. Commit
     tm = TransactionManager(project_root)
     for fop in file_ops:
         if isinstance(fop, MoveFileOp):
             tm.add_move(fop.path, fop.dest)
-        else:
+        elif isinstance(fop, WriteFileOp):
             tm.add_write(fop.path, fop.content)
     tm.commit()
 
@@ -79,7 +88,8 @@ def test_move_file_flat_layout(tmp_path):
     assert "import mypkg.new" in new_app
     assert "from mypkg.new import A" in new_app
     assert "from . import new" in new_app
-    assert "from .new import A as AliasA" in new_app
+    # Note: Stitcher now converts relative imports with a module part to absolute imports for robustness
+    assert "from mypkg.new import A as AliasA" in new_app
 
     # Sidecar Keys
     new_yaml_content = new_py.with_suffix(".stitcher.yaml").read_text("utf-8")

@@ -7,6 +7,7 @@ from stitcher.refactor.engine.transaction import (
     TransactionManager,
     MoveFileOp,
     DeleteDirectoryOp,
+    WriteFileOp,
 )
 from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
@@ -57,8 +58,13 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = MoveDirectoryOperation(core_dir, services_dir)
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     # 3. EXECUTION
     tm = TransactionManager(project_root)
@@ -67,7 +73,7 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
             tm.add_move(fop.path, fop.dest)
         elif isinstance(fop, DeleteDirectoryOp):
             tm.add_delete_dir(fop.path)
-        else:
+        elif isinstance(fop, WriteFileOp):
             tm.add_write(fop.path, fop.content)
     tm.commit()
 

@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 from stitcher.refactor.engine.context import RefactorContext
-from stitcher.refactor.engine.transaction import FileOp
+from stitcher.refactor.engine.intent import RefactorIntent
 
 
 class SidecarUpdateMixin:
@@ -100,5 +100,5 @@ class SidecarUpdateMixin:
 
 class AbstractOperation(ABC):
     @abstractmethod
-    def analyze(self, ctx: RefactorContext) -> List[FileOp]:
+    def collect_intents(self, ctx: RefactorContext) -> List[RefactorIntent]:
         pass

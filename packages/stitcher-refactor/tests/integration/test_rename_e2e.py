@@ -1,6 +1,6 @@
 from stitcher.refactor.engine.graph import SemanticGraph
 from stitcher.refactor.engine.context import RefactorContext
-from stitcher.refactor.engine.transaction import TransactionManager
+from stitcher.refactor.engine.transaction import TransactionManager, WriteFileOp
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
@@ -70,17 +70,23 @@ def test_rename_symbol_end_to_end(tmp_path):
     )
 
     # 3. Planning Phase
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = RenameSymbolOperation(
         old_fqn="mypkg.core.OldHelper", new_fqn="mypkg.core.NewHelper"
     )
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     # 4. Execution Phase
     tm = TransactionManager(project_root)
     for op in file_ops:
         # In a real app, we might add ops one by one. Here we add all.
         # This assumes analyze() returns WriteFileOp with correct content.
-        tm.add_write(op.path, op.content)
+        if isinstance(op, WriteFileOp):
+            tm.add_write(op.path, op.content)
 
     tm.commit()
 

@@ -98,21 +98,30 @@ def test_rename_symbol_analyze_orchestration():
 
     from unittest.mock import patch
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     with patch.object(Path, "read_text", side_effect=mock_read_text, autospec=True):
         # 3. Execute
         op = RenameSymbolOperation(old_fqn, new_fqn)
-        file_ops = op.analyze(ctx)
+        spec = MigrationSpec().add(op)
+        planner = Planner()
+        file_ops = planner.plan(spec, ctx)
 
     # 4. Verify
-    mock_registry.get_usages.assert_called_once_with(old_fqn)
+    # The planner will get usages for the old_fqn and potentially its prefixes.
+    # We can check that it was called with the specific FQN.
+    mock_registry.get_usages.assert_any_call(old_fqn)
 
     # We expect 2 code change ops + potentially sidecar ops
     # Since we mocked .exists() to False, we expect only the 2 code ops.
     assert len(file_ops) == 2
-    assert all(isinstance(op, WriteFileOp) for op in file_ops)
+    # Ensure type narrowing
+    write_ops = [op for op in file_ops if isinstance(op, WriteFileOp)]
+    assert len(write_ops) == 2
 
-    op_a = next(op for op in file_ops if op.path == file_a_path.relative_to(tmp_path))
-    op_b = next(op for op in file_ops if op.path == file_b_path.relative_to(tmp_path))
+    op_a = next(op for op in write_ops if op.path == file_a_path.relative_to(tmp_path))
+    op_b = next(op for op in write_ops if op.path == file_b_path.relative_to(tmp_path))
 
     expected_code_a = "from mypkg.core import NewHelper\n\nobj = NewHelper()"
     expected_code_b = (

@@ -1,6 +1,6 @@
 from stitcher.refactor.engine.graph import SemanticGraph
 from stitcher.refactor.engine.context import RefactorContext
-from stitcher.refactor.engine.transaction import TransactionManager
+from stitcher.refactor.engine.transaction import TransactionManager, WriteFileOp
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
@@ -64,14 +64,20 @@ def test_rename_symbol_in_namespace_package_structure(tmp_path):
     )
 
     # Rename MessageBus -> FeedbackBus
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = RenameSymbolOperation(
         "stitcher.core.bus.MessageBus", "stitcher.core.bus.FeedbackBus"
     )
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     tm = TransactionManager(project_root)
     for fop in file_ops:
-        tm.add_write(fop.path, fop.content)
+        if isinstance(fop, WriteFileOp):
+            tm.add_write(fop.path, fop.content)
     tm.commit()
 
     # 3. ASSERT

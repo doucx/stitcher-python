@@ -8,6 +8,7 @@ from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory
+from stitcher.refactor.engine.transaction import WriteFileOp
 
 # Injected real content of bus.py to match production environment exactly
 BUS_PY_CONTENT = """
@@ -141,12 +142,18 @@ def test_debug_rename_failure_analysis(tmp_path):
     ctx = RefactorContext(
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = RenameSymbolOperation(old_fqn, new_fqn)
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     tm = TransactionManager(project_root)
     for fop in file_ops:
-        tm.add_write(fop.path, fop.content)
+        if isinstance(fop, WriteFileOp):
+            tm.add_write(fop.path, fop.content)
     tm.commit()
 
     # 4. FINAL ASSERTION

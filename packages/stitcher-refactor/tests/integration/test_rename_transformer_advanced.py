@@ -1,5 +1,6 @@
 from stitcher.refactor.engine.graph import SemanticGraph
 from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.transaction import WriteFileOp
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
@@ -34,13 +35,21 @@ def test_rename_symbol_via_attribute_access(tmp_path):
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     # 3. Plan
     op = RenameSymbolOperation("mypkg.core.OldHelper", "mypkg.core.NewHelper")
-    ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    ops = planner.plan(spec, ctx)
 
     # 4. Verify (without committing, just check the planned ops)
     assert len(ops) == 2
-    write_ops = {op.path.name: op for op in ops}
+    # Ensure we are dealing with WriteFileOps
+    write_ops = {op.path.name: op for op in ops if isinstance(op, WriteFileOp)}
+    assert len(write_ops) == 2
+
     assert "core.py" in write_ops
     assert "main.py" in write_ops
     assert "class NewHelper: pass" in write_ops["core.py"].content
@@ -75,13 +84,20 @@ def test_rename_symbol_imported_with_alias(tmp_path):
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     # 3. Plan
     op = RenameSymbolOperation("mypkg.core.OldHelper", "mypkg.core.NewHelper")
-    ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    ops = planner.plan(spec, ctx)
 
     # 4. Verify
     assert len(ops) == 2
-    write_ops = {op.path.name: op for op in ops}
+    write_ops = {op.path.name: op for op in ops if isinstance(op, WriteFileOp)}
+    assert len(write_ops) == 2
+
     expected_main = "from mypkg.core import NewHelper as OH\n\nh = OH()"
     assert "core.py" in write_ops
     assert write_ops["core.py"].content.strip() == "class NewHelper: pass"

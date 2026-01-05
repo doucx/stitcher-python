@@ -6,6 +6,7 @@ from stitcher.refactor.engine.transaction import (
     DeleteDirectoryOp,
     MoveFileOp,
     TransactionManager,
+    WriteFileOp,
 )
 from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
@@ -58,8 +59,13 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = MoveDirectoryOperation(src_dir_to_move, dest_dir)
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     tm = TransactionManager(project_root)
     for fop in file_ops:
@@ -67,7 +73,7 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
             tm.add_move(fop.path, fop.dest)
         elif isinstance(fop, DeleteDirectoryOp):
             tm.add_delete_dir(fop.path)
-        else:
+        elif isinstance(fop, WriteFileOp):
             tm.add_write(fop.path, fop.content)
     tm.commit()
 

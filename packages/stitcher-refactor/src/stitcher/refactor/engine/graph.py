@@ -1,10 +1,10 @@
 import libcst as cst
 from libcst import helpers
-from libcst.metadata import PositionProvider
+from libcst.metadata import PositionProvider, CodeRange
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import List, Dict, Optional, DefaultDict, Set
+from typing import List, Dict, Optional, DefaultDict, Set, cast
 from collections import defaultdict
 import griffe
 from stitcher.refactor.workspace import Workspace
@@ -81,7 +81,7 @@ class _UsageVisitor(cst.CSTVisitor):
                 self.current_package = ""
 
     def _register_node(self, node: cst.CSTNode, fqn: str, ref_type: ReferenceType):
-        pos = self.get_metadata(PositionProvider, node)
+        pos = cast(CodeRange, self.get_metadata(PositionProvider, node))
         loc = UsageLocation(
             file_path=self.file_path,
             lineno=pos.start.line,
@@ -141,6 +141,10 @@ class _UsageVisitor(cst.CSTVisitor):
                     node.module, absolute_module, ReferenceType.IMPORT_PATH
                 )
 
+            # Handle "from x import *"
+            if isinstance(node.names, cst.ImportStar):
+                return True
+
             for alias in node.names:
                 if isinstance(alias, cst.ImportAlias):
                     name_node = alias.name
@@ -181,9 +185,11 @@ class SemanticGraph:
 
     def load(self, package_name: str, submodules: bool = True) -> None:
         module = self._griffe_loader.load(package_name, submodules=submodules)
-        self._modules[package_name] = module
-        self._griffe_loader.resolve_aliases()
-        self._build_registry(module)
+        # Ensure we are dealing with a Module, not an Alias
+        if isinstance(module, griffe.Module):
+            self._modules[package_name] = module
+            self._griffe_loader.resolve_aliases()
+            self._build_registry(module)
 
     def _build_registry(
         self, module: griffe.Module, visited: Optional[Set[str]] = None
@@ -198,14 +204,23 @@ class SemanticGraph:
         for member in module.members.values():
             if isinstance(member, griffe.Module):
                 self._build_registry(member, visited)
-        if module.filepath:
+
+        # module.filepath can be a list for namespace packages; we only scan single files
+        if module.filepath and isinstance(module.filepath, Path):
             self._scan_module_usages(module)
 
     def _scan_module_usages(self, module: griffe.Module):
+        # We assume module.filepath is a Path here, checked by caller
+        if not isinstance(module.filepath, Path):
+            return
+
         local_symbols: Dict[str, str] = {}
         for name, member in module.members.items():
             try:
-                target_fqn = member.target_path if member.is_alias else member.path
+                if isinstance(member, griffe.Alias):
+                    target_fqn = member.target_path
+                else:
+                    target_fqn = member.path
                 local_symbols[name] = target_fqn
             except Exception:
                 pass
@@ -235,7 +250,14 @@ class SemanticGraph:
         nodes = []
 
         def _collect(obj: griffe.Object):
-            path = obj.filepath or Path("")
+            filepath = obj.filepath
+            path: Path
+            if isinstance(filepath, list):
+                # For namespace packages, take the first path or an empty one.
+                path = filepath[0] if filepath else Path("")
+            else:
+                path = filepath or Path("")
+
             kind = "unknown"
             if obj.is_module:
                 kind = "module"
@@ -248,7 +270,8 @@ class SemanticGraph:
             nodes.append(SymbolNode(fqn=obj.path, kind=kind, path=path))
             if hasattr(obj, "members"):
                 for member in obj.members.values():
-                    if not member.is_alias:
+                    # Use isinstance for safe type checking
+                    if not isinstance(member, griffe.Alias):
                         _collect(member)
 
         _collect(module)
