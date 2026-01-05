@@ -692,6 +692,7 @@ dependencies = [
     { name = "pyneedle" },
     { name = "stitcher-application" },
     { name = "stitcher-python-adapter" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "typer" },
 ]
 
@@ -700,6 +701,7 @@ requires-dist = [
     { name = "pyneedle", editable = "packages/pyneedle" },
     { name = "stitcher-application", editable = "packages/stitcher-application" },
     { name = "stitcher-python-adapter", editable = "packages/stitcher-python-adapter" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "typer" },
 ]
 
