@@ -42,12 +42,12 @@ def refactor_command(
     Apply automated refactorings from a migration script.
     """
     root_path = Path.cwd()
-    
+
     try:
         # 1. Load the complete semantic graph
         bus.info(L.refactor.run.loading_graph)
         graph = SemanticGraph(root_path)
-        
+
         # Discover packages to load from the monorepo structure
         packages_dir = root_path / "packages"
         if packages_dir.is_dir():
@@ -73,20 +73,19 @@ def refactor_command(
         if not file_ops:
             bus.success(L.refactor.run.no_ops)
             raise typer.Exit()
-            
+
         # 3. Preview and Confirm
         tm = TransactionManager(root_path)
         for op in file_ops:
             # This logic needs to be smarter based on op type
-            if op.__class__.__name__ == 'WriteFileOp':
+            if op.__class__.__name__ == "WriteFileOp":
                 tm.add_write(op.path, op.content)
-            elif op.__class__.__name__ == 'MoveFileOp':
+            elif op.__class__.__name__ == "MoveFileOp":
                 tm.add_move(op.path, op.dest)
-            elif op.__class__.__name__ == 'DeleteFileOp':
+            elif op.__class__.__name__ == "DeleteFileOp":
                 tm.add_delete_file(op.path)
-            elif op.__class__.__name__ == 'DeleteDirectoryOp':
+            elif op.__class__.__name__ == "DeleteDirectoryOp":
                 tm.add_delete_dir(op.path)
-
 
         bus.warning(L.refactor.run.preview_header, count=tm.pending_count)
         for desc in tm.preview():

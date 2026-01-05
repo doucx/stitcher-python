@@ -1,5 +1,4 @@
-from typing import List, Dict, Union, TypeAlias
-from pathlib import Path
+from typing import List, Dict, TypeAlias
 
 from stitcher.refactor.operations.base import AbstractOperation
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
@@ -31,7 +30,7 @@ class MigrationSpec:
     def add_map(self, rename_map: Dict[str, str]) -> "MigrationSpec":
         """
         Syntactic sugar for adding multiple RenameSymbolOperation items.
-        
+
         Args:
             rename_map: A dictionary mapping old FQNs to new FQNs.
         """

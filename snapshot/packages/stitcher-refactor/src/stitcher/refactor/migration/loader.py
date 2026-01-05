@@ -24,16 +24,24 @@ class MigrationLoader:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
         except SyntaxError as e:
-            raise MigrationScriptError(f"Syntax error in migration script {path}: {e}") from e
+            raise MigrationScriptError(
+                f"Syntax error in migration script {path}: {e}"
+            ) from e
         except Exception as e:
-            raise MigrationScriptError(f"Failed to load migration script {path}: {e}") from e
+            raise MigrationScriptError(
+                f"Failed to load migration script {path}: {e}"
+            ) from e
 
         if not hasattr(module, "upgrade"):
-            raise MigrationScriptError(f"Migration script {path} is missing the 'upgrade' function.")
+            raise MigrationScriptError(
+                f"Migration script {path} is missing the 'upgrade' function."
+            )
 
         upgrade_func = getattr(module, "upgrade")
         if not callable(upgrade_func):
-            raise MigrationScriptError(f"The 'upgrade' attribute in {path} is not a callable function.")
+            raise MigrationScriptError(
+                f"The 'upgrade' attribute in {path} is not a callable function."
+            )
 
         migration_spec = MigrationSpec()
         upgrade_func(migration_spec)

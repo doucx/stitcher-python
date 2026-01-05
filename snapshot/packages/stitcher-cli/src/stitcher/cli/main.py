@@ -43,7 +43,9 @@ app.command(name="strip", help=nexus(L.cli.command.strip.help))(strip_command)
 app.command(name="inject", help=nexus(L.cli.command.inject.help))(inject_command)
 
 # Refactor is a group of commands
-refactor_app = typer.Typer(name="refactor", help=nexus(L.cli.command.refactor.help), no_args_is_help=True)
+refactor_app = typer.Typer(
+    name="refactor", help=nexus(L.cli.command.refactor.help), no_args_is_help=True
+)
 refactor_app.command(name="apply")(refactor_command)
 app.add_typer(refactor_app)
 

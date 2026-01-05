@@ -1,4 +1,3 @@
-import pytest
 from typer.testing import CliRunner
 
 from stitcher.cli.main import app
@@ -13,11 +12,10 @@ def test_refactor_apply_e2e(tmp_path, monkeypatch):
     factory = WorkspaceFactory(tmp_path)
     # Project with a symbol to be renamed
     (
-        factory
-        .with_project_name("mypkg")
+        factory.with_project_name("mypkg")
         .with_source("src/mypkg/core.py", "class Old: pass")
         .with_source("src/mypkg/app.py", "from mypkg.core import Old")
-        .with_source("pyproject.toml", "[project]\nname='mypkg'") # For discovery
+        .with_source("pyproject.toml", "[project]\nname='mypkg'")  # For discovery
     ).build()
     # Migration script
     migration_script_content = """
@@ -58,8 +56,7 @@ def test_refactor_apply_dry_run(tmp_path, monkeypatch):
     # 1. Arrange
     factory = WorkspaceFactory(tmp_path)
     (
-        factory
-        .with_project_name("mypkg")
+        factory.with_project_name("mypkg")
         .with_source("src/mypkg/core.py", "class Old: pass")
         .with_source("src/mypkg/app.py", "from mypkg.core import Old")
         .with_source("pyproject.toml", "[project]\nname='mypkg'")
