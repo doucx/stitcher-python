@@ -29,6 +29,7 @@
   },
   "SemanticGraph.registry": {},
   "SemanticGraph.root_path": {},
+  "SemanticGraph.search_paths": {},
   "SymbolNode": {},
   "SymbolNode.fqn": {},
   "SymbolNode.kind": {},
