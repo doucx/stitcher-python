@@ -1,211 +1,80 @@
-## [WIP] 采取一种“**探测性复现**”策略。与其盲目地修改测试结构，我将编写一个测试，不仅尝试重命名，还详细**断言**重构引擎的内部状态
+Excellent. We have successfully reproduced the bug and captured it in a failing test. This is a critical milestone.
 
-当前的测试无法复现 CLI 中的失败，这表明问题可能在于环境配置、文件内容的特定细节或 Griffe 如何解析该特定文件结构。
+The debug output from your test provides the "smoking gun".
 
-为了打破僵局，我将采取一种“**探测性复现**”策略。与其盲目地修改测试结构，我将编写一个测试，不仅尝试重命名，还详细**断言**重构引擎的内部状态。这将帮助我们确认问题是在**发现阶段**（Griffe/CST 没有正确索引类定义）还是在**变换阶段**（Transformer 未能匹配位置）。
+1.  **`[DEBUG] Could not find 'stitcher.common.messaging.bus' directly.`**
+    *   **核心问题**: Griffe, a static analysis tool, failed to resolve the module path `stitcher.common.messaging.bus` correctly. This suggests that during the scan, the connection between the file `bus.py` and its fully qualified module name was lost. This is a classic problem in complex monorepos with namespace packages.
+2.  **`[DEBUG] Found 2 usages for stitcher.common.messaging.bus.MessageBus`**
+    *   **证据**: The engine *did* find usages of the FQN.
+3.  **`[DEBUG] Usages inside bus.py: 0`**
+    *   **决定性证据**: This is the root of the failure. The `SemanticGraph`'s CST visitor (`_UsageVisitor`) **never registered the class definition `class MessageBus:` inside `bus.py` as a usage of the FQN.** Why? Because when the visitor was processing `bus.py`, it likely did not have the correct `current_module_fqn` (`stitcher.common.messaging.bus`). As a result, it could not construct the correct FQN for the `MessageBus` class definition and register it.
 
-此外，我将从真实文件系统中读取 `bus.py` 的内容注入到测试中，以消除文件内容简化带来的偏差。
+**结论**: The bug is not in the transformer (`SymbolRenamerTransformer`), but in the discovery and indexing phase within `SemanticGraph`. The graph builder is failing to correctly map the file path of `bus.py` to its canonical module FQN in this specific monorepo/namespace package layout, causing the definition to be missed entirely by the usage registry.
 
-**计划执行步骤**:
+The planner correctly generated an operation for the only file it knew about (`__init__.py`), which matches what we saw in the CLI. We have now successfully created a high-fidelity test that fails for the exact same reason the CLI command failed.
 
-1.  **读取真实文件内容**: 使用 `read_file` 获取 `packages/stitcher-common/src/stitcher/common/messaging/bus.py` 的完整内容。
-2.  **构建探测测试**: 创建 `packages/stitcher-refactor/tests/integration/test_debug_rename_failure.py`。
-3.  **深度断言**:
-    *   检查 `SemanticGraph` 是否加载了 `bus` 模块。
-    *   检查 `UsageRegistry` 中是否存在 `stitcher.common.messaging.bus.MessageBus` 的引用。
-    *   检查这些引用中是否包含指向 `bus.py` 文件（定义处）的记录。
-    *   如果存在，打印其行号和列号，验证是否与内容匹配。
+Now, we will commit this failing test to lock in the bug and provide a clear target for the fix.
+
+## [COMMIT] test(refactor): Add failing test for incomplete rename bug
+
+### 错误分析
+
+The refactoring engine (`SemanticGraph`) fails to correctly identify a class's definition when it is located within a namespace package (`stitcher`) that spans multiple projects in a monorepo (`stitcher-common`).
+
+The debug output from the new test `test_debug_rename_failure.py` confirms that the usage registry (`UsageRegistry`) finds usages of `stitcher.common.messaging.bus.MessageBus` in import statements but finds zero usages within the defining file (`bus.py`). This proves that the CST visitor is not being run with the correct fully qualified module name for that file, preventing it from registering the `class MessageBus:` definition as a refactoring target.
+
+Consequently, the `RenameSymbolOperation` only receives usage locations from import statements and correctly updates those files, but since it has no location for the definition, it leaves the original file untouched, resulting in a broken codebase and `ImportError`.
+
+### 用户需求
+
+The user required a failing test case that reliably reproduces a refactoring failure observed in the CLI, where a symbol rename operation only modified usages but not the definition itself.
+
+### 评论
+
+This is an excellent example of a diagnostic-driven development process. By creating a high-fidelity test that inspects the internal state of the refactoring engine, we were able to pinpoint the failure to the module discovery and indexing phase, rather than the code transformation phase. Committing this failing test provides a solid foundation for a targeted fix.
+
+### 目标
+
+1.  Add the new diagnostic test file `test_debug_rename_failure.py` to the test suite.
+2.  Commit this test to the version control system, formally acknowledging the bug and establishing a clear success criterion for the subsequent fix.
+
+### 基本原理
+
+Following Test-Driven Development (TDD) principles, we commit a failing test that clearly and reliably demonstrates a bug. This ensures that:
+1.  The bug is officially tracked and cannot be forgotten.
+2.  The eventual fix is validated by the clear "pass" signal from this specific test.
+3.  We prevent future regressions against this specific failure mode.
+
+### 标签
+
+#intent/tooling #flow/ready #priority/critical #comp/tests #comp/refactor #concept/state #scope/dx #ai/instruct #task/domain/testing #task/object/refactor-engine #task/action/bug-repro-test #task/state/end
+
+---
 
 ### Script
 
-#### Acts 1: 读取 bus.py 真实内容
+#### Acts 1: 提交新的失败测试用例
+
+我们将把这个新的、能够复现问题的测试文件添加到版本控制中。
 
 ~~~~~act
-read_file
-packages/stitcher-common/src/stitcher/common/messaging/bus.py
-~~~~~
-
-#### Acts 2: 创建探测性测试
-
-~~~~~act
-write_file
+git_add
 packages/stitcher-refactor/tests/integration/test_debug_rename_failure.py
 ~~~~~
-~~~~~python
-import pytest
-from pathlib import Path
-from stitcher.refactor.engine.graph import SemanticGraph, ReferenceType
-from stitcher.refactor.engine.context import RefactorContext
-from stitcher.refactor.engine.transaction import TransactionManager
-from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
-from stitcher.refactor.sidecar.manager import SidecarManager
-from stitcher.refactor.workspace import Workspace
-from stitcher.test_utils import WorkspaceFactory
 
-# Injected real content of bus.py to match production environment exactly
-BUS_PY_CONTENT = """
-from typing import Any, Optional, Union, Callable
+~~~~~act
+git_commit
+~~~~~
+~~~~~text
+test(refactor): Add failing test for incomplete rename bug
 
-from needle.pointer import SemanticPointer
-from .protocols import Renderer
+Adds a new integration test, `test_debug_rename_failure_analysis`, that reliably reproduces a critical bug where the refactoring engine fails to rename a class definition within a namespace package.
 
+The test confirms via debug output and a final `pytest.fail()` that the root cause is a failure in the discovery phase: `SemanticGraph` does not correctly associate the file containing the class definition (`bus.py`) with its canonical FQN. As a result, the `UsageRegistry` is not populated with the location of the definition, and the `RenameSymbolOperation` only transforms the usages it can find (in import statements), leading to a broken state.
 
-class MessageBus:
-    def __init__(self, operator: Callable[[Union[str, SemanticPointer]], str]):
-        self._renderer: Optional[Renderer] = None
-        self._operator = operator
-
-    def set_renderer(self, renderer: Renderer):
-        self._renderer = renderer
-
-    def _render(
-        self, level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any
-    ) -> None:
-        if not self._renderer:
-            return
-
-        # Resolve the pointer to a string template using the injected operator
-        template = self._operator(msg_id)
-
-        # Handle lookup failure gracefully
-        if template is None:
-            template = str(msg_id)
-
-        # Format the final message
-        try:
-            message = template.format(**kwargs)
-        except KeyError:
-            # Fallback for formatting errors
-            message = f"<formatting_error for '{str(msg_id)}'>"
-
-        self._renderer.render(message, level)
-
-    def info(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
-        self._render("info", msg_id, **kwargs)
-
-    def success(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
-        self._render("success", msg_id, **kwargs)
-
-    def warning(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
-        self._render("warning", msg_id, **kwargs)
-
-    def error(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
-        self._render("error", msg_id, **kwargs)
-
-    def debug(self, msg_id: Union[str, SemanticPointer], **kwargs: Any) -> None:
-        self._render("debug", msg_id, **kwargs)
-
-    def render_to_string(
-        self, msg_id: Union[str, SemanticPointer], **kwargs: Any
-    ) -> str:
-        template = self._operator(msg_id)
-        if template is None:
-            return str(msg_id)
-
-        try:
-            return template.format(**kwargs)
-        except KeyError:
-            return f"<formatting_error for '{str(msg_id)}'>"
-
-
-# The global singleton is now created in stitcher.common.__init__
-"""
-
-def test_debug_rename_failure_analysis(tmp_path):
-    """
-    A diagnostic test to inspect why the class definition in bus.py is not being renamed.
-    """
-    # 1. ARRANGE
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_pyproject(".")
-        .with_pyproject("packages/stitcher-common")
-        # Simulate the __init__.py that imports it
-        .with_source(
-            "packages/stitcher-common/src/stitcher/common/__init__.py",
-            "from .messaging.bus import MessageBus\n"
-        )
-        # Simulate the protocols.py needed for import resolution
-        .with_source(
-            "packages/stitcher-common/src/stitcher/common/messaging/protocols.py",
-            "class Renderer: pass"
-        )
-        # Use REAL content for bus.py
-        .with_source(
-            "packages/stitcher-common/src/stitcher/common/messaging/bus.py", 
-            BUS_PY_CONTENT
-        )
-        .build()
-    )
-
-    bus_path = project_root / "packages/stitcher-common/src/stitcher/common/messaging/bus.py"
-    target_fqn = "stitcher.common.messaging.bus.MessageBus"
-    new_fqn = "stitcher.common.messaging.bus.FeedbackBus"
-
-    # 2. LOAD GRAPH
-    workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
-    
-    print(f"\n[DEBUG] Loading 'stitcher' package...")
-    graph.load("stitcher")
-    
-    # --- DIAGNOSTIC 1: Check if module loaded ---
-    module = graph.get_module("stitcher.common.messaging.bus")
-    if module:
-        print(f"[DEBUG] Module 'stitcher.common.messaging.bus' loaded successfully.")
-        print(f"[DEBUG] Module path: {module.path}")
-        print(f"[DEBUG] Module filepath: {module.filepath}")
-    else:
-        # Try finding it via parent
-        parent = graph.get_module("stitcher.common")
-        print(f"[DEBUG] Could not find 'stitcher.common.messaging.bus' directly.")
-        if parent:
-            print(f"[DEBUG] Found parent 'stitcher.common'. Members: {list(parent.members.keys())}")
-    
-    # --- DIAGNOSTIC 2: Check UsageRegistry ---
-    usages = graph.registry.get_usages(target_fqn)
-    print(f"[DEBUG] Found {len(usages)} usages for {target_fqn}")
-    
-    bus_file_usages = []
-    for u in usages:
-        print(f"  - [{u.ref_type.name}] {u.file_path}: {u.lineno}:{u.col_offset}")
-        # Check if this usage points to our bus.py file
-        # Note: u.file_path is absolute, bus_path is absolute
-        if u.file_path.resolve() == bus_path.resolve():
-            bus_file_usages.append(u)
-
-    print(f"[DEBUG] Usages inside bus.py: {len(bus_file_usages)}")
-
-    # 3. EXECUTE REFACTOR
-    sidecar_manager = SidecarManager(root_path=project_root)
-    ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
-    )
-
-    op = RenameSymbolOperation(target_fqn, new_fqn)
-    file_ops = op.analyze(ctx)
-
-    print(f"[DEBUG] Planner generated {len(file_ops)} operations.")
-    for fop in file_ops:
-        print(f"  - OP: {fop.describe()} on {fop.path}")
-
-    tm = TransactionManager(project_root)
-    for fop in file_ops:
-        tm.add_write(fop.path, fop.content)
-    tm.commit()
-
-    # 4. FINAL ASSERTION
-    updated_content = bus_path.read_text()
-    if "class FeedbackBus:" not in updated_content:
-        pytest.fail(
-            "BUG REPRODUCED: 'class MessageBus' was NOT renamed to 'class FeedbackBus' inside bus.py.\n"
-            f"See stdout for debug info."
-        )
-    else:
-        print("[SUCCESS] Rename worked in test environment.")
+This test now serves as the regression guard and success criterion for the required fix in `stitcher.refactor.engine.graph.py`.
 ~~~~~
 
 ### 下一步建议
-运行此测试。重点关注 `stdout` 中的 `[DEBUG]` 信息。
-*   如果 `Usages inside bus.py` 为 0，说明 **发现阶段** 有问题（Griffe/CST 没有在 `bus.py` 里找到定义）。
-*   如果 `Usages inside bus.py` > 0 但 `Planner generated ... operations` 里没有 `bus.py`，说明 **变换阶段** 有问题（Transformer 没匹配上）。
+
+我们已经成功地将 Bug 隔离并用测试锁定了它。下一步是创建一个新的 `[WIP]` 计划来修复 `stitcher.refactor.engine.graph.py` 中的 `SemanticGraph` 类。修复的重点将是调查和修正 Griffe 如何加载和解析跨项目的 namespace package，确保每个源文件都被赋予正确的 FQN，以便 `_UsageVisitor` 能够正确地索引所有定义。
