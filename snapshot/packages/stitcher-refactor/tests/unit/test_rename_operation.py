@@ -18,6 +18,8 @@ def test_rename_symbol_analyze_orchestration():
     # We will create fake files that the operation can read.
     tmp_path = Path("/tmp/fake_project")  # conceptual
     mock_graph.root_path = tmp_path
+    # The refactored `analyze` method now depends on search_paths
+    mock_graph.search_paths = [tmp_path]
 
     mock_workspace = Mock(spec=Workspace)
     mock_sidecar_manager = Mock(spec=SidecarManager)
