@@ -1,43 +1,35 @@
-遵循 Quipu 协议，我为你设计了一个能够揭示当前架构核心缺陷的集成测试。
+遵循 Quipu 协议，我将修正该测试以确保它能准确揭示**内容合并冲突 (Content Merge Conflict)** 这一架构盲点。
 
-这个测试场景被称为 **"僵尸文件与丢失的编辑 (The Zombie File & The Lost Edit)"**。它模拟了最致命的组合操作：**同时移动一个文件并重命名其中的符号**。
+之前的测试通过是因为现有的 `TransactionManager` 具备基础的路径 Rebase 能力，这掩盖了路径冲突的问题。新的测试将引入**双重修改 (Concurrent Modifications)**，这是简单的 Rebase 无法解决的——后一个 `Write` 必然会覆盖前一个 `Write`，导致数据丢失。
 
-我们将在 `packages/stitcher-refactor/src/stitcher/refactor/tests/integration/` 下创建一个名为 `test_fail_concurrent_move_and_rename.py` 的测试文件。
-
-**预期结果 (Fail)**：
-1.  **僵尸文件 (Zombie File)**: 旧文件路径（本应被删除）被“复活”了，因为重命名操作是基于旧路径生成的 `WriteFileOp`。
-2.  **内容丢失 (Lost Edit)**: 新文件路径（移动后的位置）虽然存在，但**没有**包含重命名后的代码，包含的是旧代码。
-
-此测试将无可辩驳地证明：当前的 `analyze()` 独立运行且缺乏中间状态合并的架构，在批量操作下是不可用的。
-
-## [WIP] test: 添加架构缺陷验证测试 (Zombie File Scenario)
+## [WIP] test: 修正架构缺陷验证测试 (Lost Edit Scenario)
 
 ### 用户需求
-设计一个 "Smoking Gun" 测试，揭示当前 `stitcher-refactor` 架构在处理批量操作（如同时移动文件和修改内容）时的事务一致性缺陷。
+修正 `test_fail_concurrent_move_and_rename.py`，使其能稳定地复现数据丢失问题。
 
 ### 评论
-这个测试是架构重构（Planner 2.0）的基准。在重构完成前，此测试**必须失败**。在重构完成后，此测试将变绿。它是衡量重构是否成功的终极标准。
+原测试意外通过，因为 `TransactionManager._rebase_ops` 处理了路径变更。新测试将通过引入针对同一文件的两次独立内容修改（两个不同的重命名操作），迫使系统暴露出“后写入覆盖先写入”的缺陷。
 
 ### 目标
-1.  创建一个复现“移动 + 重命名”冲突的测试用例。
-2.  验证旧文件被错误地重建（Write覆盖了Delete/Move）。
-3.  验证新文件未包含代码修改。
+1.  在一个文件中定义两个符号：`class A` 和 `def b`。
+2.  在一个事务中同时执行三个操作：
+    - Move 文件。
+    - Rename `A` -> `NewA`。
+    - Rename `b` -> `NewB`。
+3.  断言最终文件同时包含 `NewA` 和 `NewB`。
+4.  预期：当前架构只能保留最后一个操作的结果，导致测试失败。
 
 ### 基本原理
-当前架构中，`MoveFileOperation` 和 `RenameSymbolOperation` 都是基于**初始状态**的 `Graph` 进行分析的。
-1.  `Move` 生成：`Move(src -> dest)`。
-2.  `Rename` 生成：`Write(src, new_content)`。
-3.  `TransactionManager` 执行顺序：先 Move，后 Write。
-4.  结果：`src` 被移到 `dest`，然后 `src` 又被 `Write` 操作重新创建。`dest` 是旧内容，`src` 是新内容。这是典型的数据一致性破坏。
+当前架构是线性的：Op1 读取原始代码 -> 生成全量新代码；Op2 读取原始代码 -> 生成全量新代码。当它们被串行执行时，Op2 的全量写入会无情地覆盖 Op1 的成果。
 
 ### 标签
-#intent/tooling #flow/draft #priority/critical #comp/tests #concept/state #scope/core #ai/instruct #task/domain/refactoring #task/object/planner #task/action/verify-failure #task/state/begin
+#intent/tooling #flow/draft #priority/critical #comp/tests #concept/state #scope/core #ai/instruct #task/domain/refactoring #task/object/planner #task/action/verify-failure #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建缺陷验证测试
+#### Acts 1: 重写测试逻辑
 
 ~~~~~act
 write_file
@@ -59,45 +51,51 @@ from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory
 
-def test_smoking_gun_concurrent_move_and_rename(tmp_path):
+def test_smoking_gun_concurrent_modifications_lost_edit(tmp_path):
     """
-    THE SMOKING GUN TEST
+    THE SMOKING GUN TEST (REVISED)
     
     Scenario:
-    We want to perform a 'Refactoring Transaction' that does two things atomically:
-    1. Move 'mypkg/core.py' -> 'mypkg/utils.py'
-    2. Rename class 'OldEntity' -> 'NewEntity' (which resides in that file)
+    We have a file 'mypkg/core.py' containing TWO symbols.
+    We want to perform a transaction that:
+    1. Moves the file.
+    2. Renames Symbol A.
+    3. Renames Symbol B.
     
-    Current Architecture Failure Mode:
-    1. MoveFileOperation analysis sees 'mypkg/core.py'. Plans: Move(core.py -> utils.py).
-    2. RenameSymbolOperation analysis sees 'mypkg/core.py'. Plans: Write(core.py, content_with_NewEntity).
+    Current Architecture Failure Mode (The "Lost Edit"):
+    1. MoveOp: Plans Move(core -> utils).
+    2. RenameOp(A): Reads 'core.py' (original), replaces A->NewA. Plans: Write(core, Content_A_Modified).
+    3. RenameOp(B): Reads 'core.py' (original), replaces B->NewB. Plans: Write(core, Content_B_Modified).
     
-    Execution Result:
-    1. core.py moved to utils.py (utils.py has 'OldEntity').
-    2. core.py is RE-WRITTEN (Zombie File) with 'NewEntity'.
+    Execution (even with Path Rebasing):
+    1. Move(core -> utils) executes.
+    2. Write(utils, Content_A_Modified) executes. (File has NewA, but old B).
+    3. Write(utils, Content_B_Modified) executes. (File has NewB, but old A).
+       -> IT OVERWRITES THE PREVIOUS WRITE.
     
-    Desired Result (Planner 2.0):
-    1. utils.py exists and contains 'NewEntity'.
-    2. core.py does not exist.
+    Result: The file ends up with only ONE of the renames applied.
     """
     # 1. ARRANGE
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_pyproject(".")
         .with_source("mypkg/__init__.py", "")
-        .with_source("mypkg/core.py", "class OldEntity: pass")
+        .with_source(
+            "mypkg/core.py", 
+            """
+class OldClass:
+    pass
+
+def old_func():
+    pass
+            """
+        )
         .build()
     )
 
     src_path = project_root / "mypkg/core.py"
     dest_path = project_root / "mypkg/utils.py"
     
-    # Symbols
-    old_fqn = "mypkg.core.OldEntity"
-    # Note: Even if we rename the FQN logically, the transformer currently 
-    # looks for the symbol at its *original* location in the *original* file.
-    new_fqn = "mypkg.utils.NewEntity" 
-
     # 2. ACT
     workspace = Workspace(root_path=project_root)
     graph = SemanticGraph(workspace=workspace)
@@ -108,18 +106,17 @@ def test_smoking_gun_concurrent_move_and_rename(tmp_path):
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
-    # We plan two distinct operations that affect the same file
+    # Three operations touching the same file
     move_op = MoveFileOperation(src_path, dest_path)
-    rename_op = RenameSymbolOperation(old_fqn, new_fqn)
+    rename_class_op = RenameSymbolOperation("mypkg.core.OldClass", "mypkg.utils.NewClass")
+    rename_func_op = RenameSymbolOperation("mypkg.core.old_func", "mypkg.utils.new_func")
 
-    # Mimic the current linear Planner behavior:
-    # Operations analyze independently based on the initial Graph state.
-    move_ops = move_op.analyze(ctx)
-    rename_ops = rename_op.analyze(ctx)
+    # Analyze independently (Linear Architecture)
+    ops_1 = move_op.analyze(ctx)
+    ops_2 = rename_class_op.analyze(ctx)
+    ops_3 = rename_func_op.analyze(ctx)
     
-    # Combine operations into one transaction
-    # Current naive aggregation: just extend the list
-    all_ops = move_ops + rename_ops
+    all_ops = ops_1 + ops_2 + ops_3
 
     tm = TransactionManager(project_root)
     for fop in all_ops:
@@ -133,26 +130,26 @@ def test_smoking_gun_concurrent_move_and_rename(tmp_path):
     tm.commit()
 
     # 3. ASSERT
-    
-    # Assertion 1: Destination file should exist
     assert dest_path.exists(), "Destination file missing!"
     
-    # Assertion 2: Destination file should have the NEW content (Rename applied)
-    # THIS WILL FAIL in current architecture: dest_path has the OLD content (from the Move)
-    dest_content = dest_path.read_text()
-    assert "class NewEntity" in dest_content, \
-        f"LOST EDIT: Destination file has stale content.\nContent:\n{dest_content}"
+    content = dest_path.read_text()
     
-    # Assertion 3: Source file should NOT exist
-    # THIS WILL FAIL in current architecture: src_path is resurrected by the Rename's WriteFileOp
-    assert not src_path.exists(), \
-        f"ZOMBIE FILE: Source file was resurrected!\nContent:\n{src_path.read_text()}"
+    has_new_class = "class NewClass" in content
+    has_new_func = "def new_func" in content
+    
+    # Debug output
+    if not (has_new_class and has_new_func):
+        print("\n--- FAILURE DIAGNOSTIC ---")
+        print(f"Content of {dest_path}:")
+        print(content)
+        print("--------------------------")
+
+    # Both renames must be present. 
+    # Current architecture will fail this: one will be missing.
+    assert has_new_class, "Lost Edit: Class rename was overwritten!"
+    assert has_new_func, "Lost Edit: Function rename was overwritten!"
 ~~~~~
 
 ### 下一步建议
 
-现在我们已经确立了“基准失败状态”，接下来的步骤是开始实现 `Planner 2.0` 的设计来让这个测试变绿。
-
-1.  **基础设施**: 定义 `RefactorIntent` 类结构。
-2.  **改造 Operation**: 让 `MoveFileOperation` 和 `RenameSymbolOperation` 实现 `collect_intents` 接口。
-3.  **核心逻辑**: 实现 `GlobalBatchRenamer` 和 `PathRebaser` 来消解冲突。
+确认测试失败（变红）后，我们将正式开始 `Planner 2.0` 的开发工作。我们将按照路线图，首先在 `stitcher.refactor.intent` 模块中定义 `RefactorIntent` 类层次结构。

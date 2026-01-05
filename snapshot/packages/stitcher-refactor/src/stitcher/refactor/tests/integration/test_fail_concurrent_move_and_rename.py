@@ -13,45 +13,51 @@ from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory
 
-def test_smoking_gun_concurrent_move_and_rename(tmp_path):
+def test_smoking_gun_concurrent_modifications_lost_edit(tmp_path):
     """
-    THE SMOKING GUN TEST
+    THE SMOKING GUN TEST (REVISED)
     
     Scenario:
-    We want to perform a 'Refactoring Transaction' that does two things atomically:
-    1. Move 'mypkg/core.py' -> 'mypkg/utils.py'
-    2. Rename class 'OldEntity' -> 'NewEntity' (which resides in that file)
+    We have a file 'mypkg/core.py' containing TWO symbols.
+    We want to perform a transaction that:
+    1. Moves the file.
+    2. Renames Symbol A.
+    3. Renames Symbol B.
     
-    Current Architecture Failure Mode:
-    1. MoveFileOperation analysis sees 'mypkg/core.py'. Plans: Move(core.py -> utils.py).
-    2. RenameSymbolOperation analysis sees 'mypkg/core.py'. Plans: Write(core.py, content_with_NewEntity).
+    Current Architecture Failure Mode (The "Lost Edit"):
+    1. MoveOp: Plans Move(core -> utils).
+    2. RenameOp(A): Reads 'core.py' (original), replaces A->NewA. Plans: Write(core, Content_A_Modified).
+    3. RenameOp(B): Reads 'core.py' (original), replaces B->NewB. Plans: Write(core, Content_B_Modified).
     
-    Execution Result:
-    1. core.py moved to utils.py (utils.py has 'OldEntity').
-    2. core.py is RE-WRITTEN (Zombie File) with 'NewEntity'.
+    Execution (even with Path Rebasing):
+    1. Move(core -> utils) executes.
+    2. Write(utils, Content_A_Modified) executes. (File has NewA, but old B).
+    3. Write(utils, Content_B_Modified) executes. (File has NewB, but old A).
+       -> IT OVERWRITES THE PREVIOUS WRITE.
     
-    Desired Result (Planner 2.0):
-    1. utils.py exists and contains 'NewEntity'.
-    2. core.py does not exist.
+    Result: The file ends up with only ONE of the renames applied.
     """
     # 1. ARRANGE
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_pyproject(".")
         .with_source("mypkg/__init__.py", "")
-        .with_source("mypkg/core.py", "class OldEntity: pass")
+        .with_source(
+            "mypkg/core.py", 
+            """
+class OldClass:
+    pass
+
+def old_func():
+    pass
+            """
+        )
         .build()
     )
 
     src_path = project_root / "mypkg/core.py"
     dest_path = project_root / "mypkg/utils.py"
     
-    # Symbols
-    old_fqn = "mypkg.core.OldEntity"
-    # Note: Even if we rename the FQN logically, the transformer currently 
-    # looks for the symbol at its *original* location in the *original* file.
-    new_fqn = "mypkg.utils.NewEntity" 
-
     # 2. ACT
     workspace = Workspace(root_path=project_root)
     graph = SemanticGraph(workspace=workspace)
@@ -62,18 +68,17 @@ def test_smoking_gun_concurrent_move_and_rename(tmp_path):
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
-    # We plan two distinct operations that affect the same file
+    # Three operations touching the same file
     move_op = MoveFileOperation(src_path, dest_path)
-    rename_op = RenameSymbolOperation(old_fqn, new_fqn)
+    rename_class_op = RenameSymbolOperation("mypkg.core.OldClass", "mypkg.utils.NewClass")
+    rename_func_op = RenameSymbolOperation("mypkg.core.old_func", "mypkg.utils.new_func")
 
-    # Mimic the current linear Planner behavior:
-    # Operations analyze independently based on the initial Graph state.
-    move_ops = move_op.analyze(ctx)
-    rename_ops = rename_op.analyze(ctx)
+    # Analyze independently (Linear Architecture)
+    ops_1 = move_op.analyze(ctx)
+    ops_2 = rename_class_op.analyze(ctx)
+    ops_3 = rename_func_op.analyze(ctx)
     
-    # Combine operations into one transaction
-    # Current naive aggregation: just extend the list
-    all_ops = move_ops + rename_ops
+    all_ops = ops_1 + ops_2 + ops_3
 
     tm = TransactionManager(project_root)
     for fop in all_ops:
@@ -87,17 +92,21 @@ def test_smoking_gun_concurrent_move_and_rename(tmp_path):
     tm.commit()
 
     # 3. ASSERT
-    
-    # Assertion 1: Destination file should exist
     assert dest_path.exists(), "Destination file missing!"
     
-    # Assertion 2: Destination file should have the NEW content (Rename applied)
-    # THIS WILL FAIL in current architecture: dest_path has the OLD content (from the Move)
-    dest_content = dest_path.read_text()
-    assert "class NewEntity" in dest_content, \
-        f"LOST EDIT: Destination file has stale content.\nContent:\n{dest_content}"
+    content = dest_path.read_text()
     
-    # Assertion 3: Source file should NOT exist
-    # THIS WILL FAIL in current architecture: src_path is resurrected by the Rename's WriteFileOp
-    assert not src_path.exists(), \
-        f"ZOMBIE FILE: Source file was resurrected!\nContent:\n{src_path.read_text()}"
+    has_new_class = "class NewClass" in content
+    has_new_func = "def new_func" in content
+    
+    # Debug output
+    if not (has_new_class and has_new_func):
+        print("\n--- FAILURE DIAGNOSTIC ---")
+        print(f"Content of {dest_path}:")
+        print(content)
+        print("--------------------------")
+
+    # Both renames must be present. 
+    # Current architecture will fail this: one will be missing.
+    assert has_new_class, "Lost Edit: Class rename was overwritten!"
+    assert has_new_func, "Lost Edit: Function rename was overwritten!"
