@@ -93,6 +93,11 @@
     "baseline_code_structure_hash": "1ca06774dfe8f0c1f31a5bf655e070c1b62e2ccf3327d326a21c39ae17c17875"
   },
   "TransactionManager._ops": {},
+  "TransactionManager._rebase_ops": {
+    "baseline_code_signature_text": "def _rebase_ops(self, ops: List[FileOp]) -> List[FileOp]:",
+    "baseline_code_structure_hash": "f4e148c5998a411bf9e10160f376208a1602542246ef1b67410113a28fdd3646",
+    "baseline_yaml_content_hash": "4fe6918e876d2a37c12845fc8ea596bb9604424b868d8dc91c8edf36ec9036ff"
+  },
   "TransactionManager.add_delete_dir": {
     "baseline_code_signature_text": "def add_delete_dir(self, path: Union[str, Path]) -> None:",
     "baseline_code_structure_hash": "523cc3d99f7a5ba9724c9858450bd79f5d9f0b2d4fd4bcd8629082f3709df907"

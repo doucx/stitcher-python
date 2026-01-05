@@ -119,10 +119,6 @@ class TransactionManager:
         self._ops.clear()
 
     def _rebase_ops(self, ops: List[FileOp]) -> List[FileOp]:
-        """
-        Rebases operations to handle cases where a file is moved and then modified.
-        For example: [Move(A->B), Write(A)] becomes [Move(A->B), Write(B)].
-        """
         rebased_ops = []
         # Map current_location -> known_location
         # But wait, we need to track the location of specific logical files.

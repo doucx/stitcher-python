@@ -204,7 +204,7 @@ class SemanticGraph:
         for member in module.members.values():
             if isinstance(member, griffe.Module):
                 self._build_registry(member, visited)
-        
+
         # module.filepath can be a list for namespace packages; we only scan single files
         if module.filepath and isinstance(module.filepath, Path):
             self._scan_module_usages(module)

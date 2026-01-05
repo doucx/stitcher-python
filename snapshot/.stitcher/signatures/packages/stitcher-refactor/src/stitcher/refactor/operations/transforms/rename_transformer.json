@@ -27,6 +27,10 @@
     "baseline_code_signature_text": "def leave_Attribute(self, original_node: cst.Attribute, updated_node: cst.Attribute) -> cst.BaseExpression:",
     "baseline_code_structure_hash": "a0c35a5060a2bf8004956dcf0f382747c7f681a914d629ea45eea47ef6c4f004"
   },
+  "SymbolRenamerTransformer.leave_ImportFrom": {
+    "baseline_code_signature_text": "def leave_ImportFrom(self, original_node: cst.ImportFrom, updated_node: cst.ImportFrom) -> cst.ImportFrom:",
+    "baseline_code_structure_hash": "aa72b85332da1038283ec667850760ea1cce64741a496bf847436e72463be2fb"
+  },
   "SymbolRenamerTransformer.leave_Name": {
     "baseline_code_signature_text": "def leave_Name(self, original_node: cst.Name, updated_node: cst.Name) -> cst.BaseExpression:",
     "baseline_code_structure_hash": "359a7b7d03fd4c22322b79587ce2f48c68c764ee80795ad2766698ab49ff3fef"

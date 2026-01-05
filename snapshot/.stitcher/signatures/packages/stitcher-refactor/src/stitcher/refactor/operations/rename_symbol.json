@@ -25,6 +25,10 @@
     "baseline_code_signature_text": "def analyze(self, ctx: RefactorContext) -> List[FileOp]:",
     "baseline_code_structure_hash": "cc6dd02b0d0143253aa0de6af6b49124f2d73c34ee53f06d4f66386054609aa1"
   },
+  "RenameSymbolOperation.collect_intents": {
+    "baseline_code_signature_text": "def collect_intents(self, ctx: RefactorContext) -> List[RefactorIntent]:",
+    "baseline_code_structure_hash": "0ebfa3bb1987404f5b905343a01db0aebb84b1d1ff8ccee39b51f10cab2e8625"
+  },
   "RenameSymbolOperation.new_fqn": {},
   "RenameSymbolOperation.old_fqn": {}
 }
