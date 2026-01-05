@@ -23,7 +23,7 @@ class Workspace:
         for pyproject_path in self.root_path.glob("**/pyproject.toml"):
             try:
                 with pyproject_path.open("rb") as f:
-                    data = tomllib.load(f)
+                    tomllib.load(f)
 
                 # Find the source directory (usually 'src' or package name)
                 pkg_root = pyproject_path.parent

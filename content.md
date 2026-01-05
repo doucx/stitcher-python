@@ -1,38 +1,132 @@
-我将开始执行路线图的第一项任务。
+好的，我们开始实施路线图的第一步：实现 `Workspace` 类并为其建立健壮的单元测试。这需要我们首先增强 `WorkspaceFactory` 以支持在 monorepo 结构中声明多个 `pyproject.toml` 文件。
 
-这是实施 **任务 1.1** 的计划：创建 `Workspace` 类及其配套的单元测试。这个类将负责扫描项目、解析所有 `pyproject.toml` 文件，并构建一个从“可导入包名”到其“物理源目录”的权威映射，从而根除当前引擎对文件系统布局的脆弱假设。
+这是一个计划，它将创建 `Workspace` 类、更新测试工厂并添加相应的单元测试。
 
-## [WIP] feat(refactor): 实现 Workspace 类以进行健壮的包发现
+## [WIP] feat: 实现 Workspace 类以支持 Monorepo 包发现
 
 ### 用户需求
 
-根据批准的重构路线图，执行“阶段一”中的“任务 1.1”，即实现 `Workspace` 类，使其能够正确发现和映射单体仓库（monorepo）中的标准、扁平化和命名空间包。
+根据重构路线图，实施第一阶段的任务 1.1：
+1.  创建一个新的 `Workspace` 类，它能够通过扫描项目中的 `pyproject.toml` 文件来发现所有 Python 包，包括复杂的命名空间包。
+2.  更新测试工具 `WorkspaceFactory`，使其能够声明式地构建包含多个 `pyproject.toml` 的 monorepo 结构，以便进行测试。
+3.  为 `Workspace` 类编写全面的单元测试，覆盖 `src` 布局、扁平布局和命名空间包三种核心场景。
 
 ### 评论
 
-这是整个重构工作的基石。一个能够准确理解项目结构的 `Workspace` 类，将使我们后续的重构操作（如 `SemanticGraph` 的构建和 `MoveFileOperation` 的 FQN 解析）变得可靠和精确。投入时间确保其单元测试的完备性至关重要。
+这是整个重构工作的基石。通过创建一个由 `pyproject.toml` 元数据驱动的 `Workspace` 抽象，我们能从根本上摆脱当前对文件系统布局的脆弱假设。这将使重构引擎变得更加健壮，并能够正确处理真实世界中的复杂项目结构，是后续所有重构工作得以正确执行的先决条件。
 
 ### 目标
 
-1.  创建 `packages/stitcher-refactor/src/stitcher/refactor/workspace.py` 文件并实现 `Workspace` 类。
-2.  `Workspace` 类必须能够处理多种项目布局，特别是 `Cascade` 项目所使用的命名空间包结构。
-3.  创建相应的单元测试文件 `packages/stitcher-refactor/tests/unit/refactor/test_workspace.py`。
-4.  单元测试必须覆盖标准 `src` 布局、扁平布局和命名空间包三种核心场景。
+1.  **更新 `WorkspaceFactory`**: 在 `stitcher-test-utils` 中为 `WorkspaceFactory` 添加一个新的 `with_pyproject` 方法，使其能够在一个虚拟工作区内的任意子目录中创建 `pyproject.toml` 文件。
+2.  **实现 `Workspace` 类**: 创建 `packages/stitcher-refactor/src/stitcher/refactor/workspace.py` 文件，并实现 `Workspace` 类。该类将负责扫描、解析并构建一个从“导入名”到“源文件目录”的权威映射。
+3.  **编写单元测试**: 创建 `packages/stitcher-refactor/tests/unit/refactor/test_workspace.py` 文件，并利用更新后的 `WorkspaceFactory` 编写三个核心测试用例，以验证 `Workspace` 在不同项目布局下的行为是否正确。
 
 ### 基本原理
 
-通过在重构流程开始时一次性地、权威地解析所有 `pyproject.toml` 文件，我们建立了一个关于项目结构的“事实来源”。后续所有需要了解代码在何处的组件（如 `GriffeLoader`）都将从 `Workspace` 查询信息，而不是自行猜测。这种依赖注入和关注点分离的模式，将彻底解决当前实现的脆弱性问题。
+我们将采用一种元数据驱动的方法。`Workspace` 类将成为项目结构的“单一事实来源”。它通过 `glob` 查找所有的 `pyproject.toml` 文件，并使用 `tomllib` 进行解析。通过一系列辅助方法，它能智能地定位每个包的源代码目录（无论是 `src/` 还是扁平布局），并从中推断出顶级的可导入包名。对于命名空间包，它会将多个物理源目录正确地关联到同一个导入名下。
+
+为了测试这一核心功能，我们必须首先增强 `WorkspaceFactory`。新的 `with_pyproject` 方法将允许测试用例精确地模拟一个 monorepo，其中每个子项目都有自己的 `pyproject.toml`。这将使我们的单元测试能够完全在内存中声明性地构建出复杂的项目结构，从而对 `Workspace` 的发现逻辑进行精确且隔离的验证。
 
 ### 标签
-#intent/build #flow/ready #priority/high #task/domain/refactor #task/object/workspace #task/action/implementation #task/state/begin
+
+#intent/build #flow/ready #priority/high #comp/refactor #comp/test-utils #concept/config #scope/core #ai/instruct #task/domain/refactor-engine #task/object/workspace-discovery #task/action/implementation #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: 创建 `workspace.py` 并实现 `Workspace` 类
+#### Acts 1: 增强测试工具 `WorkspaceFactory`
 
-首先，我们创建 `Workspace` 类的实现。它将包含查找和解析 `pyproject.toml` 文件的核心逻辑。
+首先，我们为 `WorkspaceFactory` 添加 `with_pyproject` 方法，并调整 `build` 方法以支持在没有全局项目配置的情况下构建工作区。这将使我们能够为后续的 `Workspace` 测试创建复杂的 monorepo 布局。
+
+~~~~~act
+patch_file
+packages/stitcher-test-utils/src/stitcher/test_utils/workspace.py
+~~~~~
+~~~~~python.old
+    def with_entry_points(
+        self, group: str, entry_points: Dict[str, str]
+    ) -> "WorkspaceFactory":
+        project = self._pyproject_data.setdefault("project", {})
+        eps = project.setdefault("entry-points", {})
+        eps[group] = entry_points
+        return self
+
+    def with_source(self, path: str, content: str) -> "WorkspaceFactory":
+        self._files_to_create.append(
+            {"path": path, "content": dedent(content), "format": "raw"}
+        )
+        return self
+~~~~~
+~~~~~python.new
+    def with_entry_points(
+        self, group: str, entry_points: Dict[str, str]
+    ) -> "WorkspaceFactory":
+        project = self._pyproject_data.setdefault("project", {})
+        eps = project.setdefault("entry-points", {})
+        eps[group] = entry_points
+        return self
+
+    def with_pyproject(self, path_prefix: str) -> "WorkspaceFactory":
+        """Creates a minimal pyproject.toml in a subdirectory."""
+        pkg_name = Path(path_prefix).name
+        pyproject_content = {"project": {"name": pkg_name, "version": "0.1.0"}}
+        self._files_to_create.append(
+            {
+                "path": str(Path(path_prefix) / "pyproject.toml"),
+                "content": pyproject_content,
+                "format": "toml",
+            }
+        )
+        return self
+
+    def with_source(self, path: str, content: str) -> "WorkspaceFactory":
+        self._files_to_create.append(
+            {"path": path, "content": dedent(content), "format": "raw"}
+        )
+        return self
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-test-utils/src/stitcher/test_utils/workspace.py
+~~~~~
+~~~~~python.old
+    def build(self) -> Path:
+        # 1. Finalize pyproject.toml if data was added
+        if self._pyproject_data:
+            self._files_to_create.append(
+                {
+                    "path": "pyproject.toml",
+                    "content": self._pyproject_data,
+                    "format": "toml",
+                }
+            )
+
+        # 2. Write all files
+        for file_spec in self._files_to_create:
+~~~~~
+~~~~~python.new
+    def build(self) -> Path:
+        # 1. Finalize pyproject.toml if data was added for the root project
+        if self._pyproject_data:
+            # Check if a root pyproject.toml is already manually specified to avoid overwriting
+            if not any(f["path"] == "pyproject.toml" for f in self._files_to_create):
+                self._files_to_create.append(
+                    {
+                        "path": "pyproject.toml",
+                        "content": self._pyproject_data,
+                        "format": "toml",
+                    }
+                )
+
+        # 2. Write all files
+        for file_spec in self._files_to_create:
+~~~~~
+
+#### Acts 2: 实现 `Workspace` 类
+
+现在，我们创建 `Workspace` 类的实现文件。它包含了发现和解析包的核心逻辑。
 
 ~~~~~act
 write_file
@@ -64,7 +158,7 @@ class Workspace:
         for pyproject_path in self.root_path.glob("**/pyproject.toml"):
             try:
                 with pyproject_path.open("rb") as f:
-                    data = tomllib.load(f)
+                    tomllib.load(f)
 
                 # Find the source directory (usually 'src' or package name)
                 pkg_root = pyproject_path.parent
@@ -109,20 +203,11 @@ class Workspace:
         for paths in self.import_to_source_dirs.values():
             all_paths.update(paths)
         return sorted(list(all_paths))
-
 ~~~~~
 
-#### Acts 2: 为 `Workspace` 类创建单元测试
+#### Acts 3: 为 `Workspace` 添加单元测试
 
-现在，我们创建单元测试来验证 `Workspace` 能够正确处理不同的项目布局。这需要我们先创建测试包的 `__init__.py` 文件。
-
-~~~~~act
-write_file
-packages/stitcher-refactor/tests/unit/refactor/__init__.py
-~~~~~
-~~~~~python
-# Makes 'refactor' a package
-~~~~~
+最后，我们创建单元测试文件，以确保 `Workspace` 在各种场景下都能正确工作。
 
 ~~~~~act
 write_file
@@ -155,8 +240,7 @@ def test_workspace_flat_layout(tmp_path):
         "pkg_b/pkgb_lib/__init__.py", ""
     )
     project_root = factory.build()
-    pkg_b_root = project_root / "pkg_b"
-    pkg_b_lib_dir = pkg_b_root / "pkgb_lib"
+    pkg_b_lib_dir = project_root / "pkg_b" / "pkgb_lib"
 
     # ACT
     workspace = Workspace(project_root)
@@ -186,11 +270,10 @@ def test_workspace_namespace_package(tmp_path):
     # ASSERT
     assert workspace.import_to_source_dirs["cascade"] == {engine_src, app_src}
     assert sorted(workspace.get_search_paths()) == sorted([engine_src, app_src])
-
 ~~~~~
 
 ### 下一步建议
 
-我们已经成功地创建了 `Workspace` 类，这是解耦的第一步。
+我们已经成功完成了路线图的第一步，奠定了坚实的基础。
 
-下一步，我们将执行 **任务 1.2: 实现 `SidecarManager` 类**。这个类将封装所有关于 `.stitcher.yaml` 和签名文件路径的定位逻辑，为彻底消除重构操作中的硬编码路径做好准备。
+下一步，我们将进入路线图的**阶段二**，将新创建的 `Workspace` 组件集成到现有的 `SemanticGraph` 和 `RefactorContext` 中，并开始替换掉旧的、硬编码的路径发现逻辑。如果你同意，我将为此生成下一个计划。

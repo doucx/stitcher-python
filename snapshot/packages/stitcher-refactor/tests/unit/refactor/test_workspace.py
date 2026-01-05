@@ -24,8 +24,7 @@ def test_workspace_flat_layout(tmp_path):
         "pkg_b/pkgb_lib/__init__.py", ""
     )
     project_root = factory.build()
-    pkg_b_root = project_root / "pkg_b"
-    pkg_b_lib_dir = pkg_b_root / "pkgb_lib"
+    pkg_b_lib_dir = project_root / "pkg_b" / "pkgb_lib"
 
     # ACT
     workspace = Workspace(project_root)
