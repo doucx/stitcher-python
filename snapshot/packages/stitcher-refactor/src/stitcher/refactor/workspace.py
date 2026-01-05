@@ -46,10 +46,13 @@ class Workspace:
         if src_dir.is_dir():
             return src_dir
 
-        # Fallback for flat layouts: find the first dir containing __init__.py
-        for item in pkg_root.iterdir():
-            if item.is_dir() and (item / "__init__.py").exists():
-                return item
+        # Fallback for flat layouts: check if pkg_root itself contains packages.
+        is_flat_layout = any(
+            item.is_dir() and (item / "__init__.py").exists()
+            for item in pkg_root.iterdir()
+        )
+        if is_flat_layout:
+            return pkg_root
 
         return None
 
