@@ -217,7 +217,10 @@ class SemanticGraph:
         local_symbols: Dict[str, str] = {}
         for name, member in module.members.items():
             try:
-                target_fqn = member.target_path if member.is_alias else member.path
+                if isinstance(member, griffe.Alias):
+                    target_fqn = member.target_path
+                else:
+                    target_fqn = member.path
                 local_symbols[name] = target_fqn
             except Exception:
                 pass
@@ -247,7 +250,14 @@ class SemanticGraph:
         nodes = []
 
         def _collect(obj: griffe.Object):
-            path = obj.filepath or Path("")
+            filepath = obj.filepath
+            path: Path
+            if isinstance(filepath, list):
+                # For namespace packages, take the first path or an empty one.
+                path = filepath[0] if filepath else Path("")
+            else:
+                path = filepath or Path("")
+
             kind = "unknown"
             if obj.is_module:
                 kind = "module"
@@ -260,7 +270,8 @@ class SemanticGraph:
             nodes.append(SymbolNode(fqn=obj.path, kind=kind, path=path))
             if hasattr(obj, "members"):
                 for member in obj.members.values():
-                    if not member.is_alias:
+                    # Use isinstance for safe type checking
+                    if not isinstance(member, griffe.Alias):
                         _collect(member)
 
         _collect(module)

@@ -6,7 +6,7 @@ from typing import Dict, List, Set
 try:
     import tomllib
 except ImportError:
-    import tomli as tomllib
+    import tomli as tomllib  # type: ignore
 
 log = logging.getLogger(__name__)
 
