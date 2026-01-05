@@ -104,6 +104,18 @@ class _UsageVisitor(cst.CSTVisitor):
         if target_fqn:
             self._register_node(node, target_fqn, ReferenceType.SYMBOL)
 
+    def visit_ClassDef(self, node: cst.ClassDef) -> Optional[bool]:
+        if self.current_module_fqn:
+            class_fqn = f"{self.current_module_fqn}.{node.name.value}"
+            self._register_node(node.name, class_fqn, ReferenceType.SYMBOL)
+        return True
+
+    def visit_FunctionDef(self, node: cst.FunctionDef) -> Optional[bool]:
+        if self.current_module_fqn:
+            func_fqn = f"{self.current_module_fqn}.{node.name.value}"
+            self._register_node(node.name, func_fqn, ReferenceType.SYMBOL)
+        return True
+
     def visit_Import(self, node: cst.Import) -> Optional[bool]:
         for alias in node.names:
             absolute_module = get_full_name_for_node(alias.name)

@@ -50,8 +50,7 @@ def test_rename_operation_fails_to_rename_symbol_definition(tmp_path):
     assert "from mypkg.core import NewName" in updated_usage_code
     assert "instance = NewName()" in updated_usage_code
 
-    # Assert that the definition file was NOT updated (THIS IS THE BUG).
+    # Assert that the definition file WAS correctly updated.
     definition_code = definition_file.read_text()
-    assert "class OldName: pass" in definition_code
-    assert "class NewName: pass" not in definition_code, \
-        "The bug appears to be fixed. This test should now fail and be updated."
+    assert "class NewName: pass" in definition_code
+    assert "class OldName: pass" not in definition_code
