@@ -40,6 +40,7 @@ def test_rename_symbol_in_monorepo_updates_all_references_and_sidecars(tmp_path)
             "from pkga_lib.core import OldNameClass\n\ninstance = OldNameClass()",
         )
         # --- Top-level integration test: Also consumes the symbol ---
+        .with_source("tests/integration/__init__.py", "")
         .with_source(
             "tests/integration/test_system.py",
             "from pkga_lib.core import OldNameClass\n\ndef test_system_integration():\n    assert OldNameClass",

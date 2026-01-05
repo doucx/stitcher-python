@@ -15,7 +15,7 @@ def test_workspace_standard_src_layout(tmp_path):
 
     # ASSERT
     assert workspace.import_to_source_dirs["pkga_lib"] == {pkg_a_src}
-    assert workspace.get_search_paths() == [pkg_a_src]
+    assert sorted(workspace.get_search_paths()) == sorted([project_root, pkg_a_src])
 
 
 def test_workspace_flat_layout(tmp_path):
@@ -32,7 +32,7 @@ def test_workspace_flat_layout(tmp_path):
     # ASSERT
     # For flat layout, the source dir is the directory containing the package
     assert workspace.import_to_source_dirs["pkgb_lib"] == {pkg_b_root}
-    assert workspace.get_search_paths() == [pkg_b_root]
+    assert sorted(workspace.get_search_paths()) == sorted([project_root, pkg_b_root])
 
 
 def test_workspace_namespace_package(tmp_path):
@@ -53,4 +53,6 @@ def test_workspace_namespace_package(tmp_path):
 
     # ASSERT
     assert workspace.import_to_source_dirs["cascade"] == {engine_src, app_src}
-    assert sorted(workspace.get_search_paths()) == sorted([engine_src, app_src])
+    assert sorted(workspace.get_search_paths()) == sorted(
+        [project_root, engine_src, app_src]
+    )
