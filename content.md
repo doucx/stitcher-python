@@ -1,124 +1,59 @@
-好的，我来分析并解决这个问题。
+好的，我们已经完成了代码的修复和逻辑增强。现在的重构引擎不仅能正确处理跨包移动时的复杂导入路径，还能智能地识别并保护用户定义的别名引用。
 
-我之前的操作因为生成了不符合 Quipu 语法的 `patch_file` 指令而失败。我对此表示歉意，并将严格遵循协议生成正确的指令。
+我将生成一个 `[COMMIT]` 计划，将这些改进作为一个完整的逻辑单元提交到版本库中。
 
-现在，我将重新分析 `test_rename_transformer_advanced.py` 的失败原因，并提出一个逻辑上正确且语法上合规的修复计划。
-
-## [WIP] fix: 修复重构引擎错误重命名代码别名的问题
-
-### 错误分析
-
-测试 `test_rename_transformer_advanced.py` 失败的根本原因是，重构转换器 (`SymbolRenamerTransformer`) 错误地重命名了通过别名 (`as OH`) 引用的符号。
-
-当前的逻辑是：
-1.  语义图谱 (`SemanticGraph`) 正确地识别出别名 `OH` 在语义上指向 `mypkg.core.OldHelper`。
-2.  转换器 (`SymbolRenamerTransformer`) 在接收到这个信息后，盲目地替换了所有在图谱中被标记为引用的代码节点，没有检查节点的实际文本内容。
-
-这导致了非预期的行为：`from ... import OldHelper as OH` 中的 `OH` 和代码中使用的 `OH()` 都被错误地重命名，破坏了别名的作用。正确的行为是只重命名符号的直接引用，而保持别名不变。
+## [COMMIT] fix(refactor): 增强模块路径重命名能力并增加别名保护
 
 ### 用户需求
-
-修复 `SymbolRenamerTransformer` 的逻辑，使其在重命名符号时，能够区分直接引用和别名引用，仅对前者进行修改，从而保证重构的精确性和安全性。
+用户要求在测试通过后创建 Git 提交。
 
 ### 评论
-
-这是一个对重构工具鲁棒性的关键改进。一个成熟的重构引擎必须能够区分“语义等价”和“语法匹配”。通过引入“名称匹配守卫”，我们为转换器增加了最后一道安全屏障，确保它只修改预期内的代码，避免了对用户自定义别名或同名局部变量的“误伤”，这对于赢得开发者的信任至关重要。
+这次提交涵盖了重构引擎核心能力的重大提升：从简单的符号替换进化到了具备语义感知的模块路径重组。引入的“名称匹配守卫”有效地解决了别名冲突问题，显著提升了工具的生产环境可靠性。
 
 ### 目标
-
-1.  修改 `packages/stitcher-refactor/src/stitcher/refactor/operations/transforms/rename_transformer.py` 文件。
-2.  在 `SymbolRenamerTransformer` 的 `leave_Name` 和 `leave_Attribute` 方法中，增加“名称匹配守卫”逻辑。
-3.  这个守卫逻辑将在执行重命名之前，验证当前代码节点的文本内容是否与被重命名符号的原始名称（短名称或完全限定名）相匹配。
-4.  确保修复能让 `test_rename_transformer_advanced.py` 测试通过。
+1.  将所有修改后的核心重构引擎文件添加到 Git 暂存区。
+2.  创建一个描述详尽的提交记录。
 
 ### 基本原理
-
-我将不再修改 `_is_target` 方法，而是将保护逻辑直接实现在 `leave_Name` 和 `leave_Attribute` 方法中，因为它们能更好地访问节点的具体信息。
-
-1.  **对于 `leave_Name`**: 在确认节点是一个语义目标后，我会检查 `original_node.value` 是否与旧符号的短名称 (`old_short_name`) 严格相等。只有在相等时（意味着它不是别名），才执行重命名。
-2.  **对于 `leave_Attribute`**: 在确认节点是一个语义目标后，我会使用 LibCST 的辅助函数 `get_full_name_for_node` 来获取该属性链的完整文本表示，并检查它是否与旧符号的完全限定名 (`old_fqn`) 严格相等。只有在相等时，才执行重命名。
-
-这将确保转换器只会修改那些在文本上直接引用了旧符号的代码，而所有通过别名的引用将保持不变。
+遵循 `d3-constraint-quipu-plan-script-rules`，本次计划仅包含 Git 操作。我们将修改后的图谱解析器、重构操作符和 LibCST 转换器打包提交，确保版本历史的清晰和逻辑完整性。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/engine #concept/state #scope/core #ai/brainstorm #task/domain/testing #task/object/refactor-engine #task/action/bug-fix #task/state/continue
+#intent/tooling #flow/ready #priority/medium #comp/engine #concept/state #scope/core #ai/instruct #task/domain/testing #task/object/refactor-engine #task/action/bug-fix #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 为 `leave_Name` 添加名称匹配守卫
+#### Acts 1: 提交变更
 
-我将更新 `leave_Name` 方法，确保它只在节点文本与旧的短名称匹配时才进行重命名。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/transforms/rename_transformer.py
-~~~~~
-~~~~~python.old
-    def leave_Name(
-        self, original_node: cst.Name, updated_node: cst.Name
-    ) -> cst.BaseExpression:
-        new_fqn = self._is_target(original_node)
-        if new_fqn:
-            # For a Name node (definition or unqualified use), replace with the new short name.
-            new_short_name = new_fqn.split(".")[-1]
-            return updated_node.with_changes(value=new_short_name)
-        return updated_node
-~~~~~
-~~~~~python.new
-    def leave_Name(
-        self, original_node: cst.Name, updated_node: cst.Name
-    ) -> cst.BaseExpression:
-        new_fqn = self._is_target(original_node)
-        if new_fqn:
-            old_fqn = next(iter(self.rename_map.keys()))
-            old_short_name = old_fqn.split(".")[-1]
-
-            # Name Match Guard: Only rename if the node's text matches the old name.
-            if original_node.value == old_short_name:
-                new_short_name = new_fqn.split(".")[-1]
-                return updated_node.with_changes(value=new_short_name)
-
-        return updated_node
-~~~~~
-
-#### Acts 2: 为 `leave_Attribute` 添加名称匹配守卫
-
-同样地，我将更新 `leave_Attribute` 方法，确保它只在节点的完整文本与旧的 FQN 匹配时才进行重命名。
+我们将暂存修改过的文件并创建正式提交。
 
 ~~~~~act
-patch_file
+git_add
+packages/stitcher-refactor/src/stitcher/refactor/engine/graph.py
+packages/stitcher-refactor/src/stitcher/refactor/operations/rename_symbol.py
 packages/stitcher-refactor/src/stitcher/refactor/operations/transforms/rename_transformer.py
 ~~~~~
-~~~~~python.old
-    def leave_Attribute(
-        self, original_node: cst.Attribute, updated_node: cst.Attribute
-    ) -> cst.BaseExpression:
-        new_fqn = self._is_target(original_node)
-        if new_fqn:
-            # For an Attribute node (qualified use), replace the entire chain.
-            return self._create_node_from_fqn(new_fqn)
-        return updated_node
+
+~~~~~act
+git_commit
 ~~~~~
-~~~~~python.new
-    def leave_Attribute(
-        self, original_node: cst.Attribute, updated_node: cst.Attribute
-    ) -> cst.BaseExpression:
-        new_fqn = self._is_target(original_node)
-        if new_fqn:
-            from libcst import helpers
+~~~~~text
+fix(refactor): enhance module path renaming and implement alias protection
 
-            old_fqn = next(iter(self.rename_map.keys()))
-            node_textual_fqn = helpers.get_full_name_for_node(original_node)
+This commit upgrades the refactoring engine to correctly handle cross-package moves and qualified references while ensuring that local aliases remain intact.
 
-            # Name Match Guard: Only rename if the node's full text matches the old FQN.
-            if node_textual_fqn == old_fqn:
-                return self._create_node_from_fqn(new_fqn)
+Key changes:
+- Graph Engine: Updated _UsageVisitor to register full Attribute chains instead of just terminal Name nodes. This allows for whole-path replacement during refactoring.
+- Rename Operation: Modified RenameSymbolOperation to pass full FQN mappings {old_fqn: new_fqn} to the transformer, enabling multi-level path updates.
+- LibCST Transformer: 
+    - Implemented a 'Name Match Guard' in SymbolRenamerTransformer to distinguish between direct symbol references and local aliases (e.g., 'import X as Y').
+    - Added support for replacing Attribute nodes, allowing for the re-writing of deep module import paths (e.g., 'a.b.c' to 'x.y.z').
 
-        return updated_node
+These improvements fix the AssertionError in 'test_move_nested_directory_e2e' and ensure robust behavior in complex project restructurings.
 ~~~~~
 
 ### 下一步建议
-
-我们已经为转换器增加了必要的安全检查。现在，请执行此计划，然后我们可以再次运行测试套件，特别是 `test_rename_transformer_advanced.py`，以确认别名问题已得到妥善解决，并且没有引入新的回归错误。
+- **回归测试**: 建议在较大的内部项目上运行 `MoveDirectoryOperation` 的压力测试，以确保在大规模引用下的性能。
+- **功能扩展**: 既然我们现在可以处理 `Attribute` 替换，可以考虑实现更复杂的重构，如“提取方法”或“内联属性”。
+- **文档更新**: 可以在 `Stitcher Refactor` 的用户文档中增加关于“重构安全性与别名处理”的章节。
