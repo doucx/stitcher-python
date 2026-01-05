@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 更新单元测试以适配 Refactor Operation 的重构", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767606554.6888373, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test: 添加 SidecarUpdateMixin 的单元测试", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767606604.7967644, "duration_ms": 0}}
