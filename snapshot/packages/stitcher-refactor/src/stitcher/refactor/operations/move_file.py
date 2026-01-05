@@ -9,9 +9,9 @@ from stitcher.refactor.sidecar.updater import DocUpdater, SigUpdater
 
 
 class MoveFileOperation(AbstractOperation):
-    def __init__(self, src_path: Path, dest_path: Path):
-        self.src_path = src_path
-        self.dest_path = dest_path
+    def __init__(self, src: Path, dest: Path):
+        self.src = src
+        self.dest = dest
 
     def _path_to_fqn(self, path: Path, search_paths: List[Path]) -> Optional[str]:
         # Find the source root that is a prefix of the given path.
@@ -58,8 +58,8 @@ class MoveFileOperation(AbstractOperation):
         move_ops: List[FileOp] = []
         content_update_ops: List[FileOp] = []
 
-        old_module_fqn = self._path_to_fqn(self.src_path, ctx.graph.search_paths)
-        new_module_fqn = self._path_to_fqn(self.dest_path, ctx.graph.search_paths)
+        old_module_fqn = self._path_to_fqn(self.src, ctx.graph.search_paths)
+        new_module_fqn = self._path_to_fqn(self.dest, ctx.graph.search_paths)
 
         if old_module_fqn and new_module_fqn and old_module_fqn != new_module_fqn:
             # 1. Update external references to the moved symbols
@@ -80,7 +80,7 @@ class MoveFileOperation(AbstractOperation):
 
             # 2. Update the content of the sidecar files associated with the moved module
             # YAML sidecar
-            yaml_src_path = self.src_path.with_suffix(".stitcher.yaml")
+            yaml_src_path = self.src.with_suffix(".stitcher.yaml")
             if yaml_src_path.exists():
                 doc_updater = DocUpdater()
                 doc_data = doc_updater.load(yaml_src_path)
@@ -98,7 +98,7 @@ class MoveFileOperation(AbstractOperation):
                         )
                     )
             # Signature sidecar
-            rel_src_base = self.src_path.relative_to(ctx.graph.root_path)
+            rel_src_base = self.src.relative_to(ctx.graph.root_path)
             sig_src_path = (
                 ctx.graph.root_path
                 / ".stitcher/signatures"
@@ -122,15 +122,15 @@ class MoveFileOperation(AbstractOperation):
                     )
 
         # 3. Plan the physical moves
-        rel_src = self.src_path.relative_to(ctx.graph.root_path)
-        rel_dest = self.dest_path.relative_to(ctx.graph.root_path)
+        rel_src = self.src.relative_to(ctx.graph.root_path)
+        rel_dest = self.dest.relative_to(ctx.graph.root_path)
         move_ops.append(MoveFileOp(rel_src, rel_dest))
 
         # Sidecar moves
-        yaml_src = self.src_path.with_suffix(".stitcher.yaml")
+        yaml_src = self.src.with_suffix(".stitcher.yaml")
         if yaml_src.exists():
             rel_yaml_src = yaml_src.relative_to(ctx.graph.root_path)
-            rel_yaml_dest = self.dest_path.with_suffix(".stitcher.yaml").relative_to(
+            rel_yaml_dest = self.dest.with_suffix(".stitcher.yaml").relative_to(
                 ctx.graph.root_path
             )
             move_ops.append(MoveFileOp(rel_yaml_src, rel_yaml_dest))

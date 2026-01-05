@@ -8,20 +8,20 @@ from stitcher.refactor.operations.move_file import MoveFileOperation
 
 
 class MoveDirectoryOperation(AbstractOperation):
-    def __init__(self, src_dir: Path, dest_dir: Path):
-        if not src_dir.is_dir():
-            raise ValueError(f"Source path is not a directory: {src_dir}")
-        self.src_dir = src_dir
-        self.dest_dir = dest_dir
+    def __init__(self, src: Path, dest: Path):
+        if not src.is_dir():
+            raise ValueError(f"Source path is not a directory: {src}")
+        self.src = src
+        self.dest = dest
 
     def analyze(self, ctx: RefactorContext) -> List[FileOp]:
         all_ops: List[FileOp] = []
         handled_paths: Set[Path] = set()
 
         # Phase 1: Smart-process all Python files and their sidecars
-        for src_file in self.src_dir.rglob("*.py"):
-            relative_path = src_file.relative_to(self.src_dir)
-            dest_file = self.dest_dir / relative_path
+        for src_file in self.src.rglob("*.py"):
+            relative_path = src_file.relative_to(self.src)
+            dest_file = self.dest / relative_path
 
             # Delegate to the smart MoveFileOperation
             file_mover = MoveFileOperation(src_file, dest_file)
@@ -38,13 +38,13 @@ class MoveDirectoryOperation(AbstractOperation):
             handled_paths.add(sig_abs_path)
 
         # Phase 2: Process all remaining items (non-Python files)
-        for src_item in self.src_dir.rglob("*"):
+        for src_item in self.src.rglob("*"):
             if src_item in handled_paths or not src_item.is_file():
                 continue
 
             # This item is a non-Python, non-sidecar file. Do a simple move.
-            relative_path = src_item.relative_to(self.src_dir)
-            dest_item = self.dest_dir / relative_path
+            relative_path = src_item.relative_to(self.src)
+            dest_item = self.dest / relative_path
 
             rel_src_item = src_item.relative_to(ctx.graph.root_path)
             rel_dest_item = dest_item.relative_to(ctx.graph.root_path)
@@ -53,6 +53,6 @@ class MoveDirectoryOperation(AbstractOperation):
             handled_paths.add(src_item)
 
         # Phase 3: Schedule the now-empty source directory for deletion
-        all_ops.append(DeleteDirectoryOp(self.src_dir.relative_to(ctx.graph.root_path)))
+        all_ops.append(DeleteDirectoryOp(self.src.relative_to(ctx.graph.root_path)))
 
         return all_ops
