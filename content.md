@@ -1,30 +1,32 @@
 简要回答
-好的，我将创建一个集成测试来复现 `SidecarUpdateMixin` 在处理 sidecar 键名时错误地生成 FQN（全限定名）而非短名称（Short Name）的问题。
+确实，之前的测试使用了 `MoveFileOperation`，这会导致 `old_fqn == module_fqn`，从而掩盖了 Bug。Bug 出现在当重命名的是模块的**父包**（即 `MoveDirectoryOperation` 场景）时，`effective_new_module` 计算错误，导致无法正确还原短名称。
 
-## [WIP] test: 添加 Sidecar FQN 格式问题的复现测试
+我将更新测试用例，改用 `MoveDirectoryOperation` 来移动一个包含文件的目录，以此触发父包重命名逻辑，从而让测试变红。
+
+## [WIP] test: 使用目录移动复现 Sidecar FQN 格式问题
 
 ### 用户需求
-用户指出 `stitcher` 在重构过程中更新 sidecar YAML 文件时，错误地将键名（Key）从短名称（例如 `InMemoryCacheBackend`）转换为了全限定名（例如 `cascade.runtime.io.cache.in_memory.InMemoryCacheBackend`）。用户要求创建一个测试用例来复现此行为。
+复现 `stitcher` 在移动目录时，子文件的 Sidecar YAML 键名被错误地展开为 FQN 的问题。
 
 ### 评论
-这个问题影响了文档的可读性和一致性。Stitcher 的默认行为应当是尽可能保持 sidecar 文件中的键名为相对于当前模块的短名称。如果目前的逻辑在文件移动或重命名后总是生成 FQN，这是一个需要修复的缺陷。
+必须构建一个嵌套结构（例如 `mypkg.sub.module`），并移动父目录（`mypkg.sub` -> `mypkg.moved`），使得 `SidecarUpdateMixin` 处理的 `old_fqn`（重命名对象）是 `module_fqn` 的前缀，而非完全相等。这将暴露 `effective_new_module` 计算中的逻辑缺陷。
 
 ### 目标
-创建一个集成测试 `packages/stitcher-refactor/src/stitcher/refactor/tests/integration/test_repro_sidecar_fqn.py`，模拟将一个包含短名称键的 sidecar 文件的源文件移动到新位置，并断言更新后的 sidecar 文件中键名仍然保持为短名称。
+更新 `packages/stitcher-refactor/src/stitcher/refactor/tests/integration/test_repro_sidecar_fqn.py`，使用 `MoveDirectoryOperation` 进行测试。
 
 ### 基本原理
-我们将使用 `MoveFileOperation`，因为它会触发 `SidecarUpdateMixin` 的逻辑来更新 sidecar 文件。通过检查操作后的 YAML 内容，我们可以验证键名是否被错误地扩展为 FQN。
+当 `old_fqn`（如 `mypkg.sub`）是 `module_fqn`（如 `mypkg.sub.module`）的父级时，当前的 `effective_new_module` 逻辑会错误地保留旧的模块名，导致新生成的 FQN（如 `mypkg.moved.module.Class`）无法与旧模块名匹配，从而无法还原为短名称。
 
 ### 标签
-#intent/tooling #flow/ready #priority/high #comp/tests #concept/state #scope/core #ai/instruct #task/domain/refactor #task/object/sidecar-updater #task/action/repro-bug #task/state/begin
+#intent/tooling #flow/ready #priority/high #comp/tests #concept/state #scope/core #ai/instruct #task/domain/refactor #task/object/sidecar-updater #task/action/repro-bug #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建复现测试
+#### Acts 1: 更新复现测试
 
-我们将创建一个新的测试文件，模拟文件移动场景，并明确断言 Sidecar 中的键名不应包含包前缀。
+我们将重写测试文件，模拟目录移动场景。
 
 ~~~~~act
 write_file
@@ -37,49 +39,55 @@ from stitcher.refactor.engine.context import RefactorContext
 from stitcher.refactor.engine.transaction import (
     TransactionManager,
     MoveFileOp,
+    DeleteDirectoryOp,
     WriteFileOp,
 )
-from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory
 
 
-def test_repro_sidecar_keys_should_remain_short_names_after_move(tmp_path):
+def test_repro_sidecar_keys_should_remain_short_names_after_directory_move(tmp_path):
     """
-    Reproduction test for the bug where moving a file causes Sidecar keys
-    to be expanded to FQNs instead of remaining as Short Names.
+    Reproduction test for the bug where moving a DIRECTORY causes Sidecar keys
+    in child files to be expanded to FQNs instead of remaining as Short Names.
     
     Scenario:
-      Move 'mypkg/core.py' -> 'mypkg/moved.py'.
-      The sidecar 'mypkg/core.stitcher.yaml' has keys like "MyClass".
+      Structure: mypkg/section/core.py
+      Sidecar:   mypkg/section/core.stitcher.yaml (Key: "MyClass")
+      Action:    Move dir 'mypkg/section' -> 'mypkg/moved_section'
       
-    Expected:
-      The new sidecar 'mypkg/moved.stitcher.yaml' should have keys "MyClass",
-      NOT "mypkg.moved.MyClass".
+    Technical Cause Analysis (Hypothesis):
+      When moving a directory, the RenameIntent is for 'mypkg.section'.
+      The module is 'mypkg.section.core'.
+      The 'effective_new_module' logic likely fails to account for prefix renames,
+      leaving the effective module as the OLD one, which fails to match the NEW FQN
+      of the class, thus preventing short-name restoration.
     """
     # 1. ARRANGE
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_pyproject(".")
         .with_source("mypkg/__init__.py", "")
-        .with_source("mypkg/core.py", "class MyClass:\n    def __init__(self): pass")
+        .with_source("mypkg/section/__init__.py", "")
+        .with_source("mypkg/section/core.py", "class MyClass:\n    pass")
         .with_docs(
-            "mypkg/core.stitcher.yaml",
+            "mypkg/section/core.stitcher.yaml",
             {
-                "MyClass": "Class doc",
-                "MyClass.__init__": "Init doc"
+                "MyClass": "Class doc"
             },
         )
         .build()
     )
 
-    src_path = project_root / "mypkg/core.py"
-    dest_path = project_root / "mypkg/moved.py"
+    src_dir = project_root / "mypkg/section"
+    dest_dir = project_root / "mypkg/moved_section"
 
     # 2. ACT
     workspace = Workspace(root_path=project_root)
     graph = SemanticGraph(workspace=workspace)
+    # Load top level to ensure graph coverage
     graph.load("mypkg")
 
     sidecar_manager = SidecarManager(root_path=project_root)
@@ -90,7 +98,7 @@ def test_repro_sidecar_keys_should_remain_short_names_after_move(tmp_path):
     from stitcher.refactor.migration import MigrationSpec
     from stitcher.refactor.engine.planner import Planner
 
-    op = MoveFileOperation(src_path, dest_path)
+    op = MoveDirectoryOperation(src_dir, dest_dir)
     spec = MigrationSpec().add(op)
     planner = Planner()
     file_ops = planner.plan(spec, ctx)
@@ -99,33 +107,28 @@ def test_repro_sidecar_keys_should_remain_short_names_after_move(tmp_path):
     for fop in file_ops:
         if isinstance(fop, MoveFileOp):
             tm.add_move(fop.path, fop.dest)
+        elif isinstance(fop, DeleteDirectoryOp):
+            tm.add_delete_dir(fop.path)
         elif isinstance(fop, WriteFileOp):
             tm.add_write(fop.path, fop.content)
     tm.commit()
 
     # 3. ASSERT
-    new_yaml_path = dest_path.with_suffix(".stitcher.yaml")
-    assert new_yaml_path.exists()
+    # The file should now be at mypkg/moved_section/core.stitcher.yaml
+    new_yaml_path = dest_dir / "core.stitcher.yaml"
+    assert new_yaml_path.exists(), "Sidecar file was not moved correctly!"
     
     data = yaml.safe_load(new_yaml_path.read_text())
     
-    # Debug output to help verify the failure/success
     print(f"\n[DEBUG] Keys in new sidecar: {list(data.keys())}")
     
-    # We explicitly assert that the SHORT names are present.
-    # If the bug exists, these assertions will fail because the keys will be FQNs.
-    
+    # Assert Short Name retention
+    # This assertion is expected to FAIL if the bug is present.
+    # It will likely contain "mypkg.moved_section.core.MyClass" instead.
     assert "MyClass" in data, (
         f"Short name 'MyClass' missing. Found keys: {list(data.keys())}"
     )
-    assert "MyClass.__init__" in data, (
-        f"Short name 'MyClass.__init__' missing. Found keys: {list(data.keys())}"
-    )
-    
-    # Verify content wasn't lost
-    assert data["MyClass"] == "Class doc"
-    assert data["MyClass.__init__"] == "Init doc"
 ~~~~~
 
 ### 下一步建议
-执行此测试。如果测试失败（即发现键名变成了 `mypkg.moved.MyClass`），则成功复现了问题。接下来，我们将分析 `stitcher/refactor/operations/base.py` 中的 `SidecarUpdateMixin` 逻辑并进行修复。
+执行测试。现在它应该因为 keys 包含 FQN 而失败。之后，我将根据分析修复 `SidecarUpdateMixin` 中的 `effective_new_module` 计算逻辑。
