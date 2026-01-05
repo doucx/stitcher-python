@@ -1,33 +1,31 @@
-Absolutely brilliant. The final diagnostic log has pinpointed the exact logical flaw with surgical precision.
+You have found the next layer of the problem, and your diagnosis is spot-on. The logs are incredibly revealing.
 
-This is the smoking gun:
-`[CHECK] stitcher: is_dir=True, has_init=False`
+My previous fix for PEP 420 support was a classic case of over-correction. By removing the `__init__.py` check and only excluding dunder directories, I made the discovery logic too permissive. It now incorrectly identifies build artifacts (`build`, `stitcher_python.egg-info`), VCS metadata (`.git`), and virtual environments (`.venv`) as valid Python packages. Griffe, correctly, attempts to import them, leading to the `ImportError` and the subsequent crash.
 
-Your architecture uses a PEP 420 implicit namespace package. The directory `packages/stitcher-common/src/stitcher` is a valid package part, but because it doesn't contain an `__init__.py`, my discovery logic incorrectly discards it. The bug is in the faulty assumption that a directory must contain `__init__.py` to be considered a top-level package.
+This is excellent detective work. We will now implement a more intelligent filtering mechanism.
 
-Now that we have undeniable proof, we can proceed with the fix.
-
-## [WIP] fix(refactor): Correctly discover PEP 420 namespace packages
+## [WIP] fix(refactor): Refine package discovery to exclude build artifacts
 
 ### 错误分析
-诊断日志揭示了问题的根源：`_get_top_level_importables` 方法中的逻辑 `if item.is_dir() and (item / "__init__.py").exists()` 错误地将所有不含 `__init__.py` 的目录（即 PEP 420 命名空间包的顶级目录）排除在外。
+根本原因在于 `_get_top_level_importables` 方法的发现逻辑过于宽泛。在修复了 PEP 420 命名空间包的问题后，该方法开始将项目根目录下的几乎所有目录（如 `.git`, `.venv`, `build`, `*.egg-info`）都错误地识别为潜在的可导入包。当 `SemanticGraph` 尝试加载这些非代码目录时，其底层的 Griffe 库因无法将它们作为 Python 模块导入而崩溃。
 
-当扫描 `packages/stitcher-common/src` 目录时，它遇到了 `stitcher` 子目录。日志 `[CHECK] stitcher: is_dir=True, has_init=False` 明确显示，由于 `__init__.py` 不存在，`stitcher` 从未被识别为一个可导入的包名。因此，`stitcher` 包从未被添加到 `workspace.import_to_source_dirs` 映射中，也从未被加载到语义图谱中，导致后续的符号查找和重构操作一无所获。
+`stitcher_python.egg-info` 目录是 Griffe 尝试加载并导致失败的第一个非代码目录，但这只是问题的表象，真正的问题是所有这些无关目录都被错误地加入了待加载列表。
 
 ### 用户需求
-用户需要修复 `Workspace` 的包发现逻辑，使其能够正确识别和处理 PEP 420 隐式命名空间包，从而使重构功能在当前项目上正常工作。
+用户需要修复 `Workspace` 的发现逻辑，使其能够精确地识别出真正的 Python 包（包括常规包和 PEP 420 命名空间包），同时严格忽略所有已知的构建产物、VCS 目录、缓存和虚拟环境目录。
 
 ### 评论
-这是一个关键的修复。现代 Python 项目越来越倾向于使用 PEP 420 命名空间包，特别是在 Monorepo 结构中。让 `stitcher` 的核心工具链原生支持这一标准，将极大地提升其健壮性和适用性。这次的深度调试最终定位到了一个非常微妙但影响深远的逻辑缺陷。
+这是一个至关重要的健壮性修复。一个强大的静态分析工具必须能够在其操作的根目录中区分代码和元数据。通过引入一个明确的排除列表，我们使 `Workspace` 的行为更加可预测和安全，防止它因项目根目录中的“噪音”而中断。
 
 ### 目标
-1.  修改 `packages/stitcher-refactor/src/stitcher/refactor/workspace.py` 中的 `_get_top_level_importables` 方法。
-2.  放宽其对 `__init__.py` 文件的硬性要求，改为将所有非 dunder (`__*__`) 目录都视为潜在的顶级包。
-3.  移除在调试过程中添加的所有 `print` 语句，清理代码。
-4.  删除为诊断而创建的临时测试文件。
+1.  创建一个新的、更全面的测试文件，用于验证 `Workspace` 既能发现有效包（常规和 PEP 420），又能**忽略**无效的目录。
+2.  修改 `packages/stitcher-refactor/src/stitcher/refactor/workspace.py` 中的 `_get_top_level_importables` 方法。
+3.  引入一个包含常见非代码目录名称的排除集（`EXCLUDED_DIRS`）。
+4.  在遍历目录时，使用这个排除集来过滤掉所有不应被视为包的目录。
+5.  删除之前为 PEP 420 创建的、现已冗余的回归测试文件。
 
 ### 基本原理
-我们将修改 `_get_top_level_importables` 的条件判断。与其要求 `__init__.py` 存在，不如直接将 `src` 目录下的所有常规子目录都视为可导入项。后续的 Griffe 库本身就具备完善的 PEP 420 支持，它能够正确地处理这些被发现的目录。我们的任务仅仅是把这些目录名传递给它，而不是过早地进行过滤。同时，作为良好实践，我们将清理所有用于诊断的临时代码和文件。
+我们将采用“黑名单”策略。在 `_get_top_level_importables` 方法中，我们会预先定义一个已知非代码目录的集合。在迭代 `src_path` 的内容时，任何名称在该集合中的目录都将被立即跳过。这样，只有可能是真实代码的目录和文件会被进一步检查，从而从源头上阻止了 Griffe 加载无效包。
 
 ### 标签
 #intent/fix #flow/ready #priority/critical #comp/refactor #scope/core #ai/brainstorm #task/domain/core-abstractions #task/object/message-bus #task/action/rename #task/state/continue
@@ -36,69 +34,76 @@ Now that we have undeniable proof, we can proceed with the fix.
 
 ### Script
 
-#### Acts 1: 修正包发现逻辑
-我们将修改 `workspace.py`，使其能够识别没有 `__init__.py` 的命名空间包。
+#### Acts 1: 创建一个更全面的包发现测试
+这个新测试将取代旧的 `test_pep420_discovery.py`，它同时验证正确发现和正确忽略。
+
+~~~~~act
+write_file
+packages/stitcher-refactor/tests/unit/refactor/test_workspace_package_discovery.py
+~~~~~
+~~~~~python
+from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory
+from pathlib import Path
+
+
+def test_workspace_discovery_handles_mixed_packages_and_artifacts(tmp_path: Path):
+    """
+    Verifies that Workspace discovery correctly identifies various package types
+    (regular, namespace) while explicitly ignoring common non-code directories
+    (build artifacts, VCS, venv, etc.).
+    """
+    # 1. Arrange: Create a complex workspace with valid packages and junk dirs
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory
+        .with_pyproject(".")
+        # A regular package with __init__.py
+        .with_source("src/my_pkg_regular/__init__.py", "")
+        # A PEP 420 namespace package (no __init__.py)
+        .with_source("src/my_pkg_namespace/sub_pkg/__init__.py", "")
+        # A regular top-level module
+        .with_source("top_level_module.py", "")
+        # Common junk/artifact directories that should be ignored
+        .with_raw_file(".git/config", "")
+        .with_raw_file(".venv/pyvenv.cfg", "")
+        .with_raw_file("build/lib/some_file", "")
+        .with_raw_file("dist/wheel_file.whl", "")
+        .with_raw_file("my_project.egg-info/entry_points.txt", "")
+        .with_raw_file(".pytest_cache/README.md", "")
+        .build()
+    )
+
+    # 2. Act
+    workspace = Workspace(root_path=project_root)
+    discovered_packages = list(workspace.import_to_source_dirs.keys())
+
+    # 3. Assert
+    # A. Assert that all VALID packages and modules are found
+    assert "my_pkg_regular" in discovered_packages
+    assert "my_pkg_namespace" in discovered_packages
+    assert "top_level_module" in discovered_packages
+
+    # B. Assert that all INVALID directories are IGNORED
+    assert ".git" not in discovered_packages
+    assert ".venv" not in discovered_packages
+    assert "build" not in discovered_packages
+    assert "dist" not in discovered_packages
+    assert "my_project.egg-info" not in discovered_packages
+    assert ".pytest_cache" not in discovered_packages
+~~~~~
+
+#### Acts 2: 修复 `workspace.py` 以忽略非代码目录
+现在，我们实现 `Workspace` 的修复逻辑。
 
 ~~~~~act
 patch_file
 packages/stitcher-refactor/src/stitcher/refactor/workspace.py
 ~~~~~
 ~~~~~python.old
-            # A top-level package is a directory with an __init__.py
-            if item.is_dir() and (item / "__init__.py").exists():
-                names.add(item.name)
-~~~~~
-~~~~~python.new
-            # A top-level package is a directory. Griffe will handle namespace packages.
-            # Exclude dunder directories like __pycache__
-            if item.is_dir() and not (item.name.startswith("__") and item.name.endswith("__")):
-                names.add(item.name)
-~~~~~
-
-#### Acts 2: 清理所有诊断探针
-现在问题已经解决，我们需要移除所有用于调试的 `print` 语句。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/workspace.py
-~~~~~
-~~~~~python.old
-    def _discover_packages(self) -> None:
-        print(f"[DEBUG-WORKSPACE] scanning root: {self.root_path}")
-        for pyproject_path in self.root_path.glob("**/pyproject.toml"):
-            try:
-                print(f"[DEBUG-WORKSPACE] Processing: {pyproject_path}")
-                with pyproject_path.open("rb") as f:
-                    tomllib.load(f)
-
-                pkg_root = pyproject_path.parent
-                code_dirs = self._find_code_dirs(pkg_root)
-
-                for code_dir in code_dirs:
-                    import_names = self._get_top_level_importables(code_dir)
-                    if "stitcher" in import_names:
-                         print(f"[DEBUG-WORKSPACE] Found 'stitcher' in {code_dir}")
-                    for import_name in import_names:
-                        # The directory to add to the search path is the code_dir itself
-                        self.import_to_source_dirs[import_name].add(code_dir)
-
-            except Exception as e:
-                print(f"[DEBUG-WORKSPACE] ERROR processing {pyproject_path}: {e}")
-                log.warning(f"Could not process {pyproject_path}: {e}")
-
     def _get_top_level_importables(self, src_path: Path) -> List[str]:
         names: Set[str] = set()
-        if not src_path.is_dir():
-            return []
-            
-        print(f"[DEBUG-WORKSPACE] Scanning imports in: {src_path}")
         for item in src_path.iterdir():
-            # Debug specific check for stitcher
-            if item.name == "stitcher":
-                is_dir = item.is_dir()
-                has_init = (item / "__init__.py").exists()
-                print(f"  [CHECK] stitcher: is_dir={is_dir}, has_init={has_init}")
-            
             # A top-level package is a directory. Griffe will handle namespace packages.
             # Exclude dunder directories like __pycache__
             if item.is_dir() and not (item.name.startswith("__") and item.name.endswith("__")):
@@ -109,45 +114,34 @@ packages/stitcher-refactor/src/stitcher/refactor/workspace.py
             ):
                 names.add(item.stem)
         return list(names)
-
-    def _find_code_dirs(self, pkg_root: Path) -> List[Path]:
-        print(f"  [find_code_dirs] for pkg_root: {pkg_root}")
-        dirs: Set[Path] = set()
-
-        src_dir = pkg_root / "src"
-        if src_dir.is_dir():
-            print(f"    -> Found 'src' dir: {src_dir}")
-            dirs.add(src_dir)
-
-        tests_dir = pkg_root / "tests"
-        if tests_dir.is_dir():
-            print(f"    -> Found 'tests' dir: {tests_dir}")
-            dirs.add(tests_dir)
-
-        # Check for importable items directly under pkg_root to detect flat layouts
-        print("    -> Checking for flat layout...")
-        flat_layout_items = []
-        try:
-            for item in pkg_root.iterdir():
-                if item.name not in {".venv", "src", "tests"}:
-                    is_pkg = item.is_dir() and (item / "__init__.py").exists()
-                    is_mod = item.is_file() and item.name.endswith(".py")
-                    if is_pkg or is_mod:
-                        flat_layout_items.append(item.name)
-        except Exception as e:
-            print(f"    -> ERROR during iterdir: {e}")
-        
-        is_flat_layout = bool(flat_layout_items)
-        print(f"    -> is_flat_layout: {is_flat_layout} (items: {flat_layout_items})")
-
-        if is_flat_layout or not dirs:
-            print("    -> Adding pkg_root as code dir.")
-            dirs.add(pkg_root)
-
-        print(f"  [find_code_dirs] result: {list(dirs)}")
-        return list(dirs)
 ~~~~~
 ~~~~~python.new
+# A set of common directories and artifacts that are definitely not Python packages.
+# Using a set for efficient O(1) lookups.
+EXCLUDED_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    ".idea",
+    ".vscode",
+    "build",
+    "dist",
+    ".egg-info",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "site-packages",
+}
+
+
+class Workspace:
+    def __init__(self, root_path: Path):
+        self.root_path = root_path
+        # 'cascade' -> {'/path/to/cascade-application/src', '/path/to/cascade-engine/src'}
+        self.import_to_source_dirs: Dict[str, Set[Path]] = defaultdict(set)
+        self._discover_packages()
+
     def _discover_packages(self) -> None:
         for pyproject_path in self.root_path.glob("**/pyproject.toml"):
             try:
@@ -165,20 +159,6 @@ packages/stitcher-refactor/src/stitcher/refactor/workspace.py
 
             except Exception as e:
                 log.warning(f"Could not process {pyproject_path}: {e}")
-
-    def _get_top_level_importables(self, src_path: Path) -> List[str]:
-        names: Set[str] = set()
-        for item in src_path.iterdir():
-            # A top-level package is a directory. Griffe will handle namespace packages.
-            # Exclude dunder directories like __pycache__
-            if item.is_dir() and not (item.name.startswith("__") and item.name.endswith("__")):
-                names.add(item.name)
-            # A top-level module is a .py file (but not __init__.py itself)
-            elif (
-                item.is_file() and item.name.endswith(".py") and item.stem != "__init__"
-            ):
-                names.add(item.stem)
-        return list(names)
 
     def _find_code_dirs(self, pkg_root: Path) -> List[Path]:
         dirs: Set[Path] = set()
@@ -202,25 +182,43 @@ packages/stitcher-refactor/src/stitcher/refactor/workspace.py
             dirs.add(pkg_root)
 
         return list(dirs)
+
+    def _get_top_level_importables(self, src_path: Path) -> List[str]:
+        names: Set[str] = set()
+        for item in src_path.iterdir():
+            item_name = item.name
+
+            # Primary filter: ignore common non-code directories and artifacts.
+            # This also handles dot-prefixed directories like .git, .venv, etc.
+            if item_name in EXCLUDED_DIRS or item_name.endswith(".egg-info"):
+                continue
+
+            # A top-level package is a directory. Griffe will handle namespace packages.
+            if item.is_dir():
+                names.add(item_name)
+            # A top-level module is a .py file (but not __init__.py itself)
+            elif (
+                item.is_file() and item_name.endswith(".py") and item.stem != "__init__"
+            ):
+                names.add(item.stem)
+        return list(names)
 ~~~~~
 
-#### Acts 3: 清理临时测试文件
-我们不再需要为诊断创建的测试文件了。
+#### Acts 3: 清理旧的、不够全面的测试文件
 
 ~~~~~act
 delete_file
-packages/stitcher-refactor/tests/unit/refactor/test_workspace_discovery_bug.py
-~~~~~
-~~~~~act
-delete_file
-packages/stitcher-refactor/tests/unit/refactor/test_workspace_find_code_dirs.py
+packages/stitcher-refactor/tests/unit/refactor/test_pep420_discovery.py
 ~~~~~
 
 ### 下一步建议
-我们已经修复了根本原因并清理了代码。现在，请重新运行最初的重构命令。这一次，它应该能正确发现 `stitcher` 包，加载其语义图谱，找到 `MessageBus` 的所有用法，并成功执行重命名。
+我们已经用一个更健壮的实现替换了有缺陷的逻辑，并用一个更全面的测试来保护它。
 
-```bash
-stitcher refactor apply 001_rename_message_bus.py --yes
-```
-
-如果成功，我们可以继续完成整个 `MessageBus` -> `FeedbackBus` 的重构任务。
+1.  首先，请运行新的测试以确保我们的修复是正确的，并且没有引入新的回归：
+    ```bash
+    pytest packages/stitcher-refactor/tests/unit/refactor/test_workspace_package_discovery.py
+    ```
+2.  测试通过后，请再次运行最初的重构命令。这一次，它应该能够畅通无阻地完成任务：
+    ```bash
+    stitcher refactor apply 001_rename_message_bus.py --yes
+    ```
