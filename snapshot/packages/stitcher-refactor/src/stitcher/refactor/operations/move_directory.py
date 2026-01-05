@@ -5,6 +5,7 @@ from stitcher.refactor.engine.context import RefactorContext
 from stitcher.refactor.engine.transaction import FileOp, MoveFileOp, DeleteDirectoryOp
 from stitcher.refactor.operations.base import AbstractOperation
 from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 
 
 class MoveDirectoryOperation(AbstractOperation):
@@ -18,12 +19,29 @@ class MoveDirectoryOperation(AbstractOperation):
         all_ops: List[FileOp] = []
         handled_paths: Set[Path] = set()
 
+        # Phase 0: Plan the global import refactoring
+        # We need a file from the directory to use the helper, any will do.
+        # Let's create a dummy path for the dir itself.
+        # This feels a bit hacky, maybe the helper should be a static method.
+        # For now, let's instantiate MoveFileOperation just to use its helper.
+        # This is a bit of a code smell, suggesting _path_to_fqn could be a static utility.
+        # Let's assume an __init__.py exists for path_to_fqn to work as expected on a dir path.
+        dummy_init_path = self.src_dir / "__init__.py"
+        move_helper = MoveFileOperation(dummy_init_path, Path())
+        old_dir_fqn = move_helper._path_to_fqn(self.src_dir, ctx.graph.root_path)
+        new_dir_fqn = move_helper._path_to_fqn(self.dest_dir, ctx.graph.root_path)
+
+        if old_dir_fqn and new_dir_fqn and old_dir_fqn != new_dir_fqn:
+            rename_op = RenameSymbolOperation(old_dir_fqn, new_dir_fqn)
+            all_ops.extend(rename_op.analyze(ctx))
+
         # Phase 1: Smart-process all Python files and their sidecars
         for src_file in self.src_dir.rglob("*.py"):
             relative_path = src_file.relative_to(self.src_dir)
             dest_file = self.dest_dir / relative_path
 
-            # Delegate to the smart MoveFileOperation
+            # Delegate to the smart MoveFileOperation.
+            # Its RenameSymbolOperation will now handle internal FQN updates, which is fine.
             file_mover = MoveFileOperation(src_file, dest_file)
             file_specific_ops = file_mover.analyze(ctx)
             all_ops.extend(file_specific_ops)
