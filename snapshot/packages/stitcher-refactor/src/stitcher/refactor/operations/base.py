@@ -52,18 +52,30 @@ class SidecarUpdateMixin:
             is_short_name = False
 
             if module_fqn:
-                if not key.startswith(module_fqn + "."):
-                    key_fqn = f"{module_fqn}.{key}"
-                    is_short_name = True
-                else:
+                if key.startswith(module_fqn + "."):
+                    key_fqn = key
                     is_short_name = False
+                else:
+                    # Heuristic: If it starts with the project's root package but not
+                    # the current module, it's likely an FQN from another module.
+                    project_prefix = module_fqn.split(".")[0] + "."
+                    if key.startswith(project_prefix):
+                        key_fqn = key
+                        is_short_name = False
+                    else:
+                        key_fqn = f"{module_fqn}.{key}"
+                        is_short_name = True
+
+            # Determine the effective module FQN for short-name restoration.
+            # If the module itself is being renamed, the new context is new_fqn.
+            effective_new_module = new_fqn if old_fqn == module_fqn else module_fqn
 
             new_key = key
             if key_fqn == old_fqn:
                 target_fqn = new_fqn
-                if is_short_name and module_fqn:
-                    if target_fqn.startswith(module_fqn + "."):
-                        new_key = target_fqn[len(module_fqn) + 1 :]
+                if is_short_name and effective_new_module:
+                    if target_fqn.startswith(effective_new_module + "."):
+                        new_key = target_fqn[len(effective_new_module) + 1 :]
                     else:
                         new_key = target_fqn
                 else:
@@ -73,9 +85,9 @@ class SidecarUpdateMixin:
             elif key_fqn.startswith(old_fqn + "."):
                 suffix = key_fqn[len(old_fqn) :]
                 target_fqn = new_fqn + suffix
-                if is_short_name and module_fqn:
-                    if target_fqn.startswith(module_fqn + "."):
-                        new_key = target_fqn[len(module_fqn) + 1 :]
+                if is_short_name and effective_new_module:
+                    if target_fqn.startswith(effective_new_module + "."):
+                        new_key = target_fqn[len(effective_new_module) + 1 :]
                     else:
                         new_key = target_fqn
                 else:
