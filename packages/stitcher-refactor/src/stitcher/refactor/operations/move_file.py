@@ -13,21 +13,28 @@ class MoveFileOperation(AbstractOperation):
         self.src_path = src_path
         self.dest_path = dest_path
 
-    def _path_to_fqn(self, path: Path, root_path: Path) -> Optional[str]:
-        try:
-            rel_path = path.relative_to(root_path)
-        except ValueError:
-            # Path is not inside root
+    def _path_to_fqn(self, path: Path, search_paths: List[Path]) -> Optional[str]:
+        # Find the source root that is a prefix of the given path.
+        # We sort by length descending to find the most specific root first.
+        # e.g., given /proj/packages/a/src and /proj, for a file in the former,
+        # we want to match the former.
+        base_path = None
+        for sp in sorted(search_paths, key=lambda p: len(p.parts), reverse=True):
+            try:
+                path.relative_to(sp)
+                base_path = sp
+                break
+            except ValueError:
+                continue
+
+        if base_path is None:
+            # Fallback for files not in a designated src root (e.g., top-level scripts)
+            # This logic might need refinement based on project structure.
+            # For now, let's assume it must be in a search path.
             return None
 
+        rel_path = path.relative_to(base_path)
         parts = list(rel_path.parts)
-
-        # Heuristic: if 'src' is the first part, strip it (common layout)
-        if parts and parts[0] == "src":
-            parts = parts[1:]
-
-        if not parts:
-            return None
 
         # Strip .py suffix
         if parts[-1].endswith(".py"):
@@ -51,8 +58,8 @@ class MoveFileOperation(AbstractOperation):
         move_ops: List[FileOp] = []
         content_update_ops: List[FileOp] = []
 
-        old_module_fqn = self._path_to_fqn(self.src_path, ctx.graph.root_path)
-        new_module_fqn = self._path_to_fqn(self.dest_path, ctx.graph.root_path)
+        old_module_fqn = self._path_to_fqn(self.src_path, ctx.graph.search_paths)
+        new_module_fqn = self._path_to_fqn(self.dest_path, ctx.graph.search_paths)
 
         if old_module_fqn and new_module_fqn and old_module_fqn != new_module_fqn:
             # 1. Update external references to the moved symbols
