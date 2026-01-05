@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 修正 ImportFrom 节点更新中的参数名错误", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767613437.6852612, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test: 更新集成测试以匹配绝对导入行为", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767614034.8232524, "duration_ms": 0}}

@@ -1,62 +1,54 @@
-# [WIP] fix: 修正 ImportFrom 节点更新中的参数名错误
-
-### 错误分析
-测试失败，错误为 `TypeError: ImportFrom.__init__() got an unexpected keyword argument 'level'`。
-
-这是因为 `libcst.ImportFrom` 节点的属性名是 `relative` 而不是 `level`。在 LibCST 中，`relative` 属性存储一个 `list[Dot]`，其长度表示相对导入的层级（例如 `.` 长度为 1）。如果 `relative` 为空列表，则表示绝对导入。
-
-我在之前的修复中错误地使用了 `level`（这是 AST 模块的术语），而不是 LibCST 的 `relative`。
+# [WIP] test: 更新集成测试以匹配绝对导入行为
 
 ### 用户需求
-修正 `SymbolRenamerTransformer` 中的 `leave_ImportFrom` 方法，使其正确使用 LibCST 的 API 来构造绝对导入节点。
+修复因最近的“相对导入转绝对导入”变更导致的 `test_move_file_e2e.py` 测试失败。
 
 ### 评论
-这是一个简单的 API 使用错误，修正后应能通过测试。
+我们最近修改了 `SymbolRenamerTransformer`，使其在处理带有 `module` 部分的 `ImportFrom` 语句时，强制使用绝对导入。这是为了解决跨目录移动时的路径计算问题。
+这个变更导致了 `test_move_file_e2e.py` 失败，因为它断言重构后的代码保留了相对导入格式 `from .new import A`，而实际结果现在是 `from mypkg.new import A`。
+我们需要更新测试断言以接受这种更稳健的绝对导入风格。
 
 ### 目标
-修改 `packages/stitcher-refactor/src/stitcher/refactor/operations/transforms/rename_transformer.py`，将 `level=0` 替换为 `relative=[]`。
+修改 `packages/stitcher-refactor/tests/integration/test_move_file_e2e.py`，更新对 `app.py` 内容的断言。
 
 ### 基本原理
-查阅 LibCST 文档确认 `ImportFrom` 的签名为：
-```python
-class ImportFrom(SmallStatement):
-    module: Optional[BaseExpression]
-    names: Union[ImportStar, Sequence[ImportAlias]]
-    relative: Sequence[Dot] = ()
-    # ...
-```
-要将其转换为绝对导入，我们需要显式传递 `relative=[]`。
+将断言从检查相对路径更改为检查绝对路径。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/runtime #concept/refactor #scope/core #ai/instruct #task/domain/refactoring #task/object/import-fix #task/action/implementation #task/state/continue
+#intent/fix #flow/ready #priority/high #comp/tests #concept/refactor #scope/core #ai/instruct #task/domain/refactoring #task/object/test-suite #task/action/update-assertion #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修正 ImportFrom 参数
+#### Acts 1: 更新 test_move_file_e2e.py
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/transforms/rename_transformer.py
+packages/stitcher-refactor/tests/integration/test_move_file_e2e.py
 ~~~~~
 ~~~~~python.old
-            if new_fqn:
-                return updated_node.with_changes(
-                    module=self._create_node_from_fqn(new_fqn),
-                    level=0  # Force absolute import
-                )
-        return updated_node
+    # Content updated?
+    new_app = app_py.read_text("utf-8")
+    assert "import mypkg.new" in new_app
+    assert "from mypkg.new import A" in new_app
+    assert "from . import new" in new_app
+    assert "from .new import A as AliasA" in new_app
+
+    # Sidecar Keys
 ~~~~~
 ~~~~~python.new
-            if new_fqn:
-                return updated_node.with_changes(
-                    module=self._create_node_from_fqn(new_fqn),
-                    relative=[]  # Force absolute import by removing dots
-                )
-        return updated_node
+    # Content updated?
+    new_app = app_py.read_text("utf-8")
+    assert "import mypkg.new" in new_app
+    assert "from mypkg.new import A" in new_app
+    assert "from . import new" in new_app
+    # Note: Stitcher now converts relative imports with a module part to absolute imports for robustness
+    assert "from mypkg.new import A as AliasA" in new_app
+
+    # Sidecar Keys
 ~~~~~
 
 ### 下一步建议
-
-重新运行测试：`uv run pytest packages/stitcher-refactor/tests/integration/test_bug_relative_import_refactor.py`
+运行所有相关测试：
+`uv run pytest packages/stitcher-refactor/tests/integration/test_bug_relative_import_refactor.py packages/stitcher-refactor/tests/integration/test_move_file_e2e.py`
