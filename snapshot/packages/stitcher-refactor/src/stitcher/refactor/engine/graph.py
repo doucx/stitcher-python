@@ -189,12 +189,30 @@ class _UsageVisitor(cst.CSTVisitor):
 class SemanticGraph:
     def __init__(self, root_path: Path):
         self.root_path = root_path
-        search_paths = [self.root_path]
-        src_path = self.root_path / "src"
-        if src_path.is_dir():
-            search_paths.insert(0, src_path)
+        search_paths = []
 
-        self._griffe_loader = griffe.GriffeLoader(search_paths=search_paths)
+        # 1. Add top-level src if it exists
+        top_level_src = self.root_path / "src"
+        if top_level_src.is_dir():
+            search_paths.append(top_level_src)
+
+        # 2. Add packages from monorepo structure
+        packages_dir = self.root_path / "packages"
+        if packages_dir.is_dir():
+            for package_path in packages_dir.iterdir():
+                if package_path.is_dir():
+                    package_src_path = package_path / "src"
+                    if package_src_path.is_dir():
+                        search_paths.append(package_src_path)
+
+        # 3. Fallback to root if no specific source directories were found
+        if not search_paths:
+            search_paths.append(self.root_path)
+
+        # Store unique, sorted paths for deterministic behavior
+        self.search_paths = sorted(list(set(search_paths)))
+
+        self._griffe_loader = griffe.GriffeLoader(search_paths=self.search_paths)
         self._modules: Dict[str, griffe.Module] = {}
         self.registry = UsageRegistry()
 
