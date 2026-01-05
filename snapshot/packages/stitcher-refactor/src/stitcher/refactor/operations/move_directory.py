@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.refactor.engine.transaction import (
@@ -55,7 +55,6 @@ class MoveDirectoryOperation(AbstractOperation, SidecarUpdateMixin):
 
             # Determine module FQN for robust sidecar key updates
             item_module_fqn = self._path_to_fqn(src_item, ctx.graph.search_paths)
-            new_item_module_fqn = self._path_to_fqn(dest_item, ctx.graph.search_paths)
 
             # Handle Doc sidecar
             doc_path = ctx.sidecar_manager.get_doc_path(src_item)
