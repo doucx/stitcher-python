@@ -1,77 +1,72 @@
-简单回答
-修复测试中因命名空间包配置不当导致的模块加载不全问题。
+好的，测试通过。现在我们将这些关键的重构引擎修复作为一个完整的逻辑单元进行提交。
 
-## [WIP] fix: 修复 monorepo 测试中命名空间包的声明方式
+## [COMMIT] fix(refactor): 增强目录移动与命名空间重命名的健壮性
 
 ### 错误分析
 
-集成测试 `test_move_directory_monorepo_e2e.py` 失败，断言错误显示跨包引用未被更新。
-
-根本原因是测试环境构建的 monorepo 结构不正确。测试使用了两个同名的顶层包 `cascade`（分别位于 `cascade-engine` 和 `cascade-runtime`），但将它们的 `__init__.py` 内容设置为空字符串 `""`。在 Python 导入机制中，这会将它们定义为**常规包**（Regular Package）而非**命名空间包**（Namespace Package）。这导致了包遮蔽（Shadowing）：工具链（包括 Griffe）只加载了它在搜索路径中找到的第一个 `cascade` 包，而忽略了第二个。因此，位于第二个包中的 `app.py` 从未被加载进语义图谱，重构引擎也就无法发现并更新其中的引用。
+在 `stitcher-refactor` 的初步实现中，我们发现了以下阻断性问题：
+1.  **竞态条件**: `MoveDirectoryOperation` 在遍历目录时会重复处理同一 Sidecar 文件（一次作为 Python 文件的附属品，一次作为普通文件），导致第二次移动时触发 `FileNotFoundError`。
+2.  **架构脆弱性**: `RenameNamespaceOperation` 依赖于向 LibCST 注入自定义 Metadata Provider 来识别节点。这种方式不仅由于类型不匹配导致了 `AttributeError`，而且与系统现有的位置匹配模式不统一。
+3.  **逻辑缺陷**: 命名空间重命名的分析循环中存在变量引用错误，导致无法正确收集受影响节点的上下文。
+4.  **环境模拟不准**: 单元测试中 `UsageLocation` 的构造未随数据结构同步更新；集成测试中未正确声明 Python 命名空间包，导致 Griffe 无法加载完整的语义图谱。
 
 ### 用户需求
-
-修复 `tests/integration/test_move_directory_monorepo_e2e.py` 中的 `AssertionError`，确保目录移动操作能正确更新跨包引用。
+提交对重构引擎核心 Bug 的修复，确保 `stitcher refactor` 能够在复杂项目中稳定运行。
 
 ### 评论
-
-这是一个典型的 Python 打包陷阱。在模拟 monorepo 环境时，必须显式地将共享命名空间的包声明为 Namespace Package（通常使用 `pkgutil` 风格），以确保所有分布在不同目录下的子模块都能被正确发现和合并。
+这次修复不仅解决了报错，更重要的是统一了重构引擎内部的节点匹配逻辑（转向显式的位置映射），这极大地提升了系统的可测试性和确定性。
 
 ### 目标
-
-修改测试文件 `packages/stitcher-refactor/tests/integration/test_move_directory_monorepo_e2e.py`，在构建测试工作区时，向 `cascade/__init__.py` 注入标准的 `pkgutil` 命名空间声明代码。
+1.  将所有相关修复代码并入版本库。
+2.  创建一个详尽的提交记录，记录架构变更的理由。
 
 ### 基本原理
-
-通过将 `__init__.py` 的内容从空字符串修改为 `__path__ = __import__('pkgutil').extend_path(__path__, __name__)`，我们明确告知 Python 解释器和静态分析工具这是一个命名空间包。这将允许 `SemanticGraph` 正确地从多个源目录聚合 `cascade` 包的所有内容，从而使重构引擎能够看到全局视图并正确应用变更。
+我们遵循“先验证，后提交”的原则。在所有集成测试（包括 monorepo 场景）通过后，我们确信当前的重构引擎状态是稳定的。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/tests #concept/state #scope/core #ai/instruct #task/domain/testing #task/object/monorepo-support #task/action/bug-fix #task/state/begin
+#intent/fix #flow/ready #priority/high #comp/runtime #concept/refactor #scope/core #ai/instruct #task/domain/refactoring #task/object/engine #task/action/fix-bugs #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 注入 pkgutil 命名空间声明
+#### Acts 1: 提交变更
 
-我们将修改测试文件中两处创建 `cascade/__init__.py` 的代码，添加 `pkgutil` 扩展路径的逻辑。
+我们将所有涉及到的操作算子、转换器以及测试用例的修复添加到暂存区并提交。
 
 ~~~~~act
-patch_file
+git_add
+packages/stitcher-refactor/src/stitcher/refactor/operations/rename_namespace.py
+packages/stitcher-refactor/src/stitcher/refactor/operations/move_directory.py
+packages/stitcher-refactor/src/stitcher/refactor/operations/transforms/rename_namespace_transformer.py
+packages/stitcher-refactor/tests/unit/test_rename_operation.py
+packages/stitcher-refactor/tests/unit/test_rename_transformer.py
 packages/stitcher-refactor/tests/integration/test_move_directory_monorepo_e2e.py
-~~~~~
-~~~~~python
-        .with_pyproject("cascade-engine")
-        .with_source("cascade-engine/src/cascade/__init__.py", "")
-        .with_source("cascade-engine/src/cascade/engine/__init__.py", "")
-~~~~~
-~~~~~python
-        .with_pyproject("cascade-engine")
-        .with_source(
-            "cascade-engine/src/cascade/__init__.py",
-            "__path__ = __import__('pkgutil').extend_path(__path__, __name__)",
-        )
-        .with_source("cascade-engine/src/cascade/engine/__init__.py", "")
 ~~~~~
 
 ~~~~~act
-patch_file
-packages/stitcher-refactor/tests/integration/test_move_directory_monorepo_e2e.py
+git_commit
 ~~~~~
-~~~~~python
-        .with_pyproject("cascade-runtime")
-        .with_source("cascade-runtime/src/cascade/__init__.py", "")
-        .with_source("cascade-runtime/src/cascade/runtime/__init__.py", "")
-~~~~~
-~~~~~python
-        .with_pyproject("cascade-runtime")
-        .with_source(
-            "cascade-runtime/src/cascade/__init__.py",
-            "__path__ = __import__('pkgutil').extend_path(__path__, __name__)",
-        )
-        .with_source("cascade-runtime/src/cascade/runtime/__init__.py", "")
+~~~~~text
+fix(refactor): improve directory move and namespace renaming robustness
+
+This commit fixes several critical issues in the refactoring engine:
+
+1. MoveDirectoryOperation: Fixed a FileNotFoundError caused by double-processing
+   sidecar files. Introduced a two-pass scan to ensure each file is moved exactly once.
+2. RenameNamespaceOperation: Rewrote the analysis and transformation logic.
+   Switched from brittle metadata provider injection to explicit location-based
+   matching in the transformer, consistent with SymbolRenamerTransformer.
+3. NamespaceRenamerTransformer: Added support for position-based node identification
+   to fix AttributeErrors during CST traversal.
+4. Testing infrastructure: Updated unit tests to match the latest UsageLocation
+   schema and fixed the monorepo integration test by correctly declaring
+   namespace packages using pkgutil.
+
+These changes ensure that directory moves correctly propagate FQN changes across
+multiple packages and their associated sidecars without crashing.
 ~~~~~
 
 ### 下一步建议
-
-执行此计划后，再次运行 `pytest packages/stitcher-refactor/tests/integration/test_move_directory_monorepo_e2e.py`。如果测试通过，说明问题已解决，可以进行代码提交。如果仍有其他问题，可能需要检查 `SemanticGraph` 对命名空间包的加载逻辑是否还有其他假设。
+- **回归测试**: 建议在真实的大型项目中（如 Stitcher 自身）进行一次模拟重构，验证 `MoveDirectoryOperation` 在多层级嵌套下的表现。
+- **性能优化**: 目前 `SemanticGraph` 的全量加载在超大型项目中可能会变慢，后续可以考虑引入增量加载或并发解析机制。
