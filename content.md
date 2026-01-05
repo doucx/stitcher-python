@@ -1,524 +1,192 @@
-The test failures indicate two primary issues that arose from recent refactoring of the `stitcher-refactor` engine.
+Excellent, we've reduced the failures from 9 to 3. The remaining errors all point to a single, subtle root cause in the new `Workspace` discovery logic.
 
-1.  **`AssertionError` & `ImportError`**: The majority of failures stem from the same root cause. The new `Workspace` class relies on finding `pyproject.toml` files to discover Python packages and their source directories (like `src/` or `tests/`). The integration tests were not updated to create these necessary `pyproject.toml` files in their temporary test environments. Consequently, `Workspace._discover_packages()` found nothing, `graph.search_paths` was empty, and Griffe (the code parser) failed with `ImportError` because it didn't know where to look for modules. The `AssertionError`s were simply the first tests to explicitly check the `search_paths` and fail.
+The previous fixes correctly added the necessary `pyproject.toml` files, which solved the initial discovery problem. However, the `Workspace` class itself had two limitations that are now exposed by the more complex monorepo tests:
 
-2.  **`TypeError`**: A single test, `test_rename_symbol_imported_with_alias`, was not updated after the constructor for `SemanticGraph` and `RefactorContext` was changed. It was still trying to pass an old `root_path` argument instead of the required `workspace` object, leading to a `TypeError`.
+1.  **Incomplete Directory Discovery**: The logic for finding code directories (`_find_src_dir`) was not additive. It would find a `src/` directory but then stop, completely ignoring a co-existing `tests/` directory within the same package. This caused `AssertionError` in tests that correctly expected the `tests` directory to be in the search path.
+2.  **Module vs. Package Blindness**: The logic for identifying "importables" (`_get_top_level_import_names`) only looked for package directories (those with an `__init__.py`). It failed to recognize simple top-level `.py` files (like `app.py`) as valid, importable modules. This meant Griffe was never asked to load them, leading to `ImportError` when other files tried to import them.
 
-I will now generate a plan to fix these issues by updating the test setup across all affected integration test files.
+The fix is to make the discovery logic in `workspace.py` more comprehensive and robust.
 
-## [WIP] fix(tests): Correct refactor engine integration tests setup
+## [WIP] fix(refactor): Enhance Workspace to find test dirs and modules
 
 ### 错误分析
 
-1.  **`AssertionError` & `ImportError`**: `stitcher-refactor` 引擎的 `Workspace` 类现在依赖 `pyproject.toml` 文件来发现包和源路径。大量的集成测试没有在使用 `WorkspaceFactory` 创建测试环境时生成这些文件，导致 `Workspace` 无法发现任何源路径。这使得 `SemanticGraph` 的 `search_paths` 列表为空，引发了直接的 `AssertionError`，并导致 Griffe 在解析代码时因找不到模块而抛出 `ImportError`。
-2.  **`TypeError`**: `test_rename_transformer_advanced.py`中的一个测试用例在 `SemanticGraph` 和 `RefactorContext` 的构造函数签名更新后没有被同步修改，仍在尝试传递一个已被移除的 `root_path` 参数，从而导致 `TypeError`。
+剩余的三个测试失败都源于 `stitcher-refactor` 包中 `workspace.py` 的发现逻辑不够完善：
+
+1.  **`AssertionError`**: `Workspace._find_src_dir` 方法在找到 `src` 目录后便会停止搜索，从而忽略了同一包下并存的 `tests` 目录。这导致 `graph.search_paths` 不完整，测试中断言 `tests` 目录存在的检查失败。
+2.  **`ImportError`**: `Workspace._get_top_level_import_names` 方法只识别包含 `__init__.py` 的包目录，而忽略了顶层的 `.py` 模块文件（例如 `app.py`）。这导致 Griffe 无法加载这些模块，当测试代码尝试 `import app` 时，便会因模块未找到而失败。
 
 ### 用户需求
 
-修复 `stitcher-refactor` 包中所有失败的集成测试。
+修复 `workspace.py` 中的逻辑缺陷，使所有集成测试都能通过。
 
 ### 评论
 
-这是一个典型的重构后遗症。核心引擎的依赖关系发生了变化（引入了对 `pyproject.toml` 的强依赖），但测试用例没有相应地更新。修复这些测试对于保证重构引擎的稳定性和未来开发至关重要。
+这是一个很好的例子，说明测试驱动开发的重要性。初步重构后，是更复杂的集成测试暴露了新设计的边缘情况。通过完善 `Workspace` 的发现能力，我们将使重构引擎对真实世界中多样化的项目结构更具鲁棒性。
 
 ### 目标
 
-1.  为所有受影响的集成测试添加 `with_pyproject()` 调用，以确保 `Workspace` 能够正确发现包。
-2.  修正 `test_rename_symbol_imported_with_alias` 测试，使其使用新的 `SemanticGraph` 和 `RefactorContext` 构造函数。
-3.  确保整个 `stitcher-refactor` 测试套件能够成功通过。
+1.  重构 `workspace.py` 中的发现逻辑，使其能够同时识别 `src`、`tests` 目录以及平铺布局下的包根目录作为代码搜索路径。
+2.  增强 `workspace.py` 的能力，使其不仅能识别包，还能识别顶层的 Python 模块文件。
+3.  确保所有 `stitcher-refactor` 测试套件完全通过。
 
 ### 基本原理
 
-我们将系统性地审查所有失败的测试，并对其 `WorkspaceFactory` 的设置进行补充，确保测试环境的结构符合 `Workspace` 类的预期。对于 `TypeError`，我们将直接更新代码以匹配新的 API 签名。这种方法直接解决了错误的根源，恢复了测试套件的健康状态。
+我将修改 `workspace.py`。首先，将 `_find_src_dir` 重构为 `_find_code_dirs`，使其返回一个包含所有潜在代码根（`src`, `tests`, 包根目录）的列表，而不是单个路径。其次，将 `_get_top_level_import_names` 升级为 `_get_top_level_importables`，使其能够识别并返回 `.py` 文件的模块名。最后，更新主发现循环 `_discover_packages` 来使用这两个增强的辅助函数，从而构建一个完整的、准确的 `search_paths` 列表供 Griffe 使用。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/high #comp/tests #concept/parser #scope/dx #ai/instruct #task/domain/testing #task/object/integration-tests #task/action/bug-fix #task/state/begin
+#intent/fix #flow/ready #priority/high #comp/engine #concept/parser #scope/core #ai/instruct #task/domain/testing #task/object/workspace-discovery #task/action/bug-fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修复 `test_monorepo_refactor_e2e.py`
+#### Acts 1: Refactor `workspace.py` for robust discovery
 
-为 monorepo 中的每个分发包添加 `pyproject.toml` 文件，以便 `Workspace` 能够发现它们。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/tests/integration/test_monorepo_refactor_e2e.py
-~~~~~
-~~~~~python.old
-    project_root = (
-        factory.with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
-        .with_source("packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass")
-        .with_docs(
-            "packages/pkg_a/src/pkga_lib/core.stitcher.yaml",
-            {"pkga_lib.core.SharedClass": "A shared class."},
-        )
-        .with_raw_file(
-            ".stitcher/signatures/packages/pkg_a/src/pkga_lib/core.json",
-            json.dumps({"pkga_lib.core.SharedClass": {"hash": "abc"}}),
-        )
-        .with_source("packages/pkg_b/src/pkgb_app/__init__.py", "")
-        .with_source(
-            "packages/pkg_b/src/pkgb_app/main.py",
-            "from pkga_lib.core import SharedClass\n\ninstance = SharedClass()",
-        )
-        .build()
-    )
-~~~~~
-~~~~~python.new
-    project_root = (
-        factory.with_pyproject("packages/pkg_a")
-        .with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
-        .with_source("packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass")
-        .with_docs(
-            "packages/pkg_a/src/pkga_lib/core.stitcher.yaml",
-            {"pkga_lib.core.SharedClass": "A shared class."},
-        )
-        .with_raw_file(
-            ".stitcher/signatures/packages/pkg_a/src/pkga_lib/core.json",
-            json.dumps({"pkga_lib.core.SharedClass": {"hash": "abc"}}),
-        )
-        .with_pyproject("packages/pkg_b")
-        .with_source("packages/pkg_b/src/pkgb_app/__init__.py", "")
-        .with_source(
-            "packages/pkg_b/src/pkgb_app/main.py",
-            "from pkga_lib.core import SharedClass\n\ninstance = SharedClass()",
-        )
-        .build()
-    )
-~~~~~
-
-#### Acts 2: 修复 `test_monorepo_refactor_with_tests_e2e.py`
-
-同样，为 monorepo 中的每个分发包和项目根目录添加 `pyproject.toml` 文件，以确保 `src` 和 `tests` 目录都能被正确发现。
+This patch overhauls the package discovery logic to correctly identify all source, test, and module locations.
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/tests/integration/test_monorepo_refactor_with_tests_e2e.py
+packages/stitcher-refactor/src/stitcher/refactor/workspace.py
 ~~~~~
 ~~~~~python.old
-    project_root = (
-        factory
-        # --- Package A: The provider ---
-        .with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
-        .with_source("packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass")
-        .with_source(
-            "packages/pkg_a/tests/test_core.py",
-            "from pkga_lib.core import SharedClass\n\ndef test_shared():\n    assert SharedClass is not None",
+class Workspace:
+    def __init__(self, root_path: Path):
+        self.root_path = root_path
+        # 'cascade' -> {'/path/to/cascade-application/src', '/path/to/cascade-engine/src'}
+        self.import_to_source_dirs: Dict[str, Set[Path]] = defaultdict(set)
+        self._discover_packages()
+
+    def _discover_packages(self) -> None:
+        """Scans for all pyproject.toml files to build the package map."""
+        for pyproject_path in self.root_path.glob("**/pyproject.toml"):
+            try:
+                with pyproject_path.open("rb") as f:
+                    tomllib.load(f)
+
+                # Find the source directory (usually 'src' or package name)
+                pkg_root = pyproject_path.parent
+                src_dir = self._find_src_dir(pkg_root)
+                if not src_dir:
+                    continue
+
+                # An import path like 'cascade' or 'stitcher'
+                import_names = self._get_top_level_import_names(src_dir)
+                for import_name in import_names:
+                    self.import_to_source_dirs[import_name].add(src_dir)
+
+            except Exception as e:
+                log.warning(f"Could not process {pyproject_path}: {e}")
+
+    def _find_src_dir(self, pkg_root: Path) -> Optional[Path]:
+        """Finds the source directory within a package's root."""
+        # Prefer 'src' directory if it exists
+        src_dir = pkg_root / "src"
+        if src_dir.is_dir():
+            return src_dir
+
+        # Fallback for flat layouts: check if pkg_root itself contains packages.
+        is_flat_layout = any(
+            item.is_dir() and (item / "__init__.py").exists()
+            for item in pkg_root.iterdir()
         )
-        # --- Package B: A consumer ---
-        .with_source("packages/pkg_b/src/pkgb_app/__init__.py", "")
-        .with_source(
-            "packages/pkg_b/src/pkgb_app/main.py",
-            "from pkga_lib.core import SharedClass\n\ninstance = SharedClass()",
-        )
-        # --- Top-level integration tests ---
-        .with_source("tests/integration/__init__.py", "")
-        .with_source(
-            "tests/integration/test_full_system.py",
-            "from pkga_lib.core import SharedClass\n\ndef test_integration():\n    s = SharedClass()\n    assert s is not None",
-        )
-        .build()
-    )
+        if is_flat_layout:
+            return pkg_root
+
+        return None
+
+    def _get_top_level_import_names(self, src_path: Path) -> List[str]:
+        """Identifies top-level importable package names within a source dir."""
+        names = []
+        for item in src_path.iterdir():
+            # A top-level package is a directory with an __init__.py
+            if item.is_dir() and (item / "__init__.py").exists():
+                names.append(item.name)
+        return names
+
+    def get_search_paths(self) -> List[Path]:
+        """Returns all discovered source directories for Griffe."""
+        all_paths: Set[Path] = set()
+        for paths in self.import_to_source_dirs.values():
+            all_paths.update(paths)
+        return sorted(list(all_paths))
 ~~~~~
 ~~~~~python.new
-    project_root = (
-        factory.with_pyproject(
-            "."
-        )  # For top-level tests discovery
-        # --- Package A: The provider ---
-        .with_pyproject("packages/pkg_a")
-        .with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
-        .with_source("packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass")
-        .with_source(
-            "packages/pkg_a/tests/test_core.py",
-            "from pkga_lib.core import SharedClass\n\ndef test_shared():\n    assert SharedClass is not None",
+class Workspace:
+    def __init__(self, root_path: Path):
+        self.root_path = root_path
+        # 'cascade' -> {'/path/to/cascade-application/src', '/path/to/cascade-engine/src'}
+        self.import_to_source_dirs: Dict[str, Set[Path]] = defaultdict(set)
+        self._discover_packages()
+
+    def _discover_packages(self) -> None:
+        """Scans for all pyproject.toml files to build the package map."""
+        for pyproject_path in self.root_path.glob("**/pyproject.toml"):
+            try:
+                with pyproject_path.open("rb") as f:
+                    tomllib.load(f)
+
+                pkg_root = pyproject_path.parent
+                code_dirs = self._find_code_dirs(pkg_root)
+
+                for code_dir in code_dirs:
+                    import_names = self._get_top_level_importables(code_dir)
+                    for import_name in import_names:
+                        # The directory to add to the search path is the code_dir itself
+                        self.import_to_source_dirs[import_name].add(code_dir)
+
+            except Exception as e:
+                log.warning(f"Could not process {pyproject_path}: {e}")
+
+    def _find_code_dirs(self, pkg_root: Path) -> List[Path]:
+        """Finds potential source directories: src/, tests/, and the package root."""
+        dirs: Set[Path] = set()
+
+        src_dir = pkg_root / "src"
+        if src_dir.is_dir():
+            dirs.add(src_dir)
+
+        tests_dir = pkg_root / "tests"
+        if tests_dir.is_dir():
+            dirs.add(tests_dir)
+
+        # Check for importable items directly under pkg_root to detect flat layouts
+        # or top-level test suites.
+        is_flat_layout = any(
+            (item.is_dir() and (item / "__init__.py").exists())
+            or (item.is_file() and item.name.endswith(".py"))
+            for item in pkg_root.iterdir()
+            if item.name not in {".venv", "src", "tests"}
         )
-        # --- Package B: A consumer ---
-        .with_pyproject("packages/pkg_b")
-        .with_source("packages/pkg_b/src/pkgb_app/__init__.py", "")
-        .with_source(
-            "packages/pkg_b/src/pkgb_app/main.py",
-            "from pkga_lib.core import SharedClass\n\ninstance = SharedClass()",
-        )
-        # --- Top-level integration tests ---
-        .with_source("tests/integration/__init__.py", "")
-        .with_source(
-            "tests/integration/test_full_system.py",
-            "from pkga_lib.core import SharedClass\n\ndef test_integration():\n    s = SharedClass()\n    assert s is not None",
-        )
-        .build()
-    )
-~~~~~
+        if is_flat_layout or not dirs:
+            dirs.add(pkg_root)
 
-#### Acts 3: 修复 `test_move_directory_e2e.py`
+        return list(dirs)
 
-在项目根目录添加一个 `pyproject.toml`。
+    def _get_top_level_importables(self, src_path: Path) -> List[str]:
+        """Identifies top-level importable names (packages and modules) within a source dir."""
+        names: Set[str] = set()
+        for item in src_path.iterdir():
+            # A top-level package is a directory with an __init__.py
+            if item.is_dir() and (item / "__init__.py").exists():
+                names.add(item.name)
+            # A top-level module is a .py file (but not __init__.py itself)
+            elif item.is_file() and item.name.endswith(".py") and item.stem != "__init__":
+                names.add(item.stem)
+        return list(names)
 
-~~~~~act
-patch_file
-packages/stitcher-refactor/tests/integration/test_move_directory_e2e.py
-~~~~~
-~~~~~python.old
-    project_root = (
-        factory.with_source("mypkg/core/__init__.py", "")
-        .with_source("mypkg/core/utils.py", "class Helper: pass")
-        .with_raw_file("mypkg/core/config.txt", "setting=value")
-        .with_raw_file("mypkg/core/.env", "SECRET=123")
-        .with_source(
-            "app.py",
-            """
-            from mypkg.core.utils import Helper
-
-            h = Helper()
-            """,
-        )
-        .with_docs(
-            "mypkg/core/utils.stitcher.yaml",
-            {"mypkg.core.utils.Helper": "Doc for Helper"},
-        )
-        .with_raw_file(
-            ".stitcher/signatures/mypkg/core/utils.json",
-            json.dumps({"mypkg.core.utils.Helper": {"hash": "123"}}),
-        )
-        .build()
-    )
-~~~~~
-~~~~~python.new
-    project_root = (
-        factory.with_pyproject(".")
-        .with_source("mypkg/core/__init__.py", "")
-        .with_source("mypkg/core/utils.py", "class Helper: pass")
-        .with_raw_file("mypkg/core/config.txt", "setting=value")
-        .with_raw_file("mypkg/core/.env", "SECRET=123")
-        .with_source(
-            "app.py",
-            """
-            from mypkg.core.utils import Helper
-
-            h = Helper()
-            """,
-        )
-        .with_docs(
-            "mypkg/core/utils.stitcher.yaml",
-            {"mypkg.core.utils.Helper": "Doc for Helper"},
-        )
-        .with_raw_file(
-            ".stitcher/signatures/mypkg/core/utils.json",
-            json.dumps({"mypkg.core.utils.Helper": {"hash": "123"}}),
-        )
-        .build()
-    )
-~~~~~
-
-#### Acts 4: 修复 `test_move_file_e2e.py`
-
-在项目根目录添加一个 `pyproject.toml`。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/tests/integration/test_move_file_e2e.py
-~~~~~
-~~~~~python.old
-    project_root = (
-        factory.with_source("mypkg/__init__.py", "")
-        .with_source("mypkg/old.py", "class A:\n    pass")
-~~~~~
-~~~~~python.new
-    project_root = (
-        factory.with_pyproject(".")
-        .with_source("mypkg/__init__.py", "")
-        .with_source("mypkg/old.py", "class A:\n    pass")
-~~~~~
-
-#### Acts 5: 修复 `test_move_nested_directory_e2e.py`
-
-在项目根目录添加一个 `pyproject.toml`。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/tests/integration/test_move_nested_directory_e2e.py
-~~~~~
-~~~~~python.old
-    project_root = (
-        factory.with_source("src/cascade/__init__.py", "")
-        .with_source("src/cascade/core/__init__.py", "")
-~~~~~
-~~~~~python.new
-    project_root = (
-        factory.with_pyproject(".")
-        .with_source("src/cascade/__init__.py", "")
-        .with_source("src/cascade/core/__init__.py", "")
-~~~~~
-
-#### Acts 6: 修复 `test_rename_e2e.py`
-
-在项目根目录添加一个 `pyproject.toml`。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/tests/integration/test_rename_e2e.py
-~~~~~
-~~~~~python.old
-    project_root = (
-        factory.with_source(
-            "mypkg/core.py",
-~~~~~
-~~~~~python.new
-    project_root = (
-        factory.with_pyproject(".")
-        .with_source(
-            "mypkg/core.py",
-~~~~~
-
-#### Acts 7: 修复 `test_rename_symbol_monorepo_e2e.py`
-
-为所有包和根目录添加 `pyproject.toml`。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/tests/integration/test_rename_symbol_monorepo_e2e.py
-~~~~~
-~~~~~python.old
-    project_root = (
-        factory
-        # --- Package A: Defines the symbol ---
-        .with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
-        .with_source("packages/pkg_a/src/pkga_lib/core.py", "class OldNameClass: pass")
-        .with_docs(
-            "packages/pkg_a/src/pkga_lib/core.stitcher.yaml",
-            {"pkga_lib.core.OldNameClass": "Docs for the old class."},
-        )
-        .with_raw_file(
-            ".stitcher/signatures/packages/pkg_a/src/pkga_lib/core.json",
-            json.dumps({"pkga_lib.core.OldNameClass": {"hash": "abc"}}),
-        )
-        .with_source(
-            "packages/pkg_a/tests/test_core.py",
-            "from pkga_lib.core import OldNameClass\n\ndef test_local():\n    assert OldNameClass is not None",
-        )
-        # --- Package B: Consumes the symbol ---
-        .with_source("packages/pkg_b/src/pkgb_app/__init__.py", "")
-        .with_source(
-            "packages/pkg_b/src/pkgb_app/main.py",
-            "from pkga_lib.core import OldNameClass\n\ninstance = OldNameClass()",
-        )
-        # --- Top-level integration test: Also consumes the symbol ---
-        .with_source(
-            "tests/integration/test_system.py",
-            "from pkga_lib.core import OldNameClass\n\ndef test_system_integration():\n    assert OldNameClass",
-        )
-        .build()
-    )
-~~~~~
-~~~~~python.new
-    project_root = (
-        factory.with_pyproject(
-            "."
-        )  # For top-level integration tests
-        # --- Package A: Defines the symbol ---
-        .with_pyproject("packages/pkg_a")
-        .with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
-        .with_source("packages/pkg_a/src/pkga_lib/core.py", "class OldNameClass: pass")
-        .with_docs(
-            "packages/pkg_a/src/pkga_lib/core.stitcher.yaml",
-            {"pkga_lib.core.OldNameClass": "Docs for the old class."},
-        )
-        .with_raw_file(
-            ".stitcher/signatures/packages/pkg_a/src/pkga_lib/core.json",
-            json.dumps({"pkga_lib.core.OldNameClass": {"hash": "abc"}}),
-        )
-        .with_source(
-            "packages/pkg_a/tests/test_core.py",
-            "from pkga_lib.core import OldNameClass\n\ndef test_local():\n    assert OldNameClass is not None",
-        )
-        # --- Package B: Consumes the symbol ---
-        .with_pyproject("packages/pkg_b")
-        .with_source("packages/pkg_b/src/pkgb_app/__init__.py", "")
-        .with_source(
-            "packages/pkg_b/src/pkgb_app/main.py",
-            "from pkga_lib.core import OldNameClass\n\ninstance = OldNameClass()",
-        )
-        # --- Top-level integration test: Also consumes the symbol ---
-        .with_source(
-            "tests/integration/test_system.py",
-            "from pkga_lib.core import OldNameClass\n\ndef test_system_integration():\n    assert OldNameClass",
-        )
-        .build()
-    )
-~~~~~
-
-#### Acts 8: 修复 `test_rename_transformer_advanced.py`
-
-为两个测试都添加 `pyproject.toml`，并修正第二个测试中 `SemanticGraph` 和 `RefactorContext` 的实例化方式。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/tests/integration/test_rename_transformer_advanced.py
-~~~~~
-~~~~~python.old
-def test_rename_symbol_via_attribute_access(tmp_path):
-    # 1. Setup
-    project_root = (
-        WorkspaceFactory(tmp_path)
-        .with_source("mypkg/__init__.py", "")
-        .with_source("mypkg/core.py", "class OldHelper: pass")
-        .with_source(
-            "main.py",
-            """
-            import mypkg.core
-
-            h = mypkg.core.OldHelper()
-            """,
-        )
-        .build()
-    )
-
-    # 2. Analyze
-    workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
-    graph.load("mypkg")
-    graph.load("main")
-    sidecar_manager = SidecarManager(root_path=project_root)
-    ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
-    )
-
-    # 3. Plan
-    op = RenameSymbolOperation("mypkg.core.OldHelper", "mypkg.core.NewHelper")
-    ops = op.analyze(ctx)
-
-    # 4. Verify (without committing, just check the planned ops)
-    assert len(ops) == 2
-    write_ops = {op.path.name: op for op in ops}
-    assert "core.py" in write_ops
-    assert "main.py" in write_ops
-    assert "class NewHelper: pass" in write_ops["core.py"].content
-    assert "h = mypkg.core.NewHelper()" in write_ops["main.py"].content
-
-
-def test_rename_symbol_imported_with_alias(tmp_path):
-    # 1. Setup
-    project_root = (
-        WorkspaceFactory(tmp_path)
-        .with_source("mypkg/__init__.py", "")
-        .with_source("mypkg/core.py", "class OldHelper: pass")
-        .with_source(
-            "main.py",
-            """
-            from mypkg.core import OldHelper as OH
-
-            h = OH()
-            """,
-        )
-        .build()
-    )
-
-    # 2. Analyze
-    graph = SemanticGraph(root_path=project_root)
-    graph.load("mypkg")
-    graph.load("main")
-    ctx = RefactorContext(graph=graph)
-
-    # 3. Plan
-    op = RenameSymbolOperation("mypkg.core.OldHelper", "mypkg.core.NewHelper")
-    ops = op.analyze(ctx)
-
-    # 4. Verify
-    assert len(ops) == 2
-    write_ops = {op.path.name: op for op in ops}
-    expected_main = "from mypkg.core import NewHelper as OH\n\nh = OH()"
-    assert "core.py" in write_ops
-    assert write_ops["core.py"].content == "class NewHelper: pass"
-    assert "main.py" in write_ops
-    assert write_ops["main.py"].content.strip() == expected_main.strip()
-~~~~~
-~~~~~python.new
-def test_rename_symbol_via_attribute_access(tmp_path):
-    # 1. Setup
-    project_root = (
-        WorkspaceFactory(tmp_path)
-        .with_pyproject(".")
-        .with_source("mypkg/__init__.py", "")
-        .with_source("mypkg/core.py", "class OldHelper: pass")
-        .with_source(
-            "main.py",
-            """
-            import mypkg.core
-
-            h = mypkg.core.OldHelper()
-            """,
-        )
-        .build()
-    )
-
-    # 2. Analyze
-    workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
-    graph.load("mypkg")
-    graph.load("main")
-    sidecar_manager = SidecarManager(root_path=project_root)
-    ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
-    )
-
-    # 3. Plan
-    op = RenameSymbolOperation("mypkg.core.OldHelper", "mypkg.core.NewHelper")
-    ops = op.analyze(ctx)
-
-    # 4. Verify (without committing, just check the planned ops)
-    assert len(ops) == 2
-    write_ops = {op.path.name: op for op in ops}
-    assert "core.py" in write_ops
-    assert "main.py" in write_ops
-    assert "class NewHelper: pass" in write_ops["core.py"].content
-    assert "h = mypkg.core.NewHelper()" in write_ops["main.py"].content
-
-
-def test_rename_symbol_imported_with_alias(tmp_path):
-    # 1. Setup
-    project_root = (
-        WorkspaceFactory(tmp_path)
-        .with_pyproject(".")
-        .with_source("mypkg/__init__.py", "")
-        .with_source("mypkg/core.py", "class OldHelper: pass")
-        .with_source(
-            "main.py",
-            """
-            from mypkg.core import OldHelper as OH
-
-            h = OH()
-            """,
-        )
-        .build()
-    )
-
-    # 2. Analyze
-    workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
-    graph.load("mypkg")
-    graph.load("main")
-    sidecar_manager = SidecarManager(root_path=project_root)
-    ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
-    )
-
-    # 3. Plan
-    op = RenameSymbolOperation("mypkg.core.OldHelper", "mypkg.core.NewHelper")
-    ops = op.analyze(ctx)
-
-    # 4. Verify
-    assert len(ops) == 2
-    write_ops = {op.path.name: op for op in ops}
-    expected_main = "from mypkg.core import NewHelper as OH\n\nh = OH()"
-    assert "core.py" in write_ops
-    assert write_ops["core.py"].content.strip() == "class NewHelper: pass"
-    assert "main.py" in write_ops
-    assert write_ops["main.py"].content.strip() == expected_main.strip()
+    def get_search_paths(self) -> List[Path]:
+        """Returns all discovered source directories for Griffe."""
+        all_paths: Set[Path] = set()
+        for paths in self.import_to_source_dirs.values():
+            all_paths.update(paths)
+        # Also add the root path itself to handle cases where pyproject.toml is nested
+        # but top-level modules need to be found.
+        all_paths.add(self.root_path)
+        return sorted(list(all_paths))
 ~~~~~
 
 ### 下一步建议
 
-在应用这些修复后，应重新运行 `stitcher-refactor` 包的测试套件，以确认所有问题都已解决。如果通过，我会生成一个 `[COMMIT]` 计划来提交这些更改。
+这次的修改直接命中了问题的核心。在应用补丁后，请再次运行 `stitcher-refactor` 的测试套件。如果所有测试都通过，我将生成一个 `[COMMIT]` 计划来最终完成这次修复。
