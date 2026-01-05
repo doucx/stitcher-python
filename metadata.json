@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat(refactor): 为 Planner 添加 DeleteDirectory 支持", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767617133.6627512, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test: 适配 Planner v2 更新目录移动 E2E 测试", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767617231.9943464, "duration_ms": 0}}
