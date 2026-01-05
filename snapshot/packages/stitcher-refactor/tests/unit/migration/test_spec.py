@@ -17,7 +17,7 @@ def test_migration_spec_add_operations():
     assert spec.operations[0].old_fqn == "old.pkg"
 
     assert isinstance(spec.operations[1], MoveFileOperation)
-    assert spec.operations[1].src_path == Path("src/old.py")
+    assert spec.operations[1].src == Path("src/old.py")
 
 
 def test_migration_spec_add_map():

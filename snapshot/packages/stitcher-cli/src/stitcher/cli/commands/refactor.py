@@ -60,6 +60,9 @@ def refactor_command(
             bus.debug(L.debug.log.msg, msg=f"Loading top-level package: {pkg_name}")
             graph.load(pkg_name)
 
+        # After loading all packages, build the unified semantic view
+        graph.build()
+
         ctx = RefactorContext(graph)
 
         # 2. Load and plan the migration

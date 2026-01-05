@@ -219,15 +219,17 @@ class SemanticGraph:
         self.registry = UsageRegistry()
 
     def load(self, package_name: str, submodules: bool = True) -> None:
-        # 1. Load with Griffe (resolves aliases)
+        # Phase 1: Just load the module. Analysis happens in `build`.
         module = self._griffe_loader.load(package_name, submodules=submodules)
         self._modules[package_name] = module
 
-        # 2. Resolve aliases to ensure we have full resolution
+    def build(self) -> None:
+        # Phase 2: Once all modules are loaded, resolve aliases globally.
         self._griffe_loader.resolve_aliases()
 
-        # 3. Build Usage Registry
-        self._build_registry(module)
+        # Phase 3: Now that resolution is complete, scan for usages.
+        for module in self._modules.values():
+            self._build_registry(module)
 
     def _build_registry(self, module: griffe.Module):
         # Recursively process members that are modules
@@ -240,25 +242,38 @@ class SemanticGraph:
             self._scan_module_usages(module)
 
     def _scan_module_usages(self, module: griffe.Module):
+        if not module.filepath or not module.filepath.exists():
+            return
+
         # 1. Build Local Symbol Table (Name -> FQN)
         local_symbols: Dict[str, str] = {}
 
+        # First, add definitions within this module
         for name, member in module.members.items():
-            if member.is_alias:
-                try:
-                    target_fqn = member.target_path
-                    local_symbols[name] = target_fqn
-                except Exception:
-                    pass
-            else:
-                # It's a definition (Class, Function) in this module.
+            if not member.is_alias:
                 local_symbols[name] = member.path
+
+        # Second, add resolved aliases (imports)
+        for name, member in module.aliases.items():
+            try:
+                # After resolve_aliases(), target_path should be correct
+                target_fqn = member.target_path
+                local_symbols[name] = target_fqn
+            except Exception:
+                # Alias resolution might fail for various reasons, skip it
+                pass
 
         # 2. Parse CST and scan
         try:
             source = module.filepath.read_text(encoding="utf-8")
+            # Determine module FQN for relative import resolution
+            is_init = module.filepath.name == "__init__.py"
+            module_fqn = module.path
+
             wrapper = cst.MetadataWrapper(cst.parse_module(source))
-            visitor = _UsageVisitor(module.filepath, local_symbols, self.registry)
+            visitor = _UsageVisitor(
+                module.filepath, local_symbols, self.registry, module_fqn, is_init
+            )
             wrapper.visit(visitor)
         except Exception:
             # Handle syntax errors or IO errors gracefully

@@ -1,382 +1,212 @@
-You've found an excellent bug. My apologies, that's a clear mistake in the API design.
+You've uncovered a couple of excellent, subtle bugs. The test failures point to two distinct issues which I will address.
 
-The error `TypeError: MoveFileOperation.__init__() got an unexpected keyword argument 'src'` indicates a mismatch between how the migration script is *calling* the `Move` operation and how the `MoveFileOperation` class is *defined*.
+1.  **Behavioral Bug (`no_ops` issue):** The two integration tests are failing because the refactor engine incorrectly plans zero operations (`no_ops`). This is due to a flaw in how the `SemanticGraph` is built. It's trying to analyze usages *during* the loading of each package, *before* all cross-module aliases have been resolved. The fix is to separate the loading phase from the analysis phase.
+2.  **Test Drift (`AttributeError`):** The unit test is failing because it wasn't updated after my last change where I renamed `src_path` to `src`. I will fix this test.
 
-The script uses `Move(src=..., dest=...)`, which is clean and intuitive. However, the class constructor was implemented to expect `src_path` and `dest_path`. I will fix the class to match the intuitive API, which is the correct long-term solution.
+I will now generate a plan to fix both of these issues.
 
-## [WIP] fix(refactor): Align Move operation API with keyword arguments
+## [WIP] fix(refactor): Decouple semantic analysis from module loading
 
 ### 错误分析
 
-用户在运行迁移脚本时遇到了 `TypeError`。
+测试套件中出现了三处失败，指向两个不同的根本原因：
 
-1.  **根本原因**: `MoveFileOperation` 和 `MoveDirectoryOperation` 类的 `__init__` 方法的参数名与迁移脚本中推荐的调用方式不一致。
-2.  **具体问题**:
-    *   迁移脚本 API 设计为使用简洁的关键字 `src` 和 `dest` (e.g., `Move(src=..., dest=...)`)。
-    *   `MoveFileOperation` 的构造函数却期望 `src_path` 和 `dest_path`。
-    *   `MoveDirectoryOperation` 的构造函数期望 `src_dir` 和 `dest_dir`。
-    *   这导致 Python 无法将调用端的关键字参数 `src` 映射到定义端的 `src_path`，从而抛出 `TypeError`。
+1.  **`test_refactor_apply_e2e` 和 `test_refactor_apply_dry_run` 失败**:
+    *   **现象**: `SpyBus` 捕获到的最后一条消息是 `refactor.run.no_ops`，表明 `Planner` 未生成任何文件操作。
+    *   **根本原因**: `SemanticGraph` 的设计存在时序问题。它在 `load()` 方法中加载一个包后，立即对其进行语法分析以查找符号用法 (`_build_registry`)。然而，Griffe 的跨模块别名解析 (`resolve_aliases()`) 需要在**所有**相关的包都被加载后才能正确工作。因此，当分析第一个包时，它无法解析引用了第二个包中符号的别名，导致符号用法（usages）的注册不完整。最终，`RenameSymbolOperation` 找不到任何用法，也就不会生成任何操作。
+
+2.  **`test_migration_spec_add_operations` 失败**:
+    *   **现象**: `AttributeError: 'MoveFileOperation' object has no attribute 'src_path'`.
+    *   **根本原因**: 这是由我上一次修复引入的“测试漂移”。我为了统一 API 将 `MoveFileOperation` 的 `__init__` 参数从 `src_path` 改为了 `src`，但忘记更新引用了旧属性名的单元测试。
 
 ### 用户需求
 
-修复 `Move` 和 `MoveDir` 操作，使其能够接受 `src` 和 `dest` 关键字参数，从而使迁移脚本能够按预期工作。
+修复重构引擎，使其能够：
+1.  正确识别并解析跨包的符号引用。
+2.  通过完整的测试套件验证。
 
 ### 评论
 
-这是一个典型的 API 不一致性 bug。修复这个问题对于提供一个干净、可预测的开发者体验至关重要。将内部实现（`src_path`）与公共 API（`src`）对齐，是正确的做法。
+这是一个非常关键的修复。将模块加载（I/O和初始解析）与全域分析（别名解析和用法扫描）解耦，是构建健壮的、能理解整个代码库的重构引擎的正确架构。这个修复将使引擎从只能理解单个文件，进化到能理解整个项目。
 
 ### 目标
 
-1.  修改 `MoveFileOperation` 的 `__init__` 方法，使其接受 `src` 和 `dest` 参数，并更新整个类以使用 `self.src` 和 `self.dest`。
-2.  修改 `MoveDirectoryOperation` 的 `__init__` 方法，使其接受 `src`和 `dest` 参数，并更新整个类以使用 `self.src` 和 `self.dest`。
+1.  **重构 `SemanticGraph`**:
+    *   修改 `load()` 方法，使其只负责加载模块到 Griffe 加载器中。
+    *   创建一个新的 `build()` 方法，该方法在所有模块加载完毕后被调用。它将首先调用 `resolve_aliases()`，然后遍历所有已加载的模块来构建完整的用法注册表。
+2.  **更新 `refactor_command`**: 在加载完所有顶层包后，调用新的 `graph.build()` 方法。
+3.  **修复单元测试**: 更新 `test_spec.py` 以使用正确的属性名 `.src`。
 
 ### 基本原理
 
-我们将直接重构这两个操作类的构造函数和内部属性。通过将参数名统一为 `src` 和 `dest`，我们使得这些类的公共 API 与迁移脚本的调用方式完全匹配，从而从根本上解决 `TypeError`。这个改动不会影响它们的功能，但会显著提升 API 的一致性和易用性。
+我们将遵循“分阶段”处理的原则。首先，`refactor_command` 将负责“加载阶段”，它会告诉 `SemanticGraph` 去加载所有发现的顶层包。`SemanticGraph` 在此阶段只收集模块。然后，`refactor_command` 会显式触发“构建阶段”，调用 `graph.build()`。`build()` 方法现在拥有了代码库的“全景图”，可以安全地解析所有别名，并准确地扫描所有符号的用法。这个改动确保了分析的正确性，从而解决了 `no_ops` 的问题。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/high #comp/refactor #scope/api #scope/dx #ai/instruct #task/domain/tooling #task/object/refactor-engine #task/action/dogfooding #task/state/continue
+#intent/fix #flow/ready #priority/critical #comp/refactor #concept/state #scope/core #ai/brainstorm #task/domain/tooling #task/object/refactor-engine #task/action/dogfooding #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 统一 `MoveFileOperation` 的 API
+#### Acts 1: Refactor `SemanticGraph` to separate loading and analysis
 
-我们将修改 `move_file.py` 以使用 `src` 和 `dest`。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_file.py
-~~~~~
-~~~~~python.old
-class MoveFileOperation(AbstractOperation):
-    def __init__(self, src_path: Path, dest_path: Path):
-        self.src_path = src_path
-        self.dest_path = dest_path
-
-    def _path_to_fqn(self, path: Path, search_paths: List[Path]) -> Optional[str]:
-~~~~~
-~~~~~python.new
-class MoveFileOperation(AbstractOperation):
-    def __init__(self, src: Path, dest: Path):
-        self.src = src
-        self.dest = dest
-
-    def _path_to_fqn(self, path: Path, search_paths: List[Path]) -> Optional[str]:
-~~~~~
+我们将修改 `graph.py`，引入新的 `build()` 方法。
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_file.py
+packages/stitcher-refactor/src/stitcher/refactor/engine/graph.py
 ~~~~~
 ~~~~~python.old
-    def analyze(self, ctx: RefactorContext) -> List[FileOp]:
-        rename_ops: List[FileOp] = []
-        move_ops: List[FileOp] = []
-        content_update_ops: List[FileOp] = []
+    def load(self, package_name: str, submodules: bool = True) -> None:
+        # 1. Load with Griffe (resolves aliases)
+        module = self._griffe_loader.load(package_name, submodules=submodules)
+        self._modules[package_name] = module
 
-        old_module_fqn = self._path_to_fqn(self.src_path, ctx.graph.search_paths)
-        new_module_fqn = self._path_to_fqn(self.dest_path, ctx.graph.search_paths)
+        # 2. Resolve aliases to ensure we have full resolution
+        self._griffe_loader.resolve_aliases()
 
-        if old_module_fqn and new_module_fqn and old_module_fqn != new_module_fqn:
-            # 1. Update external references to the moved symbols
-            # Rename the module itself (handles "import old_mod")
-            rename_mod_op = RenameSymbolOperation(old_module_fqn, new_module_fqn)
-            rename_ops.extend(rename_mod_op.analyze(ctx))
-
-            # Rename all members (handles "from old_mod import X")
-            members = ctx.graph.iter_members(old_module_fqn)
-            for member in members:
-                if member.fqn == old_module_fqn:
-                    continue
-                if member.fqn.startswith(old_module_fqn + "."):
-                    suffix = member.fqn[len(old_module_fqn) :]
-                    target_new_fqn = new_module_fqn + suffix
-                    sub_op = RenameSymbolOperation(member.fqn, target_new_fqn)
-                    rename_ops.extend(sub_op.analyze(ctx))
-
-            # 2. Update the content of the sidecar files associated with the moved module
-            # YAML sidecar
-            yaml_src_path = self.src_path.with_suffix(".stitcher.yaml")
-            if yaml_src_path.exists():
-                doc_updater = DocUpdater()
-                doc_data = doc_updater.load(yaml_src_path)
-                updated_data = {
-                    key.replace(old_module_fqn, new_module_fqn, 1)
-                    if key.startswith(old_module_fqn)
-                    else key: value
-                    for key, value in doc_data.items()
-                }
-                if updated_data != doc_data:
-                    content_update_ops.append(
-                        WriteFileOp(
-                            path=yaml_src_path.relative_to(ctx.graph.root_path),
-                            content=doc_updater.dump(updated_data),
-                        )
-                    )
-            # Signature sidecar
-            rel_src_base = self.src_path.relative_to(ctx.graph.root_path)
-            sig_src_path = (
-                ctx.graph.root_path
-                / ".stitcher/signatures"
-                / rel_src_base.with_suffix(".json")
-            )
-            if sig_src_path.exists():
-                sig_updater = SigUpdater()
-                sig_data = sig_updater.load(sig_src_path)
-                updated_data = {
-                    key.replace(old_module_fqn, new_module_fqn, 1)
-                    if key.startswith(old_module_fqn)
-                    else key: value
-                    for key, value in sig_data.items()
-                }
-                if updated_data != sig_data:
-                    content_update_ops.append(
-                        WriteFileOp(
-                            path=sig_src_path.relative_to(ctx.graph.root_path),
-                            content=sig_updater.dump(updated_data),
-                        )
-                    )
-
-        # 3. Plan the physical moves
-        rel_src = self.src_path.relative_to(ctx.graph.root_path)
-        rel_dest = self.dest_path.relative_to(ctx.graph.root_path)
-        move_ops.append(MoveFileOp(rel_src, rel_dest))
-
-        # Sidecar moves
-        yaml_src = self.src_path.with_suffix(".stitcher.yaml")
-        if yaml_src.exists():
-            rel_yaml_src = yaml_src.relative_to(ctx.graph.root_path)
-            rel_yaml_dest = self.dest_path.with_suffix(".stitcher.yaml").relative_to(
-                ctx.graph.root_path
-            )
-            move_ops.append(MoveFileOp(rel_yaml_src, rel_yaml_dest))
-
-        sig_root = ctx.graph.root_path / ".stitcher/signatures"
-        sig_src = sig_root / rel_src.with_suffix(".json")
-        if sig_src.exists():
-            rel_sig_src = sig_src.relative_to(ctx.graph.root_path)
-            rel_sig_dest = sig_root / rel_dest.with_suffix(".json")
-            rel_sig_dest = rel_sig_dest.relative_to(ctx.graph.root_path)
-            move_ops.append(MoveFileOp(rel_sig_src, rel_sig_dest))
-
-        # Return combined ops: content updates first, then moves
-        return content_update_ops + rename_ops + move_ops
+        # 3. Build Usage Registry
+        self._build_registry(module)
 ~~~~~
 ~~~~~python.new
-    def analyze(self, ctx: RefactorContext) -> List[FileOp]:
-        rename_ops: List[FileOp] = []
-        move_ops: List[FileOp] = []
-        content_update_ops: List[FileOp] = []
+    def load(self, package_name: str, submodules: bool = True) -> None:
+        # Phase 1: Just load the module. Analysis happens in `build`.
+        module = self._griffe_loader.load(package_name, submodules=submodules)
+        self._modules[package_name] = module
 
-        old_module_fqn = self._path_to_fqn(self.src, ctx.graph.search_paths)
-        new_module_fqn = self._path_to_fqn(self.dest, ctx.graph.search_paths)
+    def build(self) -> None:
+        # Phase 2: Once all modules are loaded, resolve aliases globally.
+        self._griffe_loader.resolve_aliases()
 
-        if old_module_fqn and new_module_fqn and old_module_fqn != new_module_fqn:
-            # 1. Update external references to the moved symbols
-            # Rename the module itself (handles "import old_mod")
-            rename_mod_op = RenameSymbolOperation(old_module_fqn, new_module_fqn)
-            rename_ops.extend(rename_mod_op.analyze(ctx))
-
-            # Rename all members (handles "from old_mod import X")
-            members = ctx.graph.iter_members(old_module_fqn)
-            for member in members:
-                if member.fqn == old_module_fqn:
-                    continue
-                if member.fqn.startswith(old_module_fqn + "."):
-                    suffix = member.fqn[len(old_module_fqn) :]
-                    target_new_fqn = new_module_fqn + suffix
-                    sub_op = RenameSymbolOperation(member.fqn, target_new_fqn)
-                    rename_ops.extend(sub_op.analyze(ctx))
-
-            # 2. Update the content of the sidecar files associated with the moved module
-            # YAML sidecar
-            yaml_src_path = self.src.with_suffix(".stitcher.yaml")
-            if yaml_src_path.exists():
-                doc_updater = DocUpdater()
-                doc_data = doc_updater.load(yaml_src_path)
-                updated_data = {
-                    key.replace(old_module_fqn, new_module_fqn, 1)
-                    if key.startswith(old_module_fqn)
-                    else key: value
-                    for key, value in doc_data.items()
-                }
-                if updated_data != doc_data:
-                    content_update_ops.append(
-                        WriteFileOp(
-                            path=yaml_src_path.relative_to(ctx.graph.root_path),
-                            content=doc_updater.dump(updated_data),
-                        )
-                    )
-            # Signature sidecar
-            rel_src_base = self.src.relative_to(ctx.graph.root_path)
-            sig_src_path = (
-                ctx.graph.root_path
-                / ".stitcher/signatures"
-                / rel_src_base.with_suffix(".json")
-            )
-            if sig_src_path.exists():
-                sig_updater = SigUpdater()
-                sig_data = sig_updater.load(sig_src_path)
-                updated_data = {
-                    key.replace(old_module_fqn, new_module_fqn, 1)
-                    if key.startswith(old_module_fqn)
-                    else key: value
-                    for key, value in sig_data.items()
-                }
-                if updated_data != sig_data:
-                    content_update_ops.append(
-                        WriteFileOp(
-                            path=sig_src_path.relative_to(ctx.graph.root_path),
-                            content=sig_updater.dump(updated_data),
-                        )
-                    )
-
-        # 3. Plan the physical moves
-        rel_src = self.src.relative_to(ctx.graph.root_path)
-        rel_dest = self.dest.relative_to(ctx.graph.root_path)
-        move_ops.append(MoveFileOp(rel_src, rel_dest))
-
-        # Sidecar moves
-        yaml_src = self.src.with_suffix(".stitcher.yaml")
-        if yaml_src.exists():
-            rel_yaml_src = yaml_src.relative_to(ctx.graph.root_path)
-            rel_yaml_dest = self.dest.with_suffix(".stitcher.yaml").relative_to(
-                ctx.graph.root_path
-            )
-            move_ops.append(MoveFileOp(rel_yaml_src, rel_yaml_dest))
-
-        sig_root = ctx.graph.root_path / ".stitcher/signatures"
-        sig_src = sig_root / rel_src.with_suffix(".json")
-        if sig_src.exists():
-            rel_sig_src = sig_src.relative_to(ctx.graph.root_path)
-            rel_sig_dest = sig_root / rel_dest.with_suffix(".json")
-            rel_sig_dest = rel_sig_dest.relative_to(ctx.graph.root_path)
-            move_ops.append(MoveFileOp(rel_sig_src, rel_sig_dest))
-
-        # Return combined ops: content updates first, then moves
-        return content_update_ops + rename_ops + move_ops
+        # Phase 3: Now that resolution is complete, scan for usages.
+        for module in self._modules.values():
+            self._build_registry(module)
 ~~~~~
-
-#### Acts 2: 统一 `MoveDirectoryOperation` 的 API
-
-同样，我们修改 `move_directory.py`。
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_directory.py
+packages/stitcher-refactor/src/stitcher/refactor/engine/graph.py
 ~~~~~
 ~~~~~python.old
-class MoveDirectoryOperation(AbstractOperation):
-    def __init__(self, src_dir: Path, dest_dir: Path):
-        if not src_dir.is_dir():
-            raise ValueError(f"Source path is not a directory: {src_dir}")
-        self.src_dir = src_dir
-        self.dest_dir = dest_dir
+    def _scan_module_usages(self, module: griffe.Module):
+        # 1. Build Local Symbol Table (Name -> FQN)
+        local_symbols: Dict[str, str] = {}
 
-    def analyze(self, ctx: RefactorContext) -> List[FileOp]:
-        all_ops: List[FileOp] = []
-        handled_paths: Set[Path] = set()
+        for name, member in module.members.items():
+            if member.is_alias:
+                try:
+                    target_fqn = member.target_path
+                    local_symbols[name] = target_fqn
+                except Exception:
+                    pass
+            else:
+                # It's a definition (Class, Function) in this module.
+                local_symbols[name] = member.path
 
-        # Phase 1: Smart-process all Python files and their sidecars
-        for src_file in self.src_dir.rglob("*.py"):
-            relative_path = src_file.relative_to(self.src_dir)
-            dest_file = self.dest_dir / relative_path
-
-            # Delegate to the smart MoveFileOperation
-            file_mover = MoveFileOperation(src_file, dest_file)
-            file_specific_ops = file_mover.analyze(ctx)
-            all_ops.extend(file_specific_ops)
-
-            # Mark the source file and its potential sidecars as handled
-            handled_paths.add(src_file)
-            handled_paths.add(src_file.with_suffix(".stitcher.yaml"))
-            sig_rel_path = src_file.relative_to(ctx.graph.root_path).with_suffix(
-                ".json"
-            )
-            sig_abs_path = ctx.graph.root_path / ".stitcher/signatures" / sig_rel_path
-            handled_paths.add(sig_abs_path)
-
-        # Phase 2: Process all remaining items (non-Python files)
-        for src_item in self.src_dir.rglob("*"):
-            if src_item in handled_paths or not src_item.is_file():
-                continue
-
-            # This item is a non-Python, non-sidecar file. Do a simple move.
-            relative_path = src_item.relative_to(self.src_dir)
-            dest_item = self.dest_dir / relative_path
-
-            rel_src_item = src_item.relative_to(ctx.graph.root_path)
-            rel_dest_item = dest_item.relative_to(ctx.graph.root_path)
-
-            all_ops.append(MoveFileOp(rel_src_item, rel_dest_item))
-            handled_paths.add(src_item)
-
-        # Phase 3: Schedule the now-empty source directory for deletion
-        all_ops.append(DeleteDirectoryOp(self.src_dir.relative_to(ctx.graph.root_path)))
-
-        return all_ops
+        # 2. Parse CST and scan
+        try:
+            source = module.filepath.read_text(encoding="utf-8")
+            wrapper = cst.MetadataWrapper(cst.parse_module(source))
+            visitor = _UsageVisitor(module.filepath, local_symbols, self.registry)
+            wrapper.visit(visitor)
+        except Exception:
+            # Handle syntax errors or IO errors gracefully
+            pass
 ~~~~~
 ~~~~~python.new
-class MoveDirectoryOperation(AbstractOperation):
-    def __init__(self, src: Path, dest: Path):
-        if not src.is_dir():
-            raise ValueError(f"Source path is not a directory: {src}")
-        self.src = src
-        self.dest = dest
+    def _scan_module_usages(self, module: griffe.Module):
+        if not module.filepath or not module.filepath.exists():
+            return
 
-    def analyze(self, ctx: RefactorContext) -> List[FileOp]:
-        all_ops: List[FileOp] = []
-        handled_paths: Set[Path] = set()
+        # 1. Build Local Symbol Table (Name -> FQN)
+        local_symbols: Dict[str, str] = {}
 
-        # Phase 1: Smart-process all Python files and their sidecars
-        for src_file in self.src.rglob("*.py"):
-            relative_path = src_file.relative_to(self.src)
-            dest_file = self.dest / relative_path
+        # First, add definitions within this module
+        for name, member in module.members.items():
+            if not member.is_alias:
+                local_symbols[name] = member.path
 
-            # Delegate to the smart MoveFileOperation
-            file_mover = MoveFileOperation(src_file, dest_file)
-            file_specific_ops = file_mover.analyze(ctx)
-            all_ops.extend(file_specific_ops)
+        # Second, add resolved aliases (imports)
+        for name, member in module.aliases.items():
+            try:
+                # After resolve_aliases(), target_path should be correct
+                target_fqn = member.target_path
+                local_symbols[name] = target_fqn
+            except Exception:
+                # Alias resolution might fail for various reasons, skip it
+                pass
 
-            # Mark the source file and its potential sidecars as handled
-            handled_paths.add(src_file)
-            handled_paths.add(src_file.with_suffix(".stitcher.yaml"))
-            sig_rel_path = src_file.relative_to(ctx.graph.root_path).with_suffix(
-                ".json"
+        # 2. Parse CST and scan
+        try:
+            source = module.filepath.read_text(encoding="utf-8")
+            # Determine module FQN for relative import resolution
+            is_init = module.filepath.name == "__init__.py"
+            module_fqn = module.path
+
+            wrapper = cst.MetadataWrapper(cst.parse_module(source))
+            visitor = _UsageVisitor(
+                module.filepath, local_symbols, self.registry, module_fqn, is_init
             )
-            sig_abs_path = ctx.graph.root_path / ".stitcher/signatures" / sig_rel_path
-            handled_paths.add(sig_abs_path)
+            wrapper.visit(visitor)
+        except Exception:
+            # Handle syntax errors or IO errors gracefully
+            pass
+~~~~~
 
-        # Phase 2: Process all remaining items (non-Python files)
-        for src_item in self.src.rglob("*"):
-            if src_item in handled_paths or not src_item.is_file():
-                continue
 
-            # This item is a non-Python, non-sidecar file. Do a simple move.
-            relative_path = src_item.relative_to(self.src)
-            dest_item = self.dest / relative_path
+#### Acts 2: Update CLI to call the new `build` method
 
-            rel_src_item = src_item.relative_to(ctx.graph.root_path)
-            rel_dest_item = dest_item.relative_to(ctx.graph.root_path)
+现在我们修改 `refactor.py` 来适应 `SemanticGraph` 的新工作流程。
 
-            all_ops.append(MoveFileOp(rel_src_item, rel_dest_item))
-            handled_paths.add(src_item)
+~~~~~act
+patch_file
+packages/stitcher-cli/src/stitcher/cli/commands/refactor.py
+~~~~~
+~~~~~python.old
+        for pkg_name in sorted(list(top_level_imports)):
+            bus.debug(L.debug.log.msg, msg=f"Loading top-level package: {pkg_name}")
+            graph.load(pkg_name)
 
-        # Phase 3: Schedule the now-empty source directory for deletion
-        all_ops.append(DeleteDirectoryOp(self.src.relative_to(ctx.graph.root_path)))
+        ctx = RefactorContext(graph)
+~~~~~
+~~~~~python.new
+        for pkg_name in sorted(list(top_level_imports)):
+            bus.debug(L.debug.log.msg, msg=f"Loading top-level package: {pkg_name}")
+            graph.load(pkg_name)
 
-        return all_ops
+        # After loading all packages, build the unified semantic view
+        graph.build()
+
+        ctx = RefactorContext(graph)
+~~~~~
+
+#### Acts 3: Fix the unit test drift
+
+最后，修正 `test_spec.py` 中的断言。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/unit/migration/test_spec.py
+~~~~~
+~~~~~python.old
+    assert isinstance(spec.operations[1], MoveFileOperation)
+    assert spec.operations[1].src_path == Path("src/old.py")
+~~~~~
+~~~~~python.new
+    assert isinstance(spec.operations[1], MoveFileOperation)
+    assert spec.operations[1].src == Path("src/old.py")
 ~~~~~
 
 ### 下一步建议
 
-API 已修复并保持了一致性。你现在可以**无需修改**，直接重新运行之前的迁移脚本：
+这些修复应该已经解决了所有测试失败的问题。我建议你重新运行整个测试套件。一旦测试通过，你就可以再次运行你的迁移脚本，它现在应该能够正确识别所有符号用法并成功重构代码了。
 
 ```bash
+# First, verify the fix by running the tests
+pytest packages/stitcher-refactor/tests/unit/migration/test_spec.py
+pytest packages/stitcher-cli/tests/integration/test_refactor_command.py
+
+# Then, apply your migration
 stitcher refactor apply migrations/001_refactor_cli_l_pointers.py
 ```
-
-这次它应该可以成功执行了。
