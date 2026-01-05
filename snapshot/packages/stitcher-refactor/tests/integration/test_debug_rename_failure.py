@@ -1,37 +1,3 @@
-## [WIP] 采取一种“**探测性复现**”策略。与其盲目地修改测试结构，我将编写一个测试，不仅尝试重命名，还详细**断言**重构引擎的内部状态
-
-当前的测试无法复现 CLI 中的失败，这表明问题可能在于环境配置、文件内容的特定细节或 Griffe 如何解析该特定文件结构。
-
-为了打破僵局，我将采取一种“**探测性复现**”策略。与其盲目地修改测试结构，我将编写一个测试，不仅尝试重命名，还详细**断言**重构引擎的内部状态。这将帮助我们确认问题是在**发现阶段**（Griffe/CST 没有正确索引类定义）还是在**变换阶段**（Transformer 未能匹配位置）。
-
-此外，我将从真实文件系统中读取 `bus.py` 的内容注入到测试中，以消除文件内容简化带来的偏差。
-
-**计划执行步骤**:
-
-1.  **读取真实文件内容**: 使用 `read_file` 获取 `packages/stitcher-common/src/stitcher/common/messaging/bus.py` 的完整内容。
-2.  **构建探测测试**: 创建 `packages/stitcher-refactor/tests/integration/test_debug_rename_failure.py`。
-3.  **深度断言**:
-    *   检查 `SemanticGraph` 是否加载了 `bus` 模块。
-    *   检查 `UsageRegistry` 中是否存在 `stitcher.common.messaging.bus.MessageBus` 的引用。
-    *   检查这些引用中是否包含指向 `bus.py` 文件（定义处）的记录。
-    *   如果存在，打印其行号和列号，验证是否与内容匹配。
-
-### Script
-
-#### Acts 1: 读取 bus.py 真实内容
-
-~~~~~act
-read_file
-packages/stitcher-common/src/stitcher/common/messaging/bus.py
-~~~~~
-
-#### Acts 2: 创建探测性测试
-
-~~~~~act
-write_file
-packages/stitcher-refactor/tests/integration/test_debug_rename_failure.py
-~~~~~
-~~~~~python
 import pytest
 from pathlib import Path
 from stitcher.refactor.engine.graph import SemanticGraph, ReferenceType
@@ -203,9 +169,3 @@ def test_debug_rename_failure_analysis(tmp_path):
         )
     else:
         print("[SUCCESS] Rename worked in test environment.")
-~~~~~
-
-### 下一步建议
-运行此测试。重点关注 `stdout` 中的 `[DEBUG]` 信息。
-*   如果 `Usages inside bus.py` 为 0，说明 **发现阶段** 有问题（Griffe/CST 没有在 `bus.py` 里找到定义）。
-*   如果 `Usages inside bus.py` > 0 但 `Planner generated ... operations` 里没有 `bus.py`，说明 **变换阶段** 有问题（Transformer 没匹配上）。
