@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat: 实现 MigrationSpec API 及其测试", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767592229.6930761, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat: 实现 MigrationLoader 以解析迁移脚本", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767592335.8379998, "duration_ms": 0}}
