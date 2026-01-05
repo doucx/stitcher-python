@@ -53,8 +53,13 @@ def test_move_file_flat_layout(tmp_path):
     ctx = RefactorContext(
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = MoveFileOperation(old_py, new_py)
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     # 3. Commit
     tm = TransactionManager(project_root)

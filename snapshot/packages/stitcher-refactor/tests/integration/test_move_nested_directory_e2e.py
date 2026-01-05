@@ -58,8 +58,13 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = MoveDirectoryOperation(src_dir_to_move, dest_dir)
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     tm = TransactionManager(project_root)
     for fop in file_ops:

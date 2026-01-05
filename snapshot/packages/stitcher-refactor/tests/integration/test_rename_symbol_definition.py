@@ -37,10 +37,15 @@ def test_rename_fails_to_update_definition_leading_to_import_error(tmp_path):
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+    
     op = RenameSymbolOperation(
         "common.messaging.bus.MessageBus", "common.messaging.bus.FeedbackBus"
     )
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     tm = TransactionManager(project_root)
     for fop in file_ops:
@@ -93,8 +98,13 @@ def test_rename_operation_succeeds_in_renaming_symbol_definition(tmp_path):
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = RenameSymbolOperation("mypkg.core.OldName", "mypkg.core.NewName")
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     tm = TransactionManager(project_root)
     for fop in file_ops:

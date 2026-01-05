@@ -34,9 +34,14 @@ def test_rename_symbol_via_attribute_access(tmp_path):
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     # 3. Plan
     op = RenameSymbolOperation("mypkg.core.OldHelper", "mypkg.core.NewHelper")
-    ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    ops = planner.plan(spec, ctx)
 
     # 4. Verify (without committing, just check the planned ops)
     assert len(ops) == 2
@@ -75,9 +80,14 @@ def test_rename_symbol_imported_with_alias(tmp_path):
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     # 3. Plan
     op = RenameSymbolOperation("mypkg.core.OldHelper", "mypkg.core.NewHelper")
-    ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    ops = planner.plan(spec, ctx)
 
     # 4. Verify
     assert len(ops) == 2

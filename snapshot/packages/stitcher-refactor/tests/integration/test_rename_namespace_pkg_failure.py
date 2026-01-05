@@ -64,10 +64,15 @@ def test_rename_symbol_in_namespace_package_structure(tmp_path):
     )
 
     # Rename MessageBus -> FeedbackBus
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = RenameSymbolOperation(
         "stitcher.core.bus.MessageBus", "stitcher.core.bus.FeedbackBus"
     )
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     tm = TransactionManager(project_root)
     for fop in file_ops:

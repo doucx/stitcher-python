@@ -102,5 +102,8 @@ class SidecarUpdateMixin:
 class AbstractOperation(ABC):
     @abstractmethod
     def collect_intents(self, ctx: RefactorContext) -> List[RefactorIntent]:
-        """Collects high-level intents without planning execution."""
+        """
+        Analyzes the codebase and returns a list of high-level intents
+        without planning execution.
+        """
         pass

@@ -68,10 +68,15 @@ def test_rename_symbol_in_monorepo_updates_all_references_and_sidecars(tmp_path)
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = RenameSymbolOperation(
         "pkga_lib.core.OldNameClass", "pkga_lib.core.NewNameClass"
     )
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     tm = TransactionManager(project_root)
     for fop in file_ops:

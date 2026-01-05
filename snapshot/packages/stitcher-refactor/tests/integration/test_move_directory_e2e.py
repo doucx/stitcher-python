@@ -57,8 +57,13 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
     )
 
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
     op = MoveDirectoryOperation(core_dir, services_dir)
-    file_ops = op.analyze(ctx)
+    spec = MigrationSpec().add(op)
+    planner = Planner()
+    file_ops = planner.plan(spec, ctx)
 
     # 3. EXECUTION
     tm = TransactionManager(project_root)
