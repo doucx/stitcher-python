@@ -178,12 +178,21 @@ class SemanticGraph:
         self._griffe_loader = griffe.GriffeLoader(search_paths=self.search_paths)
         self._modules: Dict[str, griffe.Module] = {}
         self.registry = UsageRegistry()
+        self._processed_files: Set[Path] = set()
 
     def load(self, package_name: str, submodules: bool = True) -> None:
-        module = self._griffe_loader.load(package_name, submodules=submodules)
-        self._modules[package_name] = module
-        self._griffe_loader.resolve_aliases()
-        self._build_registry(module)
+        try:
+            module = self._griffe_loader.load(package_name, submodules=submodules)
+            self._modules[package_name] = module
+            self._griffe_loader.resolve_aliases()
+            self._build_registry(module)
+        except griffe.exceptions.ModuleNotFoundError:
+            # If Griffe can't find it, it might be an orphan module.
+            # We'll rely on _scan_orphans to pick it up.
+            pass
+        finally:
+            # Always scan for orphans to ensure full coverage
+            self._scan_orphans()
 
     def _build_registry(
         self, module: griffe.Module, visited: Optional[Set[str]] = None
@@ -199,26 +208,78 @@ class SemanticGraph:
             if isinstance(member, griffe.Module):
                 self._build_registry(member, visited)
         if module.filepath:
-            self._scan_module_usages(module)
+            self._scan_file(
+                module.filepath, module_fqn=module.path, griffe_module=module
+            )
 
-    def _scan_module_usages(self, module: griffe.Module):
-        local_symbols: Dict[str, str] = {}
-        for name, member in module.members.items():
+    def _path_to_fqn(self, path: Path) -> Optional[str]:
+        base_path = None
+        for sp in sorted(self.search_paths, key=lambda p: len(p.parts), reverse=True):
             try:
-                target_fqn = member.target_path if member.is_alias else member.path
-                local_symbols[name] = target_fqn
-            except Exception:
-                pass
+                if path.is_relative_to(sp):
+                    base_path = sp
+                    break
+            except AttributeError:  # Compatibility for older Python
+                try:
+                    path.relative_to(sp)
+                    base_path = sp
+                    break
+                except ValueError:
+                    continue
+
+        if base_path is None:
+            return None
+
+        rel_path = path.relative_to(base_path)
+        parts = list(rel_path.parts)
+
+        if parts[-1].endswith(".py"):
+            parts[-1] = parts[-1][:-3]
+        if parts[-1] == "__init__":
+            parts.pop()
+
+        return ".".join(parts)
+
+    def _scan_orphans(self):
+        for search_path in self.search_paths:
+            if not search_path.is_dir():
+                continue
+            for py_file in search_path.rglob("*.py"):
+                if py_file not in self._processed_files:
+                    self._scan_file(py_file)
+
+    def _scan_file(
+        self,
+        file_path: Path,
+        module_fqn: Optional[str] = None,
+        griffe_module: Optional[griffe.Module] = None,
+    ):
+        if file_path in self._processed_files:
+            return
+        self._processed_files.add(file_path)
+
+        local_symbols: Dict[str, str] = {}
+        inferred_fqn = module_fqn or self._path_to_fqn(file_path)
+
+        if griffe_module:
+            for name, member in griffe_module.members.items():
+                try:
+                    target_fqn = (
+                        member.target_path if member.is_alias else member.path
+                    )
+                    local_symbols[name] = target_fqn
+                except Exception:
+                    pass
 
         try:
-            source = module.filepath.read_text(encoding="utf-8")
+            source = file_path.read_text(encoding="utf-8")
             wrapper = cst.MetadataWrapper(cst.parse_module(source))
-            is_init = module.filepath.name == "__init__.py"
+            is_init = file_path.name == "__init__.py"
             visitor = _UsageVisitor(
-                module.filepath,
+                file_path,
                 local_symbols,
                 self.registry,
-                current_module_fqn=module.path,
+                current_module_fqn=inferred_fqn,
                 is_init_file=is_init,
             )
             wrapper.visit(visitor)
