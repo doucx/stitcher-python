@@ -210,7 +210,12 @@ class _UsageVisitor(cst.CSTVisitor):
 class SemanticGraph:
     def __init__(self, root_path: Path):
         self.root_path = root_path
-        self._griffe_loader = griffe.GriffeLoader(search_paths=[self.root_path])
+        search_paths = [self.root_path]
+        src_path = self.root_path / "src"
+        if src_path.is_dir():
+            search_paths.insert(0, src_path)
+
+        self._griffe_loader = griffe.GriffeLoader(search_paths=search_paths)
         self._modules: Dict[str, griffe.Module] = {}
         self.registry = UsageRegistry()
 
