@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] test: 补全缺失的 `__init__.py` 以验证重构引擎的假设", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767604794.831135, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "Capture: A __init__.py", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767605292.7999885, "duration_ms": 0}}
