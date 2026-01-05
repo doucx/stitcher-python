@@ -3,8 +3,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 from stitcher.refactor.engine.context import RefactorContext
-from stitcher.refactor.engine.transaction import FileOp, WriteFileOp
-from stitcher.refactor.sidecar.updater import DocUpdater, SigUpdater
+from stitcher.refactor.engine.transaction import FileOp
 
 
 class SidecarUpdateMixin:

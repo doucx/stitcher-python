@@ -21,7 +21,11 @@ class MoveFileOperation(AbstractOperation, SidecarUpdateMixin):
         old_module_fqn = self._path_to_fqn(self.src_path, ctx.graph.search_paths)
         new_module_fqn = self._path_to_fqn(self.dest_path, ctx.graph.search_paths)
 
-        if old_module_fqn is not None and new_module_fqn is not None and old_module_fqn != new_module_fqn:
+        if (
+            old_module_fqn is not None
+            and new_module_fqn is not None
+            and old_module_fqn != new_module_fqn
+        ):
             # 1. Update external references to the moved symbols
             rename_mod_op = RenameSymbolOperation(old_module_fqn, new_module_fqn)
             rename_ops.extend(rename_mod_op.analyze(ctx))

@@ -79,9 +79,7 @@ class RenameSymbolOperation(AbstractOperation, SidecarUpdateMixin):
                         )
 
                 # Signature file
-                sig_path = ctx.sidecar_manager.get_signature_path(
-                    definition_file_path
-                )
+                sig_path = ctx.sidecar_manager.get_signature_path(definition_file_path)
                 if sig_path.exists():
                     sig_data = sig_updater.load(sig_path)
                     new_sig_data = self._update_sidecar_data(
