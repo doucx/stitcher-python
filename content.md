@@ -1,260 +1,214 @@
-# [WIP] fix: 优化脚手架逻辑并排查 Init 更新问题
+Generate the Act.
+
+# [WIP] fix: 实现事务中的路径重定向以解决“僵尸文件”问题
 
 ### 用户需求
-1.  **修复过度脚手架化**: 禁止在非 Source Root 子目录下（如 `packages/` 或 `src/` 根目录）创建 `__init__.py`。
-2.  **修复 `__init__.py` 导入未更新**: 调查并修复当移动被 `__init__.py` 相对引用的模块时，引用未更新的问题。
+解决重构过程中因操作顺序问题导致的“僵尸文件”现象（即文件被移动后，后续的写入操作错误的在原位置重建了该文件）。
 
 ### 评论
-过度脚手架化会破坏项目结构，必须引入 `Search Paths` (Source Roots) 作为边界条件。
-关于 `__init__.py` 的问题，我们需要先通过一个精确的测试来复现它，确认是否是 `SymbolRenamer` 在处理包级相对导入时的边缘情况。
+在复杂的批量重构中，一个文件可能既是移动操作的主体，又是其他重命名操作的修改目标。
+如果 `Move(A->B)` 先于 `Write(A)` 执行，`Write(A)` 会错误地在位置 A 重新创建文件，且该文件仅包含部分修改。
+正确行为应该是 `Write(A)` 自动重定向为 `Write(B)`，作用于移动后的文件。
 
 ### 目标
-1.  修改 `MoveFileOperation` 和 `MoveDirectoryOperation` 的 `_scaffold_init_files` 方法，使其依赖 `RefactorContext` 中的 `search_paths` 进行边界判断。
-2.  添加 `test_bug_init_relative_import.py` 来复现 `__init__.py` 更新失败的场景。
+在 `TransactionManager` 中实现 `rebase_operations` 逻辑，在提交前动态调整操作的目标路径。
 
 ### 基本原理
-**脚手架逻辑优化**:
-仅当目标路径位于某个已知的 Source Root 内时，才开始向上遍历创建 `__init__.py`，并且遍历必须在到达 Source Root 时停止（不包括 Source Root 本身）。
-
-**Init 更新排查**:
-构建一个包含 `__init__.py` 和相对导入的最小复现环境。如果测试失败，我们将定位到 `_UsageVisitor` 或 Transformer 的具体逻辑缺陷。
+引入一个路径映射表。遍历操作列表：
+1. 对于 `MoveFileOp(src, dest)`，记录 `src -> dest` 的映射。
+2. 对于 `WriteFileOp(path)`，检查 `path` 是否在映射表中。如果是，更新 `path` 为映射后的新路径。
+3. 对于 `DeleteFileOp` 等，同理处理。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/runtime #concept/refactor #scope/core #ai/instruct #task/domain/refactoring #task/object/scaffold-logic #task/action/refine #task/state/continue
+#intent/fix #flow/ready #priority/critical #comp/refactor #concept/transaction #scope/core #ai/instruct #task/domain/refactoring #task/object/transaction-manager #task/action/implement-rebase #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建 Init 相对导入复现测试
+#### Acts 1: 添加 Rebase 逻辑测试
 
 ~~~~~act
 write_file
-packages/stitcher-refactor/tests/integration/test_bug_init_relative_import.py
+packages/stitcher-refactor/tests/unit/engine/test_transaction_rebase.py
 ~~~~~
 ~~~~~python
-import pytest
-from stitcher.refactor.engine.graph import SemanticGraph
-from stitcher.refactor.engine.context import RefactorContext
+from pathlib import Path
 from stitcher.refactor.engine.transaction import (
     TransactionManager,
-    MoveFileOp,
     WriteFileOp,
+    MoveFileOp,
+    DeleteFileOp
 )
-from stitcher.refactor.operations.move_file import MoveFileOperation
-from stitcher.refactor.sidecar.manager import SidecarManager
-from stitcher.refactor.workspace import Workspace
-from stitcher.test_utils import WorkspaceFactory
 
-
-def test_move_module_referenced_by_init_relative_import(tmp_path):
+def test_rebase_write_after_move():
     """
-    Reproduces the bug where 'from .module import X' in __init__.py 
-    is not updated when 'module.py' is moved.
+    Scenario:
+    1. Move A -> B
+    2. Write A (content updated)
+    
+    Expected:
+    1. Move A -> B
+    2. Write B (content updated)
     """
-    # 1. ARRANGE
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_pyproject(".")
-        .with_source(
-            "mypkg/__init__.py",
-            "from .core import MyClass\n\n__all__ = ['MyClass']",
-        )
-        .with_source("mypkg/core.py", "class MyClass: pass")
-        .build()
-    )
-
-    src_path = project_root / "mypkg/core.py"
-    dest_path = project_root / "mypkg/services/core.py"
-    init_path = project_root / "mypkg/__init__.py"
-
-    # 2. ACT
-    workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
-    graph.load("mypkg")
+    tm = TransactionManager(Path("/"))
+    tm.add_move("A", "B")
+    tm.add_write("A", "new content")
     
-    sidecar_manager = SidecarManager(root_path=project_root)
-    ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
-    )
-
-    op = MoveFileOperation(src_path, dest_path)
-    file_ops = op.analyze(ctx)
-
-    tm = TransactionManager(project_root)
-    for fop in file_ops:
-        if isinstance(fop, MoveFileOp):
-            tm.add_move(fop.path, fop.dest)
-        else:
-            tm.add_write(fop.path, fop.content)
-    tm.commit()
-
-    # 3. ASSERT
-    updated_init = init_path.read_text()
+    # We need to access the private logic or trigger it via commit (mocked fs)
+    # Let's inspect the internal _rebase_ops method which we will implement
+    rebased = tm._rebase_ops(tm._ops)
     
-    # We expect the import to be updated to absolute path or correct relative path
-    # Given our recent fix, it should be absolute: 'from mypkg.services.core import MyClass'
-    print(f"DEBUG: Updated __init__.py content:\n{updated_init}")
+    assert len(rebased) == 2
+    assert isinstance(rebased[0], MoveFileOp)
+    assert rebased[0].path == Path("A")
+    assert rebased[0].dest == Path("B")
     
-    assert "from mypkg.services.core import MyClass" in updated_init or \
-           "from .services.core import MyClass" in updated_init, \
-           "Import in __init__.py was not updated!"
+    assert isinstance(rebased[1], WriteFileOp)
+    assert rebased[1].path == Path("B")  # Rebased!
+    assert rebased[1].content == "new content"
+
+def test_rebase_chain_moves():
+    """
+    Scenario:
+    1. Move A -> B
+    2. Move B -> C
+    3. Write A
+    
+    Expected:
+    1. Move A -> B
+    2. Move B -> C
+    3. Write C
+    """
+    tm = TransactionManager(Path("/"))
+    tm.add_move("A", "B")
+    tm.add_move("B", "C")
+    tm.add_write("A", "final content")
+    
+    rebased = tm._rebase_ops(tm._ops)
+    
+    assert len(rebased) == 3
+    assert isinstance(rebased[2], WriteFileOp)
+    assert rebased[2].path == Path("C")
+
+def test_rebase_no_effect_if_write_first():
+    """
+    Scenario:
+    1. Write A
+    2. Move A -> B
+    
+    Expected: No change in paths (Write A happens before it moves)
+    """
+    tm = TransactionManager(Path("/"))
+    tm.add_write("A", "content")
+    tm.add_move("A", "B")
+    
+    rebased = tm._rebase_ops(tm._ops)
+    
+    assert rebased[0].path == Path("A")
+    assert rebased[1].path == Path("A")
+    assert rebased[1].dest == Path("B")
+
+def test_rebase_delete_after_move():
+    """
+    Scenario:
+    1. Move A -> B
+    2. Delete A
+    
+    Expected:
+    1. Move A -> B
+    2. Delete B
+    """
+    tm = TransactionManager(Path("/"))
+    tm.add_move("A", "B")
+    tm.add_delete_file("A")
+    
+    rebased = tm._rebase_ops(tm._ops)
+    
+    assert rebased[1].path == Path("B")
 ~~~~~
 
-#### Acts 2: 修正 MoveFileOperation 的脚手架逻辑
+#### Acts 2: 实现 TransactionManager._rebase_ops
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_file.py
+packages/stitcher-refactor/src/stitcher/refactor/engine/transaction.py
 ~~~~~
 ~~~~~python.old
-        # 4. Scaffold missing __init__.py files for the destination
-        # This ensures that moving a file to a new deep directory structure
-        # maintains a valid Python package hierarchy.
-        scaffold_ops = self._scaffold_init_files(self.dest_path, root)
-        
-        return content_update_ops + rename_ops + move_ops + scaffold_ops
+    def preview(self) -> List[str]:
+        return [op.describe() for op in self._ops]
 
-    def _scaffold_init_files(self, file_path: Path, root: Path) -> List[FileOp]:
-        ops: List[FileOp] = []
-        parent = file_path.parent
-        
-        # Traverse up until we hit the root
-        while parent != root and parent.is_relative_to(root):
-            init_file = parent / "__init__.py"
-            # We assume if it doesn't exist on disk, we need to create it.
-            # NOTE: In a complex transaction, another op might have created it,
-            # or it might be deleted. But adding a duplicate WriteFileOp for an empty
-            # __init__.py is generally safe or can be deduped by TransactionManager if needed.
-            # Here we just check physical existence.
-            if not init_file.exists():
-                ops.append(
-                    WriteFileOp(
-                        path=init_file.relative_to(root),
-                        content=""
-                    )
-                )
-            
-            parent = parent.parent
-            
-        return ops
+    def commit(self) -> None:
+        for op in self._ops:
+            op.execute(self.fs, self.root_path)
+        self._ops.clear()
+
+    @property
 ~~~~~
 ~~~~~python.new
-        # 4. Scaffold missing __init__.py files for the destination
-        # This ensures that moving a file to a new deep directory structure
-        # maintains a valid Python package hierarchy.
-        scaffold_ops = self._scaffold_init_files(self.dest_path, ctx)
+    def preview(self) -> List[str]:
+        # Preview should also show rebased operations to be accurate
+        rebased = self._rebase_ops(self._ops)
+        return [op.describe() for op in rebased]
+
+    def commit(self) -> None:
+        rebased_ops = self._rebase_ops(self._ops)
+        for op in rebased_ops:
+            op.execute(self.fs, self.root_path)
+        self._ops.clear()
+
+    def _rebase_ops(self, ops: List[FileOp]) -> List[FileOp]:
+        """
+        Rebases operations to handle cases where a file is moved and then modified.
+        For example: [Move(A->B), Write(A)] becomes [Move(A->B), Write(B)].
+        """
+        rebased_ops = []
+        # Map current_location -> known_location
+        # But wait, we need to track the location of specific logical files.
+        # Simple approach: Trace forward.
         
-        return content_update_ops + rename_ops + move_ops + scaffold_ops
-
-    def _scaffold_init_files(self, file_path: Path, ctx: RefactorContext) -> List[FileOp]:
-        ops: List[FileOp] = []
-        parent = file_path.parent
-        root = ctx.graph.root_path
-        search_paths = ctx.graph.search_paths
-
-        # Determine the effective source root for this file
-        active_root = None
-        for sp in search_paths:
-            if file_path.is_relative_to(sp):
-                # Pick the deepest matching search path (e.g. prefer src/pkg over src)
-                if active_root is None or len(sp.parts) > len(active_root.parts):
-                    active_root = sp
+        # Mapping from original_path (or transient path) to current_effective_path
+        # No, that's not right.
+        # We need to map: "If an op refers to path P, change it to P'"
         
-        # If the file is not inside any known source root, do NOT scaffold.
-        # This prevents creating __init__.py in root dirs like 'packages/' or 'tests/'.
-        if not active_root:
-            return []
-
-        # Traverse up until we hit the active_root
-        # IMPORTANT: We stop BEFORE processing the active_root itself.
-        # (e.g. we don't want to create src/__init__.py)
-        while parent != active_root and parent.is_relative_to(active_root):
-            init_file = parent / "__init__.py"
-            if not init_file.exists():
-                ops.append(
-                    WriteFileOp(
-                        path=init_file.relative_to(root),
-                        content=""
-                    )
-                )
+        path_map = {} 
+        
+        for op in ops:
+            # 1. Resolve current path based on history
+            # We copy the op to avoid mutating the original input list objects if reused
+            # (Though dataclasses are mutable, let's be safe)
+            import copy
+            new_op = copy.copy(op)
             
-            parent = parent.parent
+            if new_op.path in path_map:
+                new_op.path = path_map[new_op.path]
+                
+            # 2. Update map if this is a Move
+            if isinstance(new_op, MoveFileOp):
+                # Now, anything pointing to new_op.path should now point to new_op.dest
+                # AND anything that mapped to new_op.path should now map to new_op.dest
+                
+                # Direct mapping:
+                # If subsequent op targets 'src', it should target 'dest'
+                src = new_op.path
+                dest = new_op.dest
+                
+                # Update forward lookup
+                path_map[src] = dest
+                
+                # Update existing transitive mappings
+                # e.g. A->B, now B->C. We need A->C.
+                for k, v in path_map.items():
+                    if v == src:
+                        path_map[k] = dest
             
-        return ops
-~~~~~
-
-#### Acts 3: 修正 MoveDirectoryOperation 的脚手架逻辑
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_directory.py
-~~~~~
-~~~~~python.old
-        # 4. Scaffold missing __init__.py files for the destination root
-        scaffold_ops = self._scaffold_init_files(self.dest_dir, root)
-
-        return all_ops + scaffold_ops
-
-    def _scaffold_init_files(self, directory_path: Path, root: Path) -> List[FileOp]:
-        # Logic duplicated from MoveFileOperation for now to avoid complex inheritance refactor
-        # Ideally this goes into a Mixin.
-        ops: List[FileOp] = []
-        
-        # We start checking from the directory itself (it should be a package)
-        # up to the root.
-        current = directory_path
-        
-        while current != root and current.is_relative_to(root):
-            init_file = current / "__init__.py"
-            if not init_file.exists():
-                 ops.append(
-                    WriteFileOp(
-                        path=init_file.relative_to(root),
-                        content=""
-                    )
-                )
-            current = current.parent
+            rebased_ops.append(new_op)
             
-        return ops
-~~~~~
-~~~~~python.new
-        # 4. Scaffold missing __init__.py files for the destination root
-        scaffold_ops = self._scaffold_init_files(self.dest_dir, ctx)
+        return rebased_ops
 
-        return all_ops + scaffold_ops
-
-    def _scaffold_init_files(self, directory_path: Path, ctx: RefactorContext) -> List[FileOp]:
-        # Logic duplicated from MoveFileOperation (with modifications for Directory)
-        ops: List[FileOp] = []
-        root = ctx.graph.root_path
-        search_paths = ctx.graph.search_paths
-
-        active_root = None
-        for sp in search_paths:
-            if directory_path.is_relative_to(sp):
-                if active_root is None or len(sp.parts) > len(active_root.parts):
-                    active_root = sp
-        
-        if not active_root:
-            return []
-        
-        # Start from the directory itself
-        current = directory_path
-        
-        while current != active_root and current.is_relative_to(active_root):
-            init_file = current / "__init__.py"
-            if not init_file.exists():
-                 ops.append(
-                    WriteFileOp(
-                        path=init_file.relative_to(root),
-                        content=""
-                    )
-                )
-            current = current.parent
-            
-        return ops
+    @property
 ~~~~~
 
 ### 下一步建议
-运行新创建的测试 `packages/stitcher-refactor/tests/integration/test_bug_init_relative_import.py` 来确认 `__init__.py` 问题是否复现。如果它通过了，说明在简单场景下没问题，我们需要去排查 `MoveDirectoryOperation` 是否在生成重命名操作时遗漏了某些模块。
+运行测试 `uv run pytest packages/stitcher-refactor/tests/unit/engine/test_transaction_rebase.py`。
+然后，建议用户重新尝试他们的重构脚本。有了这个修复，`engine.py` 的修改应该会正确应用到移动后的 `host/instance.py` 上，并且 `__init__.py` 的脚手架和引用更新也应该正常工作。
