@@ -1,281 +1,575 @@
-好的，我们现在开始执行**任务 2.4**，这是第二阶段的收官之作。我们将把新的 `SidecarManager` 全面应用到所有的重构操作类中，彻底根除硬编码的路径逻辑。
+好的，我明白了。 `stitcher-refactor` 包中的 API 发生了变更，导致 `SemanticGraph` 和 `RefactorContext` 的初始化方式不再兼容，进而引发了大量的测试失败。
 
-## [WIP] refactor: 重构 Operation 类以使用 SidecarManager
+我的任务是修复所有这些测试，使其与新的 API 签名保持一致。
+
+## [WIP] fix: 修复重构引擎测试套件以适配新的 API
+
+### 错误分析
+
+测试套件的失败主要源于两个相关的 API 变更：
+
+1.  **`SemanticGraph.__init__` 变更**: `SemanticGraph` 的构造函数不再接受 `root_path` 参数，而是要求传入一个 `Workspace` 对象。所有直接使用 `SemanticGraph(root_path=...)` 的测试因此失败。
+2.  **`RefactorContext.__init__` 变更**: `RefactorContext` 数据类现在要求在构造时必须提供 `workspace`、`graph` 和 `sidecar_manager` 三个参数。所有只提供 `graph` 的测试因此失败。
 
 ### 用户需求
 
-根据重构路线图，实施第二阶段的任务 2.4：
-逐一重构 `RenameSymbolOperation`、`MoveFileOperation` 和 `MoveDirectoryOperation` 这三个类。将它们内部所有手动计算 Sidecar 文件（`.stitcher.yaml` 和签名 `.json`）路径的逻辑，全部替换为对 `ctx.sidecar_manager` 相应方法的调用。
+用户要求修复所有因上述 API 变更而失败的测试用例。
 
 ### 评论
 
-这是我们前期所有基础工作的最终回报。通过这次重构，`*Operation` 类将变得更加简洁、健壮，并且完全与其操作的 Sidecar 文件的存储位置解耦。它们不再关心“路径是如何构建的”，只关心“通过 Manager 获取路径”。这使得我们的重构引擎核心逻辑（Operations）与存储策略（SidecarManager）实现了完美的关注点分离，极大地提升了整个系统的可维护性和可扩展性。
+这是一个典型的由于核心组件接口重构而导致的级联测试失败场景。修复方案是统一的：在每个测试用例中，遵循新的对象构造顺序，即先创建 `Workspace` 和 `SidecarManager`，然后用它们来构造 `SemanticGraph` 和 `RefactorContext`。
 
 ### 目标
 
-1.  **重构 `RenameSymbolOperation`**: 修改 `analyze` 方法，使用 `sidecar_manager` 定位文档和签名文件。
-2.  **重构 `MoveFileOperation`**: 修改 `analyze` 方法，使用 `sidecar_manager` 定位源和目标的 Sidecar 文件，用于内容更新和物理移动规划。
-3.  **重构 `MoveDirectoryOperation`**: 修改 `analyze` 方法，使用 `sidecar_manager` 来识别一个 Python 源文件关联的所有 Sidecar 文件，以确保它们在目录移动过程中被正确处理且仅处理一次。
+1.  修改所有集成测试，以正确的方式初始化 `Workspace`, `SemanticGraph`, `SidecarManager`, 和 `RefactorContext`。
+2.  修改单元测试 `test_rename_symbol_analyze_orchestration`，为其提供 `RefactorContext` 所需的 `workspace` 和 `sidecar_manager` 的 Mock 对象。
+3.  确保整个测试套件恢复通过状态。
 
 ### 基本原理
 
-我们将遵循我们已建立的依赖注入模式。每个 `Operation` 类的 `analyze` 方法都会接收一个功能完备的 `RefactorContext` 实例。我们将系统地查找所有 `.with_suffix(".stitcher.yaml")` 或手动拼接 `.stitcher/signatures` 路径的硬编码片段，并将它们替换为对 `ctx.sidecar_manager.get_doc_path(...)` 和 `ctx.sidecar_manager.get_signature_path(...)` 的调用。因为 `SidecarManager` 返回的是绝对路径，所以我们将相应地调整代码，确保在需要时能正确计算出相对于项目根目录的路径，以用于 `FileOp` 的创建。
+我将遵循“组合优于继承”的原则，在每个测试的 `Arrange` 或 `Act` 阶段，按照依赖顺序显式地创建所需的服务对象 (`Workspace`, `SidecarManager`)，并将它们注入到依赖它们的对象中 (`SemanticGraph`, `RefactorContext`)。对于单元测试，我将使用 `unittest.mock.Mock` 来提供这些依赖，并对其进行适当配置以隔离被测单元。
 
 ### 标签
 
-#intent/refine #flow/ready #priority/high #comp/refactor #concept/dependency-injection #scope/core #ai/instruct #task/domain/refactor-engine #task/object/operations #task/action/refactor #task/state/continue
+#intent/fix #flow/ready #priority/high #comp/tests #concept/state #scope/dx #ai/instruct #task/domain/testing #task/object/test-suite #task/action/bug-fix #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: 重构 `RenameSymbolOperation`
+#### Acts 1: 修复 `test_monorepo_refactor_e2e.py`
 
-我们首先更新 `RenameSymbolOperation`，用 `SidecarManager` 替换其 Sidecar 路径发现逻辑。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/rename_symbol.py
-~~~~~
-~~~~~python.old
-                # --- 2. Handle Sidecar Renaming ---
-                doc_updater = DocUpdater()
-                sig_updater = SigUpdater()
-
-                # Doc file
-                doc_path = file_path.with_suffix(".stitcher.yaml")
-                if doc_path.exists():
-                    doc_data = doc_updater.load(doc_path)
-                    new_doc_data = doc_updater.rename_key(
-                        doc_data, self.old_fqn, self.new_fqn
-                    )
-                    if new_doc_data != doc_data:
-                        ops.append(
-                            WriteFileOp(
-                                path=doc_path.relative_to(ctx.graph.root_path),
-                                content=doc_updater.dump(new_doc_data),
-                            )
-                        )
-
-                # Signature file
-                sig_path = (
-                    ctx.graph.root_path
-                    / ".stitcher/signatures"
-                    / relative_path.with_suffix(".json")
-                )
-                if sig_path.exists():
-                    sig_data = sig_updater.load(sig_path)
-                    new_sig_data = sig_updater.rename_key(
-                        sig_data, self.old_fqn, self.new_fqn
-                    )
-                    if new_sig_data != sig_data:
-                        ops.append(
-                            WriteFileOp(
-                                path=sig_path.relative_to(ctx.graph.root_path),
-                                content=sig_updater.dump(new_sig_data),
-                            )
-                        )
-~~~~~
-~~~~~python.new
-                # --- 2. Handle Sidecar Renaming ---
-                doc_updater = DocUpdater()
-                sig_updater = SigUpdater()
-
-                # Doc file
-                doc_path = ctx.sidecar_manager.get_doc_path(file_path)
-                if doc_path.exists():
-                    doc_data = doc_updater.load(doc_path)
-                    new_doc_data = doc_updater.rename_key(
-                        doc_data, self.old_fqn, self.new_fqn
-                    )
-                    if new_doc_data != doc_data:
-                        ops.append(
-                            WriteFileOp(
-                                path=doc_path.relative_to(ctx.graph.root_path),
-                                content=doc_updater.dump(new_doc_data),
-                            )
-                        )
-
-                # Signature file
-                sig_path = ctx.sidecar_manager.get_signature_path(file_path)
-                if sig_path.exists():
-                    sig_data = sig_updater.load(sig_path)
-                    new_sig_data = sig_updater.rename_key(
-                        sig_data, self.old_fqn, self.new_fqn
-                    )
-                    if new_sig_data != sig_data:
-                        ops.append(
-                            WriteFileOp(
-                                path=sig_path.relative_to(ctx.graph.root_path),
-                                content=sig_updater.dump(new_sig_data),
-                            )
-                        )
-~~~~~
-
-#### Acts 2: 重构 `MoveFileOperation`
-
-接着，我们对 `MoveFileOperation` 进行更广泛的重构，包括其内容更新和物理移动规划两个部分。
+首先，更新导入语句，然后修改测试主体以正确创建 `Workspace`, `SemanticGraph` 和 `RefactorContext`。
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_file.py
+packages/stitcher-refactor/tests/integration/test_monorepo_refactor_e2e.py
 ~~~~~
 ~~~~~python.old
-            # 2. Update the content of the sidecar files associated with the moved module
-            # YAML sidecar
-            yaml_src_path = self.src_path.with_suffix(".stitcher.yaml")
-            if yaml_src_path.exists():
-                doc_updater = DocUpdater()
-                doc_data = doc_updater.load(yaml_src_path)
-                updated_data = {
-                    key.replace(old_module_fqn, new_module_fqn, 1)
-                    if key.startswith(old_module_fqn)
-                    else key: value
-                    for key, value in doc_data.items()
-                }
-                if updated_data != doc_data:
-                    content_update_ops.append(
-                        WriteFileOp(
-                            path=yaml_src_path.relative_to(ctx.graph.root_path),
-                            content=doc_updater.dump(updated_data),
-                        )
-                    )
-            # Signature sidecar
-            rel_src_base = self.src_path.relative_to(ctx.graph.root_path)
-            sig_src_path = (
-                ctx.graph.root_path
-                / ".stitcher/signatures"
-                / rel_src_base.with_suffix(".json")
-            )
-            if sig_src_path.exists():
-                sig_updater = SigUpdater()
-                sig_data = sig_updater.load(sig_src_path)
-                updated_data = {
-                    key.replace(old_module_fqn, new_module_fqn, 1)
-                    if key.startswith(old_module_fqn)
-                    else key: value
-                    for key, value in sig_data.items()
-                }
-                if updated_data != sig_data:
-                    content_update_ops.append(
-                        WriteFileOp(
-                            path=sig_src_path.relative_to(ctx.graph.root_path),
-                            content=sig_updater.dump(updated_data),
-                        )
-                    )
-
-        # 3. Plan the physical moves
-        rel_src = self.src_path.relative_to(ctx.graph.root_path)
-        rel_dest = self.dest_path.relative_to(ctx.graph.root_path)
-        move_ops.append(MoveFileOp(rel_src, rel_dest))
-
-        # Sidecar moves
-        yaml_src = self.src_path.with_suffix(".stitcher.yaml")
-        if yaml_src.exists():
-            rel_yaml_src = yaml_src.relative_to(ctx.graph.root_path)
-            rel_yaml_dest = self.dest_path.with_suffix(".stitcher.yaml").relative_to(
-                ctx.graph.root_path
-            )
-            move_ops.append(MoveFileOp(rel_yaml_src, rel_yaml_dest))
-
-        sig_root = ctx.graph.root_path / ".stitcher/signatures"
-        sig_src = sig_root / rel_src.with_suffix(".json")
-        if sig_src.exists():
-            rel_sig_src = sig_src.relative_to(ctx.graph.root_path)
-            rel_sig_dest = sig_root / rel_dest.with_suffix(".json")
-            rel_sig_dest = rel_sig_dest.relative_to(ctx.graph.root_path)
-            move_ops.append(MoveFileOp(rel_sig_src, rel_sig_dest))
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.transaction import TransactionManager, MoveFileOp
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.test_utils import WorkspaceFactory
 ~~~~~
 ~~~~~python.new
-            # 2. Update the content of the sidecar files associated with the moved module
-            # YAML sidecar
-            yaml_src_path = ctx.sidecar_manager.get_doc_path(self.src_path)
-            if yaml_src_path.exists():
-                doc_updater = DocUpdater()
-                doc_data = doc_updater.load(yaml_src_path)
-                updated_data = {
-                    key.replace(old_module_fqn, new_module_fqn, 1)
-                    if key.startswith(old_module_fqn)
-                    else key: value
-                    for key, value in doc_data.items()
-                }
-                if updated_data != doc_data:
-                    content_update_ops.append(
-                        WriteFileOp(
-                            path=yaml_src_path.relative_to(ctx.graph.root_path),
-                            content=doc_updater.dump(updated_data),
-                        )
-                    )
-            # Signature sidecar
-            sig_src_path = ctx.sidecar_manager.get_signature_path(self.src_path)
-            if sig_src_path.exists():
-                sig_updater = SigUpdater()
-                sig_data = sig_updater.load(sig_src_path)
-                updated_data = {
-                    key.replace(old_module_fqn, new_module_fqn, 1)
-                    if key.startswith(old_module_fqn)
-                    else key: value
-                    for key, value in sig_data.items()
-                }
-                if updated_data != sig_data:
-                    content_update_ops.append(
-                        WriteFileOp(
-                            path=sig_src_path.relative_to(ctx.graph.root_path),
-                            content=sig_updater.dump(updated_data),
-                        )
-                    )
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.transaction import TransactionManager, MoveFileOp
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_monorepo_refactor_e2e.py
+~~~~~
+~~~~~python.old
+    # The new SemanticGraph should automatically find both 'src' dirs
+    graph = SemanticGraph(root_path=project_root)
+    assert project_root / "packages/pkg_a/src" in graph.search_paths
+    assert project_root / "packages/pkg_b/src" in graph.search_paths
 
-        # 3. Plan the physical moves
-        root = ctx.graph.root_path
-        rel_src = self.src_path.relative_to(root)
-        rel_dest = self.dest_path.relative_to(root)
-        move_ops.append(MoveFileOp(rel_src, rel_dest))
+    # Load all packages
+    graph.load("pkga_lib")
+    graph.load("pkgb_app")
+    ctx = RefactorContext(graph=graph)
 
-        # Sidecar moves
-        yaml_src = ctx.sidecar_manager.get_doc_path(self.src_path)
-        if yaml_src.exists():
-            yaml_dest = ctx.sidecar_manager.get_doc_path(self.dest_path)
-            move_ops.append(
-                MoveFileOp(yaml_src.relative_to(root), yaml_dest.relative_to(root))
-            )
+    op = MoveFileOperation(src_path, dest_path)
+~~~~~
+~~~~~python.new
+    # The new SemanticGraph should automatically find both 'src' dirs
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace)
+    assert project_root / "packages/pkg_a/src" in graph.search_paths
+    assert project_root / "packages/pkg_b/src" in graph.search_paths
 
-        sig_src = ctx.sidecar_manager.get_signature_path(self.src_path)
-        if sig_src.exists():
-            sig_dest = ctx.sidecar_manager.get_signature_path(self.dest_path)
-            move_ops.append(
-                MoveFileOp(sig_src.relative_to(root), sig_dest.relative_to(root))
-            )
+    # Load all packages
+    graph.load("pkga_lib")
+    graph.load("pkgb_app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+    )
+
+    op = MoveFileOperation(src_path, dest_path)
 ~~~~~
 
-#### Acts 3: 重构 `MoveDirectoryOperation`
+#### Acts 2: 修复 `test_monorepo_refactor_with_tests_e2e.py`
 
-最后，我们清理 `MoveDirectoryOperation` 中的 Sidecar 路径计算逻辑。
+应用相同的修复模式。
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_directory.py
+packages/stitcher-refactor/tests/integration/test_monorepo_refactor_with_tests_e2e.py
 ~~~~~
 ~~~~~python.old
-            # Mark the source file and its potential sidecars as handled
-            handled_paths.add(src_file)
-            handled_paths.add(src_file.with_suffix(".stitcher.yaml"))
-            sig_rel_path = src_file.relative_to(ctx.graph.root_path).with_suffix(
-                ".json"
-            )
-            sig_abs_path = ctx.graph.root_path / ".stitcher/signatures" / sig_rel_path
-            handled_paths.add(sig_abs_path)
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.transaction import TransactionManager, MoveFileOp
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.test_utils import WorkspaceFactory
 ~~~~~
 ~~~~~python.new
-            # Mark the source file and its potential sidecars as handled
-            handled_paths.add(src_file)
-            doc_path = ctx.sidecar_manager.get_doc_path(src_file)
-            handled_paths.add(doc_path)
-            sig_path = ctx.sidecar_manager.get_signature_path(src_file)
-            handled_paths.add(sig_path)
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.transaction import TransactionManager, MoveFileOp
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_monorepo_refactor_with_tests_e2e.py
+~~~~~
+~~~~~python.old
+    # 2. ACT
+    graph = SemanticGraph(root_path=project_root)
+    # Verify that all source and test roots were discovered
+    assert project_root / "packages/pkg_a/src" in graph.search_paths
+    assert project_root / "packages/pkg_a/tests" in graph.search_paths
+    assert project_root / "packages/pkg_b/src" in graph.search_paths
+    assert project_root / "tests" in graph.search_paths
+
+    # Load all relevant modules
+    graph.load("pkga_lib")
+    graph.load("pkgb_app")
+    graph.load("integration")
+    # Also load the test module from pkg_a
+    graph.load("test_core")
+
+    ctx = RefactorContext(graph=graph)
+    op = MoveFileOperation(src_path, dest_path)
+~~~~~
+~~~~~python.new
+    # 2. ACT
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace)
+    # Verify that all source and test roots were discovered
+    assert project_root / "packages/pkg_a/src" in graph.search_paths
+    assert project_root / "packages/pkg_a/tests" in graph.search_paths
+    assert project_root / "packages/pkg_b/src" in graph.search_paths
+    assert project_root / "tests" in graph.search_paths
+
+    # Load all relevant modules
+    graph.load("pkga_lib")
+    graph.load("pkgb_app")
+    graph.load("integration")
+    # Also load the test module from pkg_a
+    graph.load("test_core")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+    )
+    op = MoveFileOperation(src_path, dest_path)
+~~~~~
+
+#### Acts 3: 修复 `test_move_directory_e2e.py`
+
+应用相同的修复模式。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_move_directory_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    DeleteDirectoryOp,
+)
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~python.new
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    DeleteDirectoryOp,
+)
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_move_directory_e2e.py
+~~~~~
+~~~~~python.old
+    # 2. ANALYSIS
+    graph = SemanticGraph(root_path=project_root)
+    graph.load("mypkg")
+    graph.load("app")
+    ctx = RefactorContext(graph=graph)
+
+    op = MoveDirectoryOperation(core_dir, services_dir)
+~~~~~
+~~~~~python.new
+    # 2. ANALYSIS
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace)
+    graph.load("mypkg")
+    graph.load("app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+    )
+
+    op = MoveDirectoryOperation(core_dir, services_dir)
+~~~~~
+
+#### Acts 4: 修复 `test_move_file_e2e.py`
+
+应用相同的修复模式。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_move_file_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.transaction import TransactionManager, MoveFileOp
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~python.new
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.transaction import TransactionManager, MoveFileOp
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_move_file_e2e.py
+~~~~~
+~~~~~python.old
+    # 2. Analyze
+    graph = SemanticGraph(root_path=project_root)
+    graph.load("mypkg")
+    ctx = RefactorContext(graph=graph)
+    op = MoveFileOperation(old_py, new_py)
+~~~~~
+~~~~~python.new
+    # 2. Analyze
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace)
+    graph.load("mypkg")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+    )
+    op = MoveFileOperation(old_py, new_py)
+~~~~~
+
+#### Acts 5: 修复 `test_move_nested_directory_e2e.py`
+
+应用相同的修复模式。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_move_nested_directory_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.transaction import (
+    DeleteDirectoryOp,
+    MoveFileOp,
+    TransactionManager,
+)
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~python.new
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.transaction import (
+    DeleteDirectoryOp,
+    MoveFileOp,
+    TransactionManager,
+)
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_move_nested_directory_e2e.py
+~~~~~
+~~~~~python.old
+    # 2. ACT
+    graph = SemanticGraph(root_path=project_root)
+    # We load 'cascade' and 'app' to build the full semantic picture
+    graph.load("cascade")
+    graph.load("app")
+    ctx = RefactorContext(graph=graph)
+
+    op = MoveDirectoryOperation(src_dir_to_move, dest_dir)
+~~~~~
+~~~~~python.new
+    # 2. ACT
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace)
+    # We load 'cascade' and 'app' to build the full semantic picture
+    graph.load("cascade")
+    graph.load("app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+    )
+
+    op = MoveDirectoryOperation(src_dir_to_move, dest_dir)
+~~~~~
+
+#### Acts 6: 修复 `test_rename_e2e.py`
+
+应用相同的修复模式。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.transaction import TransactionManager
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~python.new
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.transaction import TransactionManager
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_e2e.py
+~~~~~
+~~~~~python.old
+    # 2. Analysis Phase
+    graph = SemanticGraph(root_path=project_root)
+    graph.load("mypkg")
+    ctx = RefactorContext(graph=graph)
+~~~~~
+~~~~~python.new
+    # 2. Analysis Phase
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace)
+    graph.load("mypkg")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+    )
+~~~~~
+
+#### Acts 7: 修复 `test_rename_symbol_monorepo_e2e.py`
+
+应用相同的修复模式。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_symbol_monorepo_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.transaction import TransactionManager
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~python.new
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.transaction import TransactionManager
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_symbol_monorepo_e2e.py
+~~~~~
+~~~~~python.old
+    # 2. ACT
+    graph = SemanticGraph(root_path=project_root)
+    graph.load("pkga_lib")
+    graph.load("pkgb_app")
+    graph.load("test_core")
+    graph.load("integration")
+    ctx = RefactorContext(graph=graph)
+~~~~~
+~~~~~python.new
+    # 2. ACT
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace)
+    graph.load("pkga_lib")
+    graph.load("pkgb_app")
+    graph.load("test_core")
+    graph.load("integration")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+    )
+~~~~~
+
+#### Acts 8: 修复 `test_rename_transformer_advanced.py`
+
+应用相同的修复模式。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_transformer_advanced.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~python.new
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_transformer_advanced.py
+~~~~~
+~~~~~python.old
+def test_rename_symbol_via_attribute_access(tmp_path):
+    # 1. Setup
+    project_root = (
+        WorkspaceFactory(tmp_path)
+        .with_source("mypkg/__init__.py", "")
+        .with_source("mypkg/core.py", "class OldHelper: pass")
+        .with_source(
+            "main.py",
+            """
+            import mypkg.core
+
+            h = mypkg.core.OldHelper()
+            """,
+        )
+        .build()
+    )
+
+    # 2. Analyze
+    graph = SemanticGraph(root_path=project_root)
+    graph.load("mypkg")
+    graph.load("main")
+    ctx = RefactorContext(graph=graph)
+~~~~~
+~~~~~python.new
+def test_rename_symbol_via_attribute_access(tmp_path):
+    # 1. Setup
+    project_root = (
+        WorkspaceFactory(tmp_path)
+        .with_source("mypkg/__init__.py", "")
+        .with_source("mypkg/core.py", "class OldHelper: pass")
+        .with_source(
+            "main.py",
+            """
+            import mypkg.core
+
+            h = mypkg.core.OldHelper()
+            """,
+        )
+        .build()
+    )
+
+    # 2. Analyze
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace)
+    graph.load("mypkg")
+    graph.load("main")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+    )
+~~~~~
+
+#### Acts 9: 修复 `test_rename_operation.py`
+
+最后，修复单元测试，为其提供所需的 Mock 对象。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/unit/test_rename_operation.py
+~~~~~
+~~~~~python.old
+from unittest.mock import Mock
+from pathlib import Path
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.graph import SemanticGraph, UsageRegistry, UsageLocation
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.engine.transaction import WriteFileOp
+~~~~~
+~~~~~python.new
+from unittest.mock import Mock
+from pathlib import Path
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.graph import SemanticGraph, UsageRegistry, UsageLocation
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.engine.transaction import WriteFileOp
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.refactor.workspace import Workspace
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/unit/test_rename_operation.py
+~~~~~
+~~~~~python.old
+    # Let's use a real tmp_path for reading files to simplify mocking Path.read_text
+    # We will create fake files that the operation can read.
+    tmp_path = Path("/tmp/fake_project")  # conceptual
+    mock_graph.root_path = tmp_path
+
+    ctx = RefactorContext(graph=mock_graph)
+
+    # 2. Define Test Data
+~~~~~
+~~~~~python.new
+    # Let's use a real tmp_path for reading files to simplify mocking Path.read_text
+    # We will create fake files that the operation can read.
+    tmp_path = Path("/tmp/fake_project")  # conceptual
+    mock_graph.root_path = tmp_path
+
+    mock_workspace = Mock(spec=Workspace)
+    mock_sidecar_manager = Mock(spec=SidecarManager)
+    # Prevent sidecar logic from running in this unit test
+    mock_sidecar_manager.get_doc_path.return_value.exists.return_value = False
+    mock_sidecar_manager.get_signature_path.return_value.exists.return_value = False
+
+    ctx = RefactorContext(
+        graph=mock_graph,
+        workspace=mock_workspace,
+        sidecar_manager=mock_sidecar_manager,
+    )
+
+    # 2. Define Test Data
 ~~~~~
 
 ### 下一步建议
 
-我们已经成功完成了重构路线图的**第二阶段**。`stitcher-refactor` 引擎现在拥有了一个健壮、解耦且可维护的核心架构。
-
-下一步，我们将进入至关重要的**第三阶段：验证与清理**。我建议立即开始执行 **任务 3.1: 编写新的端到端集成测试**。我们将创建一个专门的测试，模拟一个复杂的 monorepo 场景（类似于 `Cascade` 项目），并执行一次跨包的目录移动操作，以端到端地验证我们所有重构工作的正确性和健壮性。如果你同意，我将开始设计并生成该测试计划。
+所有已知的测试失败都已修复。建议您现在运行 `pytest packages/stitcher-refactor` 来验证修复是否成功。如果通过，我们可以将这些变更提交到版本控制中。

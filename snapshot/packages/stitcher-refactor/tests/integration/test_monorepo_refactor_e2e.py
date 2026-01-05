@@ -4,6 +4,8 @@ from stitcher.refactor.engine.context import RefactorContext
 from stitcher.refactor.engine.graph import SemanticGraph
 from stitcher.refactor.engine.transaction import TransactionManager, MoveFileOp
 from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.refactor.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory
 
 
@@ -47,14 +49,18 @@ def test_move_file_in_monorepo_updates_cross_package_imports(tmp_path):
 
     # 2. ACT
     # The new SemanticGraph should automatically find both 'src' dirs
-    graph = SemanticGraph(root_path=project_root)
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace)
     assert project_root / "packages/pkg_a/src" in graph.search_paths
     assert project_root / "packages/pkg_b/src" in graph.search_paths
 
     # Load all packages
     graph.load("pkga_lib")
     graph.load("pkgb_app")
-    ctx = RefactorContext(graph=graph)
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+    )
 
     op = MoveFileOperation(src_path, dest_path)
     file_ops = op.analyze(ctx)
