@@ -38,14 +38,16 @@ class Workspace:
 
     def _get_top_level_importables(self, src_path: Path) -> List[str]:
         names: Set[str] = set()
+        if not src_path.is_dir():
+            return []
+
         for item in src_path.iterdir():
-            # A top-level package is a directory. Griffe will handle namespace packages.
-            # Exclude dunder directories like __pycache__
-            if item.is_dir() and not (item.name.startswith("__") and item.name.endswith("__")):
+            # A potential top-level package is a directory whose name is a valid identifier.
+            if item.is_dir() and item.name.isidentifier():
                 names.add(item.name)
-            # A top-level module is a .py file (but not __init__.py itself)
+            # A potential top-level module is a .py file whose stem is a valid identifier.
             elif (
-                item.is_file() and item.name.endswith(".py") and item.stem != "__init__"
+                item.is_file() and item.name.endswith(".py") and item.stem.isidentifier()
             ):
                 names.add(item.stem)
         return list(names)
