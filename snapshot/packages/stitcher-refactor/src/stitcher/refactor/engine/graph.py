@@ -84,18 +84,45 @@ class _UsageVisitor(cst.CSTVisitor):
         )
         self.registry.register(fqn, loc)
 
+    def _register_module_parts(self, node: cst.CSTNode, absolute_module: str):
+        """
+        Recursively registers the parts of a module node (Attribute chain or Name)
+        against the corresponding parts of the absolute FQN.
+
+        e.g. node=`a.b.c`, absolute_module=`pkg.a.b.c`
+        Registers:
+          `a.b.c` -> `pkg.a.b.c`
+          `a.b`   -> `pkg.a.b`
+          `a`     -> `pkg.a`
+        """
+        curr_node = node
+        curr_fqn = absolute_module
+
+        # Iterate down the Attribute chain
+        # Note: Attribute(value=Attribute(value=Name(a), attr=Name(b)), attr=Name(c)) corresponds to a.b.c
+        # The 'value' is the prefix.
+        while isinstance(curr_node, cst.Attribute):
+            self._register_node(curr_node, curr_fqn)
+
+            # Peel off the last part of the FQN
+            if "." in curr_fqn:
+                curr_fqn = curr_fqn.rsplit(".", 1)[0]
+            else:
+                # If we run out of FQN parts but still have attributes, stop (mismatch or aliasing)
+                break
+
+            curr_node = curr_node.value
+
+        # Register the base Name node
+        if isinstance(curr_node, cst.Name):
+            self._register_node(curr_node, curr_fqn)
+
     def visit_Name(self, node: cst.Name):
         # In LibCST, Name nodes appear in definitions (ClassDef.name),
         # references (a = 1), and aliases (import x as y).
         target_fqn = self.local_symbols.get(node.value)
         if target_fqn:
             self._register_node(node, target_fqn)
-
-    def _register_module_parts(self, node: cst.CSTNode, absolute_module: str):
-        # We register the entire module node (which can be a Name or Attribute)
-        # as a usage of the fully resolved module FQN. This allows the
-        # transformer to replace the whole path in one go.
-        self._register_node(node, absolute_module)
 
     def visit_Import(self, node: cst.Import) -> Optional[bool]:
         for alias in node.names:
@@ -110,24 +137,13 @@ class _UsageVisitor(cst.CSTVisitor):
         # 1. Resolve absolute module path
         absolute_module = None
 
-        # Determine package context for LibCST resolution
-        # If current_package is "", LibCST expects None for 'package' arg usually?
-        # Actually get_absolute_module_from_package_for_import doc says:
-        # package: Optional[str] - The name of the package the module is in.
-
         try:
-            # Note: self.current_package might be "" (top level) or "pkg" or None.
-            # If node.relative is non-empty (dots), we need a package.
-            # If node.relative is empty, it's absolute import, package context helps but not strictly required if we just concat?
-            # But we use LibCST helper for robustness.
-
             package_ctx = self.current_package if self.current_package != "" else None
 
             absolute_module = get_absolute_module_from_package_for_import(
                 package_ctx, node
             )
         except Exception:
-            # If LibCST fails (e.g. relative import from top level), ignore
             pass
 
         if absolute_module:
@@ -141,10 +157,6 @@ class _UsageVisitor(cst.CSTVisitor):
                 if isinstance(alias, cst.ImportAlias):
                     name_node = alias.name
                     imported_name = get_full_name_for_node(name_node)
-
-                    # Handle 'from pkg import *' which is cst.ImportStar (not in node.names)
-                    # Wait, node.names is Sequence[ImportAlias] | ImportStar.
-                    # If it is ImportStar, we can't do much without wildcard expansion (requires full analysis).
 
                     if imported_name:
                         full_fqn = f"{absolute_module}.{imported_name}"
@@ -161,10 +173,6 @@ class _UsageVisitor(cst.CSTVisitor):
         if not full_name:
             return True
 
-        # full_name is e.g. "mypkg.core.OldHelper"
-        # We check if the 'base' of this chain matches a local symbol.
-        # e.g. split by dots. "mypkg" -> checks local_symbols.
-
         parts = full_name.split(".")
         if not parts:
             return True
@@ -174,14 +182,10 @@ class _UsageVisitor(cst.CSTVisitor):
 
         if root_fqn:
             # Reconstruct the absolute FQN
-            # if root_name="mypkg" maps to "mypkg", then "mypkg.core.OldHelper" -> "mypkg.core.OldHelper"
-            # if root_name="m" maps to "mypkg", then "m.core.OldHelper" -> "mypkg.core.OldHelper"
-
             suffix = ".".join(parts[1:])
             absolute_fqn = f"{root_fqn}.{suffix}" if suffix else root_fqn
 
             # We register the Attribute node itself as the usage.
-            # This is crucial for RenameSymbolOperation to replace the full qualified path if needed.
             self._register_node(node, absolute_fqn)
 
         return True
@@ -238,7 +242,7 @@ class SemanticGraph:
         try:
             source = module.filepath.read_text(encoding="utf-8")
             wrapper = cst.MetadataWrapper(cst.parse_module(source))
-            visitor = _UsageVisitor(module.filepath, local_symbols, self.registry)
+            visitor = _UsageVisitor(module.filepath, local_symbols, self.registry, current_module_fqn=module.path, is_init_file=module.filepath.name == "__init__.py")
             wrapper.visit(visitor)
         except Exception:
             # Handle syntax errors or IO errors gracefully
