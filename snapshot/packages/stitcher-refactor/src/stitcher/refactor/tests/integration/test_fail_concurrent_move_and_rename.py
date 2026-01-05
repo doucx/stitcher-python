@@ -73,12 +73,17 @@ def old_func():
     rename_class_op = RenameSymbolOperation("mypkg.core.OldClass", "mypkg.utils.NewClass")
     rename_func_op = RenameSymbolOperation("mypkg.core.old_func", "mypkg.utils.new_func")
 
-    # Analyze independently (Linear Architecture)
-    ops_1 = move_op.analyze(ctx)
-    ops_2 = rename_class_op.analyze(ctx)
-    ops_3 = rename_func_op.analyze(ctx)
-    
-    all_ops = ops_1 + ops_2 + ops_3
+    # Use the new Planner V2 architecture
+    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.engine.planner import Planner
+
+    spec = MigrationSpec()
+    spec.add(move_op)
+    spec.add(rename_class_op)
+    spec.add(rename_func_op)
+
+    planner = Planner()
+    all_ops = planner.plan(spec, ctx)
 
     tm = TransactionManager(project_root)
     for fop in all_ops:
@@ -88,7 +93,7 @@ def old_func():
             tm.add_write(fop.path, fop.content)
         elif isinstance(fop, DeleteFileOp):
             tm.add_delete_file(fop.path)
-            
+
     tm.commit()
 
     # 3. ASSERT
