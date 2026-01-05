@@ -4,125 +4,62 @@ from stitcher.refactor.engine.graph import SemanticGraph
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.refactor.engine.transaction import TransactionManager, MoveFileOp
 from stitcher.refactor.operations.move_file import MoveFileOperation
-
-
-def test_move_file_updates_imports_and_sidecars(tmp_path):
-    # Setup Layout:
-    # src/
-    #   mypkg/
-    #     __init__.py
-    #     old.py  (Defines `class A`)
-    #     app.py  (Imports `A` via absolute and relative)
-
-    src_root = tmp_path / "src"
-    pkg_dir = src_root / "mypkg"
-    pkg_dir.mkdir(parents=True)
-
-    (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
-
-    # old.py
-    old_py = pkg_dir / "old.py"
-    old_py.write_text("class A:\n    pass", encoding="utf-8")
-
-    # app.py
-    app_py = pkg_dir / "app.py"
-    app_py.write_text(
-        "import mypkg.old\n"
-        "from mypkg.old import A\n"
-        "from . import old\n"  # Relative import of module
-        "from .old import A as AliasA\n"  # Relative import of symbol
-        "\n"
-        "def main():\n"
-        "    x = mypkg.old.A()\n"
-        "    y = A()\n"
-        "    z = old.A()\n"
-        "    w = AliasA()",
-        encoding="utf-8",
-    )
-
-    # Sidecars
-    # old.stitcher.yaml
-    old_yaml = old_py.with_suffix(".stitcher.yaml")
-    old_yaml.write_text(yaml.dump({"mypkg.old.A": "Doc for A"}), encoding="utf-8")
-
-    # .stitcher/signatures/src/mypkg/old.json
-    sig_dir = tmp_path / ".stitcher/signatures/src/mypkg"
-    sig_dir.mkdir(parents=True)
-    old_json = sig_dir / "old.json"
-    old_json.write_text(json.dumps({"mypkg.old.A": {"hash": "123"}}), encoding="utf-8")
-
-    # Execute
-    # Load assuming 'src' is in path (Stitcher usually handles this, we sim it)
-    # Note: SemanticGraph uses GriffeLoader(search_paths=[root_path])
-    # So 'src.mypkg' might be the module name if we don't handle src layout explicitly.
-    # Our MoveFileOperation heuristic handles 'src' stripping.
-    # But SemanticGraph needs to resolve it.
-    # Let's verify what module name Griffe assigns.
-    # Typically if we point to tmp_path, it sees 'src'.
-    # For this test, let's keep it simple: put mypkg in root.
-    pass
+from stitcher.test_utils import WorkspaceFactory
 
 
 def test_move_file_flat_layout(tmp_path):
-    # Setup Layout (Flat for simplicity):
-    # mypkg/
-    #   __init__.py
-    #   old.py
-    #   app.py
+    # 1. Arrange: Declaratively build the project structure
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_source("mypkg/__init__.py", "")
+        .with_source("mypkg/old.py", "class A:\n    pass")
+        .with_source(
+            "mypkg/app.py",
+            """
+            import mypkg.old
+            from mypkg.old import A
+            from . import old
+            from .old import A as AliasA
 
-    pkg_dir = tmp_path / "mypkg"
-    pkg_dir.mkdir()
-    (pkg_dir / "__init__.py").write_text("", encoding="utf-8")
-
-    old_py = pkg_dir / "old.py"
-    old_py.write_text("class A:\n    pass", encoding="utf-8")
-
-    app_py = pkg_dir / "app.py"
-    app_py.write_text(
-        "import mypkg.old\n"
-        "from mypkg.old import A\n"
-        "from . import old\n"
-        "from .old import A as AliasA\n"
-        "\n"
-        "x = mypkg.old.A()\n"
-        "y = A()\n"
-        "z = old.A()\n"
-        "w = AliasA()",
-        encoding="utf-8",
+            x = mypkg.old.A()
+            y = A()
+            z = old.A()
+            w = AliasA()
+            """,
+        )
+        .with_docs("mypkg/old.stitcher.yaml", {"mypkg.old.A": "Doc"})
+        .with_raw_file(
+            ".stitcher/signatures/mypkg/old.json",
+            json.dumps({"mypkg.old.A": {"h": "1"}}),
+        )
+        .build()
     )
 
+    pkg_dir = project_root / "mypkg"
+    old_py = pkg_dir / "old.py"
+    app_py = pkg_dir / "app.py"
     old_yaml = old_py.with_suffix(".stitcher.yaml")
-    old_yaml.write_text(yaml.dump({"mypkg.old.A": "Doc"}), encoding="utf-8")
-
-    sig_dir = tmp_path / ".stitcher/signatures/mypkg"
-    sig_dir.mkdir(parents=True)
+    sig_dir = project_root / ".stitcher/signatures/mypkg"
     old_json = sig_dir / "old.json"
-    old_json.write_text(json.dumps({"mypkg.old.A": {"h": "1"}}), encoding="utf-8")
+    new_py = pkg_dir / "new.py"
 
     # 2. Analyze
-    graph = SemanticGraph(root_path=tmp_path)
+    graph = SemanticGraph(root_path=project_root)
     graph.load("mypkg")
-
     ctx = RefactorContext(graph=graph)
-
-    # Move mypkg/old.py -> mypkg/new.py
-    new_py = pkg_dir / "new.py"
     op = MoveFileOperation(old_py, new_py)
-
     file_ops = op.analyze(ctx)
 
     # 3. Commit
-    tm = TransactionManager(tmp_path)
+    tm = TransactionManager(project_root)
     for fop in file_ops:
         if isinstance(fop, MoveFileOp):
             tm.add_move(fop.path, fop.dest)
         else:
             tm.add_write(fop.path, fop.content)
-
     tm.commit()
 
     # 4. Verify
-
     # Files moved?
     assert not old_py.exists()
     assert new_py.exists()
@@ -133,20 +70,9 @@ def test_move_file_flat_layout(tmp_path):
 
     # Content updated?
     new_app = app_py.read_text("utf-8")
-
-    # Absolute import
     assert "import mypkg.new" in new_app
     assert "from mypkg.new import A" in new_app
-
-    # Relative import
-    # "from . import old" -> "from . import new"
-    # Wait, RenameSymbolOperation replaces "old" name with "new".
-    # ImportFrom(module=None, names=[Alias(name="old")]) -> name="new"
-    # Result: "from . import new"
     assert "from . import new" in new_app
-
-    # "from .old import A" -> "from .new import A"
-    # ImportFrom(module="old", ...) -> module="new"
     assert "from .new import A as AliasA" in new_app
 
     # Sidecar Keys
