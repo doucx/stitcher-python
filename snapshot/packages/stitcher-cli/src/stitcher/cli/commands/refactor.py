@@ -38,9 +38,6 @@ def refactor_command(
         help="Automatically confirm and apply changes.",
     ),
 ):
-    """
-    Apply automated refactorings from a migration script.
-    """
     root_path = Path.cwd()
 
     try:
