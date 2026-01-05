@@ -41,13 +41,41 @@ def test_rename_symbol_analyze_orchestration():
     source_a = "from mypkg.core import OldHelper\n\nobj = OldHelper()"
     source_b = "def func():\n    from mypkg.core import OldHelper\n    return OldHelper"
 
+    from stitcher.refactor.engine.graph import ReferenceType
+
     locations = [
         # Locations in a.py
-        UsageLocation(file_a_path, 1, 23, 1, 32),  # from mypkg.core import OldHelper
-        UsageLocation(file_a_path, 3, 6, 3, 15),  # obj = OldHelper()
+        UsageLocation(
+            file_a_path,
+            1,
+            23,
+            1,
+            32,
+            ReferenceType.IMPORT_PATH,
+            "mypkg.core.OldHelper",
+        ),  # from mypkg.core import OldHelper
+        UsageLocation(
+            file_a_path, 3, 6, 3, 15, ReferenceType.SYMBOL, "mypkg.core.OldHelper"
+        ),  # obj = OldHelper()
         # Locations in b.py
-        UsageLocation(file_b_path, 2, 27, 2, 36),  # from mypkg.core import OldHelper
-        UsageLocation(file_b_path, 3, 11, 3, 20),  # return OldHelper
+        UsageLocation(
+            file_b_path,
+            2,
+            27,
+            2,
+            36,
+            ReferenceType.IMPORT_PATH,
+            "mypkg.core.OldHelper",
+        ),  # from mypkg.core import OldHelper
+        UsageLocation(
+            file_b_path,
+            3,
+            11,
+            3,
+            20,
+            ReferenceType.SYMBOL,
+            "mypkg.core.OldHelper",
+        ),  # return OldHelper
     ]
 
     mock_registry.get_usages.return_value = locations
