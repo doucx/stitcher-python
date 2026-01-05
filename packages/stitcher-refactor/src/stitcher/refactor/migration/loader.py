@@ -7,9 +7,6 @@ from .exceptions import MigrationScriptError
 
 class MigrationLoader:
     def load_from_path(self, path: Path) -> MigrationSpec:
-        """
-        Dynamically loads a migration script and returns a populated MigrationSpec.
-        """
         if not path.is_file():
             raise FileNotFoundError(f"Migration script not found at: {path}")
 

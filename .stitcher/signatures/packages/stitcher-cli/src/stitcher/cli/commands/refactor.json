@@ -1,0 +1,7 @@
+{
+  "refactor_command": {
+    "baseline_code_signature_text": "def refactor_command(migration_script: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False, readable=True, help='Path to the Python migration script.'), dry_run: bool = typer.Option(False, '--dry-run', help='Show planned changes without applying them.'), yes: bool = typer.Option(False, '-y', '--yes', help='Automatically confirm and apply changes.')):",
+    "baseline_code_structure_hash": "4cc7d4554656873039d901eb06d7fc5184847b96a8d776a331c0e652f20dfbba",
+    "baseline_yaml_content_hash": "42bbf2507f2c29cd143e3f64bb2db764c7b5759f0bef7030fc6228ac7a9e8628"
+  }
+}
