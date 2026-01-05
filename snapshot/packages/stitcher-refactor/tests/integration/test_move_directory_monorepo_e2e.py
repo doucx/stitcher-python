@@ -53,9 +53,9 @@ def test_move_directory_in_monorepo_updates_cross_package_references(tmp_path):
     # 2. ACT
     workspace = Workspace(root_path=project_root)
     graph = SemanticGraph(workspace=workspace)
-    # Load all modules contributing to the 'cascade' namespace
-    graph.load("cascade.engine")
-    graph.load("cascade.runtime")
+    # Load the top-level namespace package. Griffe will discover all its parts
+    # from the search paths provided by the Workspace.
+    graph.load("cascade")
     sidecar_manager = SidecarManager(root_path=project_root)
     ctx = RefactorContext(
         workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
