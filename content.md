@@ -1,93 +1,70 @@
-Of course. It looks like the tests are failing due to a simple setup issue. Here is the plan to fix it.
+You are absolutely right to ask, "How did the test environment leak?" That is the core of the problem.
 
-This is a classic issue when using a builder pattern like `WorkspaceFactory`. The methods like `.with_source()` only declare what files *should* be created; they don't actually write anything to disk until you call the `.build()` method. The tests are attempting to move a file that hasn't been created yet, leading to the `FileNotFoundError`.
+My previous fix addressed the file creation order, but now we're hitting a more subtle issue. The test runner (`pytest`) modifies `sys.path` to include all the packages from your development monorepo. When the `refactor` command runs our code analysis engine (`griffe`), the engine sees this global `sys.path` and attempts to scan your *entire* development workspace, not just the isolated temporary directory created for the test. This breaks test isolation and causes the `ModuleNotFoundError` when it tries to load a workspace package it doesn't fully understand.
 
-I'll add the necessary `.build()` calls to fix the test setup.
+The solution is to explicitly tell our analysis engine to *only* look for code inside the test directory, effectively isolating it from the leaky environment.
 
-## [WIP] fix(tests): Call WorkspaceFactory.build() in refactor command tests
+## [WIP] fix(refactor): Isolate analysis engine from global sys.path
 
 ### 错误分析
 
-The tests `test_refactor_apply_e2e` and `test_refactor_apply_dry_run` are failing with a `FileNotFoundError`. This occurs because the `WorkspaceFactory` is configured with various source files (like `pyproject.toml`), but the `.build()` method, which actually writes these files to the temporary directory, is never called. Consequently, the subsequent line attempting to `.rename()` the `pyproject.toml` file fails because it doesn't exist on the filesystem yet.
+The integration tests for the `refactor` command are failing because the underlying analysis engine (`griffe`) is "leaking" out of the isolated test environment. It is inheriting the `sys.path` from the `pytest` runner, which includes all packages from the development monorepo. This causes it to try and analyze the entire development workspace instead of just the self-contained project within `tmp_path`, leading to a `ModuleNotFoundError` when it encounters a workspace package it cannot resolve. This breaks the fundamental principle of test isolation.
 
 ### 用户需求
 
-The user needs to fix the two failing integration tests in `packages/stitcher-cli/tests/integration/test_refactor_command.py`.
+The user needs to fix the new failures in `test_refactor_command.py` by preventing the test environment from leaking into the application code being tested.
 
 ### 评论
 
-This is a straightforward fix that addresses a common oversight when using the builder pattern. Correcting the test setup will ensure the `refactor` command's integration tests are reliable and can properly validate the command's functionality.
+This is a critical fix for test stability and correctness. By ensuring the code analysis engine is strictly confined to the test workspace, we make the tests more robust, deterministic, and independent of the environment in which they are run. This change enforces proper test isolation at the application level.
 
 ### 目标
 
-1.  Locate the two failing tests in `test_refactor_command.py`.
-2.  Modify each test to call `.build()` on the `WorkspaceFactory` instance after it has been configured and before any of its created files are accessed.
-3.  Ensure the tests pass after the correction.
+1.  Modify the `SemanticGraph` class within the `stitcher-refactor` package.
+2.  When initializing `griffe.GriffeLoader`, explicitly provide the `sys_path` argument, setting it to the same search paths derived from the test project's root. This will prevent `griffe` from using the global `sys.path`.
 
 ### 基本原理
 
-The `WorkspaceFactory` API is designed to be declarative. You chain methods to describe the desired state of the test workspace, and then call `.build()` as the final imperative step to realize that state on the filesystem. The fix is to simply add this missing `.build()` call at the correct point in the test setup.
+The `griffe.GriffeLoader` constructor accepts an optional `sys_path` argument. If not provided, it defaults to using the `sys.path` of the current process. By explicitly setting `sys_path=self.search_paths`, we constrain `griffe`'s module discovery mechanism to operate solely within the boundaries of the project being analyzed (in this case, the temporary test directory). This effectively seals the environment leak and restores proper test isolation.
 
 ### 标签
 
-#intent/fix #flow/ready #priority/high #comp/tests #comp/cli #scope/dx #ai/instruct #task/domain/testing #task/object/test-setup #task/action/bug-fix #task/state/begin
+#intent/fix #flow/ready #priority/high #comp/engine #comp/tests #concept/state #ai/instruct #task/domain/testing #task/object/environment-isolation #task/action/bug-fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: Correct the test setup
+#### Acts 1: Constrain the analysis engine to the test workspace
 
-I will apply two patches to `test_refactor_command.py` to add the required `.build()` calls, ensuring the test workspace is created before its files are used.
-
-~~~~~act
-patch_file
-packages/stitcher-cli/tests/integration/test_refactor_command.py
-~~~~~
-~~~~~python.old
-    (
-        factory
-        .with_project_name("mypkg")
-        .with_source("src/mypkg/core.py", "class Old: pass")
-        .with_source("src/mypkg/app.py", "from mypkg.core import Old")
-        .with_source("pyproject.toml", "[project]\nname='mypkg'") # For discovery
-    )
-    # Migration script
-~~~~~
-~~~~~python.new
-    (
-        factory
-        .with_project_name("mypkg")
-        .with_source("src/mypkg/core.py", "class Old: pass")
-        .with_source("src/mypkg/app.py", "from mypkg.core import Old")
-        .with_source("pyproject.toml", "[project]\nname='mypkg'") # For discovery
-    ).build()
-    # Migration script
-~~~~~
+I will patch `stitcher-refactor/src/stitcher/refactor/engine/graph.py` to correctly configure the `griffe` loader, ensuring it operates only within the provided search paths.
 
 ~~~~~act
 patch_file
-packages/stitcher-cli/tests/integration/test_refactor_command.py
+packages/stitcher-refactor/src/stitcher/refactor/engine/graph.py
 ~~~~~
 ~~~~~python.old
-    (
-        factory
-        .with_project_name("mypkg")
-        .with_source("src/mypkg/core.py", "class Old: pass")
-        .with_source("pyproject.toml", "[project]\nname='mypkg'")
-    )
-    migration_script_content = """
+        # Store unique, sorted paths for deterministic behavior
+        self.search_paths = sorted(list(set(search_paths)))
+
+        self._griffe_loader = griffe.GriffeLoader(search_paths=self.search_paths)
+        self._modules: Dict[str, griffe.Module] = {}
+        self.registry = UsageRegistry()
 ~~~~~
 ~~~~~python.new
-    (
-        factory
-        .with_project_name("mypkg")
-        .with_source("src/mypkg/core.py", "class Old: pass")
-        .with_source("pyproject.toml", "[project]\nname='mypkg'")
-    ).build()
-    migration_script_content = """
+        # Store unique, sorted paths for deterministic behavior
+        self.search_paths = sorted(list(set(search_paths)))
+
+        self._griffe_loader = griffe.GriffeLoader(
+            search_paths=self.search_paths,
+            # Crucially, tell Griffe to ONLY look in our search paths
+            # and not leak into the test runner's global sys.path.
+            sys_path=self.search_paths,
+        )
+        self._modules: Dict[str, griffe.Module] = {}
+        self.registry = UsageRegistry()
 ~~~~~
 
 ### 下一步建议
 
-After applying this fix, please re-run the test suite to confirm that the failures are resolved.
+This change should fully resolve the test failures. Please run the test suite again. If it passes, we can proceed to create a `[COMMIT]` plan to finalize this fix.

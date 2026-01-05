@@ -214,7 +214,12 @@ class SemanticGraph:
         # Store unique, sorted paths for deterministic behavior
         self.search_paths = sorted(list(set(search_paths)))
 
-        self._griffe_loader = griffe.GriffeLoader(search_paths=self.search_paths)
+        self._griffe_loader = griffe.GriffeLoader(
+            search_paths=self.search_paths,
+            # Crucially, tell Griffe to ONLY look in our search paths
+            # and not leak into the test runner's global sys.path.
+            sys_path=self.search_paths,
+        )
         self._modules: Dict[str, griffe.Module] = {}
         self.registry = UsageRegistry()
 
