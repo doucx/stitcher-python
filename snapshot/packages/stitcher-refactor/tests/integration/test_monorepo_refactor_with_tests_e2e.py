@@ -1,4 +1,3 @@
-import json
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.refactor.engine.graph import SemanticGraph
 from stitcher.refactor.engine.transaction import TransactionManager, MoveFileOp
@@ -13,9 +12,7 @@ def test_move_file_in_monorepo_updates_tests_and_cross_package_imports(tmp_path)
         factory
         # --- Package A: The provider ---
         .with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
-        .with_source(
-            "packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass"
-        )
+        .with_source("packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass")
         .with_source(
             "packages/pkg_a/tests/test_core.py",
             "from pkga_lib.core import SharedClass\n\ndef test_shared():\n    assert SharedClass is not None",

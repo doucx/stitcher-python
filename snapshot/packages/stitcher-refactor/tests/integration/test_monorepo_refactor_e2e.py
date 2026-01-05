@@ -23,9 +23,7 @@ def test_move_file_in_monorepo_updates_cross_package_imports(tmp_path):
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
-        .with_source(
-            "packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass"
-        )
+        .with_source("packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass")
         .with_docs(
             "packages/pkg_a/src/pkga_lib/core.stitcher.yaml",
             {"pkga_lib.core.SharedClass": "A shared class."},

@@ -14,9 +14,7 @@ def test_rename_symbol_in_monorepo_updates_all_references_and_sidecars(tmp_path)
         factory
         # --- Package A: Defines the symbol ---
         .with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
-        .with_source(
-            "packages/pkg_a/src/pkga_lib/core.py", "class OldNameClass: pass"
-        )
+        .with_source("packages/pkg_a/src/pkga_lib/core.py", "class OldNameClass: pass")
         .with_docs(
             "packages/pkg_a/src/pkga_lib/core.stitcher.yaml",
             {"pkga_lib.core.OldNameClass": "Docs for the old class."},
@@ -50,8 +48,7 @@ def test_rename_symbol_in_monorepo_updates_all_references_and_sidecars(tmp_path)
     top_level_test_path = project_root / "tests/integration/test_system.py"
     doc_path = definition_path.with_suffix(".stitcher.yaml")
     sig_path = (
-        project_root
-        / ".stitcher/signatures/packages/pkg_a/src/pkga_lib/core.json"
+        project_root / ".stitcher/signatures/packages/pkg_a/src/pkga_lib/core.json"
     )
 
     # 2. ACT
@@ -62,7 +59,9 @@ def test_rename_symbol_in_monorepo_updates_all_references_and_sidecars(tmp_path)
     graph.load("integration")
     ctx = RefactorContext(graph=graph)
 
-    op = RenameSymbolOperation("pkga_lib.core.OldNameClass", "pkga_lib.core.NewNameClass")
+    op = RenameSymbolOperation(
+        "pkga_lib.core.OldNameClass", "pkga_lib.core.NewNameClass"
+    )
     file_ops = op.analyze(ctx)
 
     tm = TransactionManager(project_root)
