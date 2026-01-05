@@ -241,7 +241,22 @@ class SemanticGraph:
             pass
 
     def get_module(self, package_name: str) -> Optional[griffe.Module]:
-        return self._modules.get(package_name)
+        if package_name in self._modules:
+            return self._modules[package_name]
+
+        # Try to navigate down the tree
+        parts = package_name.split(".")
+        current = self._modules.get(parts[0])
+        if not current:
+            return None
+
+        for part in parts[1:]:
+            if part in current.members:
+                current = current.members[part]
+            else:
+                return None
+
+        return current if isinstance(current, griffe.Module) else None
 
     def iter_members(self, package_name: str) -> List[SymbolNode]:
         module = self.get_module(package_name)
