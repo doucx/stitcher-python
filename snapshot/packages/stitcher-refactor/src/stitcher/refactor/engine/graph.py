@@ -4,7 +4,7 @@ from libcst.metadata import PositionProvider
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import List, Dict, Optional, DefaultDict
+from typing import List, Dict, Optional, DefaultDict, Set
 from collections import defaultdict
 import griffe
 from stitcher.refactor.workspace import Workspace
@@ -185,10 +185,19 @@ class SemanticGraph:
         self._griffe_loader.resolve_aliases()
         self._build_registry(module)
 
-    def _build_registry(self, module: griffe.Module):
+    def _build_registry(
+        self, module: griffe.Module, visited: Optional[Set[str]] = None
+    ):
+        if visited is None:
+            visited = set()
+
+        if module.path in visited:
+            return
+        visited.add(module.path)
+
         for member in module.members.values():
-            if isinstance(member, griffe.Module) and not member.is_alias:
-                self._build_registry(member)
+            if isinstance(member, griffe.Module):
+                self._build_registry(member, visited)
         if module.filepath:
             self._scan_module_usages(module)
 
