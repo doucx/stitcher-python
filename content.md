@@ -1,126 +1,139 @@
-Of course. The test failures point to two distinct issues:
+You are right to point out these new failures. The root cause is a misconfigured test environment in `test_refactor_command.py`. The tests manually create a confusing project structure where the `pyproject.toml` is moved away from its source code. This prevents the `Workspace` discovery mechanism from finding the `mypkg` package, resulting in zero refactoring operations being planned. Consequently, the command finishes without emitting the expected "success" or "preview" messages, causing the `SpyBus` assertions to fail.
 
-1.  **`ModuleNotFoundError` for `integration`**: The test setup for `test_rename_symbol_in_monorepo...` creates a test file at `tests/integration/test_system.py` but fails to create `tests/integration/__init__.py`. Without this file, Python's module loader (`griffe` in this case) does not recognize `tests/integration` as a package, leading to the import error.
-2.  **`AssertionError` in `test_workspace...`**: The `Workspace.get_search_paths()` method was clearly updated to always include the project's root path in its results. However, the corresponding unit tests (`test_workspace_standard_src_layout`, `test_workspace_flat_layout`, and `test_workspace_namespace_package`) were not updated to expect this, causing their assertions to fail.
+I will generate a plan to fix this by refactoring the test setups to create a standard and discoverable `src`-layout project.
 
-I will generate a plan to correct both of these issues.
-
-## [WIP] fix(refactor): Correct test setups for workspace and monorepo discovery
+## [WIP] fix(cli): Correct workspace setup in refactor command tests
 
 ### 错误分析
 
-1.  **`test_rename_symbol_in_monorepo_e2e.py`**: The test fails with `ModuleNotFoundError: integration` because the test setup creates the file `tests/integration/test_system.py` without creating the necessary `tests/integration/__init__.py`. This prevents `griffe` from discovering `integration` as an importable package.
+The two failing tests, `test_refactor_apply_e2e` and `test_refactor_apply_dry_run`, share a common root cause: an invalid test workspace setup.
 
-2.  **`test_workspace.py`**: Three tests (`test_workspace_standard_src_layout`, `test_workspace_flat_layout`, `test_workspace_namespace_package`) fail with `AssertionError`. The root cause is consistent across all three: the `Workspace.get_search_paths()` method now correctly includes the project root in the list of search paths to support top-level module discovery, but the test assertions were not updated to reflect this change. They still expect a list containing *only* the specific package source directories.
+1.  The test code uses `WorkspaceFactory` to create source files under a `src/` directory at the project root (`tmp_path/src/mypkg/...`).
+2.  It then manually creates a `packages/pkg_a` directory and moves the project's `pyproject.toml` into it.
+3.  This disconnects the project configuration from its source code. When the `refactor_command` runs, its `Workspace` instance finds the `pyproject.toml` but cannot locate the associated source files in the expected relative locations (like `packages/pkg_a/src`).
+4.  As a result, no packages are discovered, the semantic graph is empty, and the `Planner` generates zero file operations.
+5.  The command exits early after emitting a `refactor.run.no_ops` message, so the expected `refactor.run.success` (in the E2E test) or `refactor.run.preview_header` (in the dry-run test) messages are never sent, causing the `SpyBus` assertions to fail.
 
 ### 用户需求
 
-修复 `stitcher-refactor` 包中所有失败的单元测试和集成测试。
+Fix the failing integration tests for the `stitcher refactor apply` command.
 
 ### 评论
 
-这是一个标准的测试维护任务。第一个错误是测试用例的疏忽，未能创建一个有效的 Python 包。第二个错误是典型的代码与测试不同步的问题。修复这些问题将恢复测试套件的可靠性，确保重构引擎的发现机制是健壮且被正确验证的。
+This is a critical fix. The tests, as they were, were not correctly exercising the refactoring engine's discovery and planning logic. By correcting the workspace setup to a standard `src` layout, we not only fix the tests but also ensure that we are properly validating the command's end-to-end functionality in a realistic project structure.
 
 ### 目标
 
-1.  在 `test_rename_symbol_in_monorepo_e2e.py` 的测试装置中添加 `tests/integration/__init__.py` 文件，使其成为一个合法的包。
-2.  修改 `test_workspace.py` 中的三个失败测试，将 `project_root` 添加到它们各自的断言期望结果中，以与 `get_search_paths()` 的当前实现保持一致。
+1.  Modify both `test_refactor_apply_e2e` and `test_refactor_apply_dry_run` in `test_refactor_command.py`.
+2.  Remove the brittle and incorrect manual creation of the `packages` directory and the subsequent `pyproject.toml` move.
+3.  Adjust the `WorkspaceFactory` setup to create a valid `src`-layout project by adding the necessary `src/mypkg/__init__.py` and relying on the factory to correctly place a root `pyproject.toml`.
 
 ### 基本原理
 
-我们将通过 `patch_file` 指令精确地进行修复：
-1.  对于 `monorepo` 测试，我们将在 `WorkspaceFactory` 的调用链中插入一个额外的 `.with_source()` 来创建缺失的 `__init__.py` 文件。
-2.  对于 `workspace` 测试，我们将修改 `assert` 语句，将期望的路径列表与 `[project_root]` 连接起来，或直接在列表中包含 `project_root`，以确保断言的正确性。
+We will use two `patch_file` operations to replace the entire flawed workspace arrangement block in each test. The new arrangement will use the `WorkspaceFactory` to build a clean, standard project structure that the `Workspace` class is designed to discover correctly. This eliminates the manual file operations and makes the test setup more declarative and robust.
 
 ### 标签
 
-#intent/fix #flow/ready #priority/high #comp/tests #comp/refactor #ai/instruct #task/domain/testing #task/object/test-suite #task/action/bug-fix #task/state/begin
+#intent/fix #flow/ready #priority/high #comp/tests #comp/cli #concept/config #ai/instruct #task/domain/testing #task/object/test-suite #task/action/bug-fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修复 `monorepo` 测试中缺失的 `__init__.py`
+#### Acts 1: Correct the workspace setup in `test_refactor_apply_e2e`
 
-我们将向 `WorkspaceFactory` 的构建链中添加一个 `with_source` 调用，以创建 `tests/integration/__init__.py` 文件。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/tests/integration/test_rename_symbol_monorepo_e2e.py
-~~~~~
-~~~~~python.old
-        # --- Top-level integration test: Also consumes the symbol ---
-        .with_source(
-            "tests/integration/test_system.py",
-            "from pkga_lib.core import OldNameClass\n\ndef test_system_integration():\n    assert OldNameClass",
-        )
-        .build()
-    )
-~~~~~
-~~~~~python.new
-        # --- Top-level integration test: Also consumes the symbol ---
-        .with_source("tests/integration/__init__.py", "")
-        .with_source(
-            "tests/integration/test_system.py",
-            "from pkga_lib.core import OldNameClass\n\ndef test_system_integration():\n    assert OldNameClass",
-        )
-        .build()
-    )
-~~~~~
-
-#### Acts 2: 更新 `workspace` 单元测试的断言
-
-我们将逐一修复 `test_workspace.py` 中的三个测试，确保它们的断言期望值包含 `project_root`。
+We will replace the entire arrangement block with a corrected version that builds a proper `src`-layout project.
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/tests/unit/refactor/test_workspace.py
+packages/stitcher-cli/tests/integration/test_refactor_command.py
 ~~~~~
 ~~~~~python.old
-    # ASSERT
-    assert workspace.import_to_source_dirs["pkga_lib"] == {pkg_a_src}
-    assert workspace.get_search_paths() == [pkg_a_src]
+    # Project with a symbol to be renamed
+    (
+        factory.with_project_name("mypkg")
+        .with_source("src/mypkg/core.py", "class Old: pass")
+        .with_source("src/mypkg/app.py", "from mypkg.core import Old")
+        .with_source("pyproject.toml", "[project]\nname='mypkg'")  # For discovery
+    ).build()
+    # Migration script
+    migration_script_content = """
+from stitcher.refactor.migration import MigrationSpec, Rename
+def upgrade(spec: MigrationSpec):
+    spec.add(Rename("mypkg.core.Old", "mypkg.core.New"))
+"""
+    migration_script = tmp_path / "001_rename.py"
+    migration_script.write_text(migration_script_content)
+
+    # We need a fake "packages" structure for discovery to work
+    (tmp_path / "packages").mkdir()
+    (tmp_path / "packages/pkg_a").mkdir()
+    (tmp_path / "pyproject.toml").rename(tmp_path / "packages/pkg_a/pyproject.toml")
 ~~~~~
 ~~~~~python.new
-    # ASSERT
-    assert workspace.import_to_source_dirs["pkga_lib"] == {pkg_a_src}
-    assert sorted(workspace.get_search_paths()) == sorted([project_root, pkg_a_src])
+    # Project with a symbol to be renamed
+    (
+        factory.with_project_name("mypkg")
+        .with_source("src/mypkg/__init__.py", "")
+        .with_source("src/mypkg/core.py", "class Old: pass")
+        .with_source("src/mypkg/app.py", "from mypkg.core import Old")
+    ).build()
+    # Migration script
+    migration_script_content = """
+from stitcher.refactor.migration import MigrationSpec, Rename
+def upgrade(spec: MigrationSpec):
+    spec.add(Rename("mypkg.core.Old", "mypkg.core.New"))
+"""
+    migration_script = tmp_path / "001_rename.py"
+    migration_script.write_text(migration_script_content)
 ~~~~~
+
+#### Acts 2: Correct the workspace setup in `test_refactor_apply_dry_run`
+
+Similarly, we will replace the arrangement block in the dry-run test.
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/tests/unit/refactor/test_workspace.py
+packages/stitcher-cli/tests/integration/test_refactor_command.py
 ~~~~~
 ~~~~~python.old
-    # ASSERT
-    # For flat layout, the source dir is the directory containing the package
-    assert workspace.import_to_source_dirs["pkgb_lib"] == {pkg_b_root}
-    assert workspace.get_search_paths() == [pkg_b_root]
+    # 1. Arrange
+    factory = WorkspaceFactory(tmp_path)
+    (
+        factory.with_project_name("mypkg")
+        .with_source("src/mypkg/core.py", "class Old: pass")
+        .with_source("src/mypkg/app.py", "from mypkg.core import Old")
+        .with_source("pyproject.toml", "[project]\nname='mypkg'")
+    ).build()
+    migration_script_content = """
+from stitcher.refactor.migration import MigrationSpec, Rename
+def upgrade(spec: MigrationSpec):
+    spec.add(Rename("mypkg.core.Old", "mypkg.core.New"))
+"""
+    migration_script = tmp_path / "001_rename.py"
+    migration_script.write_text(migration_script_content)
+    (tmp_path / "packages").mkdir()
+    (tmp_path / "packages/pkg_a").mkdir()
+    (tmp_path / "pyproject.toml").rename(tmp_path / "packages/pkg_a/pyproject.toml")
 ~~~~~
 ~~~~~python.new
-    # ASSERT
-    # For flat layout, the source dir is the directory containing the package
-    assert workspace.import_to_source_dirs["pkgb_lib"] == {pkg_b_root}
-    assert sorted(workspace.get_search_paths()) == sorted([project_root, pkg_b_root])
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/tests/unit/refactor/test_workspace.py
-~~~~~
-~~~~~python.old
-    # ASSERT
-    assert workspace.import_to_source_dirs["cascade"] == {engine_src, app_src}
-    assert sorted(workspace.get_search_paths()) == sorted([engine_src, app_src])
-~~~~~
-~~~~~python.new
-    # ASSERT
-    assert workspace.import_to_source_dirs["cascade"] == {engine_src, app_src}
-    assert sorted(workspace.get_search_paths()) == sorted(
-        [project_root, engine_src, app_src]
-    )
+    # 1. Arrange
+    factory = WorkspaceFactory(tmp_path)
+    (
+        factory.with_project_name("mypkg")
+        .with_source("src/mypkg/__init__.py", "")
+        .with_source("src/mypkg/core.py", "class Old: pass")
+        .with_source("src/mypkg/app.py", "from mypkg.core import Old")
+    ).build()
+    migration_script_content = """
+from stitcher.refactor.migration import MigrationSpec, Rename
+def upgrade(spec: MigrationSpec):
+    spec.add(Rename("mypkg.core.Old", "mypkg.core.New"))
+"""
+    migration_script = tmp_path / "001_rename.py"
+    migration_script.write_text(migration_script_content)
 ~~~~~
 
 ### 下一步建议
 
-所有已知的测试失败都已在本计划中得到解决。建议您现在执行此计划，然后重新运行 `pytest` 来验证所有测试是否都已通过。
+The test setups have been corrected. Please execute this plan and then run the test suite again. With a valid project structure, the refactoring engine should now correctly discover the packages, plan the operations, and emit the appropriate messages, allowing the tests to pass.
