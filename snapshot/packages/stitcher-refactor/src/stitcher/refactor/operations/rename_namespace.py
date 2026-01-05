@@ -27,7 +27,7 @@ class RenameNamespaceOperation(AbstractOperation):
         for usage in import_usages:
             usages_by_file[usage.file_path].append(usage)
 
-        for file_path, _ in usages_by_file.items():
+        for file_path, file_usages in usages_by_file.items():
             try:
                 original_source = file_path.read_text(encoding="utf-8")
                 module = cst.parse_module(original_source)
@@ -35,7 +35,7 @@ class RenameNamespaceOperation(AbstractOperation):
                 # We need to provide QualifiedName metadata for the transformer
                 # It relies on the UsageLocations we stored earlier.
                 locations = {
-                    (u.lineno, u.col_offset): u for u in ctx.graph.registry._index.get(u.target_node_fqn, [])
+                    (u.lineno, u.col_offset): u for u in file_usages
                 }
 
                 class UsageBasedQualifiedNameProvider(cst.metadata.BaseMetadataProvider):

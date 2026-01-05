@@ -66,6 +66,7 @@ class MoveDirectoryOperation(AbstractOperation):
                 # Doc sidecar
                 doc_path = ctx.sidecar_manager.get_doc_path(src_item)
                 if doc_path.exists():
+                    # 1. Update Content if needed
                     doc_data = doc_updater.load(doc_path)
                     updated_data = {
                         key.replace(old_prefix, new_prefix, 1): value
@@ -79,10 +80,18 @@ class MoveDirectoryOperation(AbstractOperation):
                                 content=doc_updater.dump(updated_data),
                             )
                         )
+                    # 2. Move File
+                    dest_doc_path = ctx.sidecar_manager.get_doc_path(dest_item)
+                    all_ops.append(
+                        MoveFileOp(
+                            doc_path.relative_to(root), dest_doc_path.relative_to(root)
+                        )
+                    )
 
                 # Signature sidecar
                 sig_path = ctx.sidecar_manager.get_signature_path(src_item)
                 if sig_path.exists():
+                    # 1. Update Content if needed
                     sig_data = sig_updater.load(sig_path)
                     updated_data = {
                         key.replace(old_prefix, new_prefix, 1): value
@@ -95,6 +104,13 @@ class MoveDirectoryOperation(AbstractOperation):
                                 content=sig_updater.dump(updated_data),
                             )
                         )
+                    # 2. Move File
+                    dest_sig_path = ctx.sidecar_manager.get_signature_path(dest_item)
+                    all_ops.append(
+                        MoveFileOp(
+                            sig_path.relative_to(root), dest_sig_path.relative_to(root)
+                        )
+                    )
 
         # 3. Schedule the now-empty source directory for deletion
         all_ops.append(DeleteDirectoryOp(self.src_dir.relative_to(root)))

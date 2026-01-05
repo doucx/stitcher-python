@@ -23,10 +23,26 @@ def func2():
     # Line 3: "    foo = 1" -> foo starts at line 3, col 4
     # Line 4: "    return foo" -> foo starts at line 4, col 11
 
+    from stitcher.refactor.engine.graph import ReferenceType
+
     locations = [
-        UsageLocation(Path(""), lineno=3, col_offset=4, end_lineno=3, end_col_offset=7),
         UsageLocation(
-            Path(""), lineno=4, col_offset=11, end_lineno=4, end_col_offset=14
+            Path(""),
+            lineno=3,
+            col_offset=4,
+            end_lineno=3,
+            end_col_offset=7,
+            ref_type=ReferenceType.SYMBOL,
+            target_node_fqn="foo",
+        ),
+        UsageLocation(
+            Path(""),
+            lineno=4,
+            col_offset=11,
+            end_lineno=4,
+            end_col_offset=14,
+            ref_type=ReferenceType.SYMBOL,
+            target_node_fqn="foo",
         ),
     ]
 
