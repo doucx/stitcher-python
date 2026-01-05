@@ -46,16 +46,19 @@ def refactor_command(
         graph = SemanticGraph(root_path)
 
         # Discover packages to load from the monorepo structure
+        top_level_imports = set()
         packages_dir = root_path / "packages"
         if packages_dir.is_dir():
             for pkg_path in packages_dir.iterdir():
-                pyproject_path = pkg_path / "pyproject.toml"
-                if pyproject_path.exists():
-                    with pyproject_path.open("rb") as f:
-                        data = tomllib.load(f)
-                        pkg_name = data.get("project", {}).get("name")
-                        if pkg_name:
-                            graph.load(pkg_name)
+                src_dir = pkg_path / "src"
+                if src_dir.is_dir():
+                    for item in src_dir.iterdir():
+                        if item.is_dir() and (item / "__init__.py").exists():
+                            top_level_imports.add(item.name)
+
+        for pkg_name in sorted(list(top_level_imports)):
+            bus.debug(L.debug.log.msg, msg=f"Loading top-level package: {pkg_name}")
+            graph.load(pkg_name)
 
         ctx = RefactorContext(graph)
 

@@ -1,88 +1,97 @@
-Excellent. This is a perfect real-world test case for the new refactoring engine. The goal is to move the JSON files that define the `L.cli.*` pointers into a new `commands` subdirectory, and trust the engine to automatically update all Python code that references them.
+Your intuition is spot on. This is a classic namespace packaging problem, but with a subtle twist. You are absolutely correct that `pkgutil.extend_path` is the right mechanism, and our `pyneedle-*` packages are already using it.
 
-I will now create the necessary Stitcher Migration Pack (SMP) script.
+The root cause is slightly different and more specific to the refactor command's logic: it's mistakenly trying to load the *distribution package name* (e.g., `pyneedle-pointer`) as if it were an *importable package name*. Griffe, correctly, cannot find a module named `pyneedle-pointer`.
 
-## [WIP] feat: Create SMP script to refactor L.cli pointers
+The fix is to make the `refactor` command smarter. Instead of loading every distribution name it finds in `pyproject.toml`, it should discover the actual top-level *importable* packages (like `needle` and `stitcher`) and load those once. Griffe, combined with our correct `pkgutil` setup, will then properly assemble the full namespace.
+
+I will generate a plan to fix this loading logic.
+
+## [WIP] fix: Correct namespace package loading in refactor command
+
+### 错误分析
+
+用户在运行 `stitcher refactor apply` 时遇到 `ModuleNotFoundError`。
+
+1.  **根本原因**: `refactor_command` 的实现逻辑有误。它扫描 `packages/` 目录，读取每个子项目的 `pyproject.toml` 文件，并将其 `[project].name` (例如, `pyneedle-pointer`) 直接传递给 `SemanticGraph.load()`。
+2.  **问题点**: `pyneedle-pointer` 是一个**分发包 (distribution package)** 的名称，而不是一个**可导入包 (import package)** 的名称。Python 的导入系统（以及 Griffe）寻找的是名为 `needle` 的模块，而不是 `pyneedle-pointer`。
+3.  **结论**: 我们错误地将分发包名称当作了导入路径，导致 Griffe 无法找到模块。虽然我们正确地使用了 `pkgutil` 来创建 `needle` 命名空间包，但我们从未正确地指示 Griffe 去加载 `needle` 这个命名空间本身。
 
 ### 用户需求
 
-用户希望重构 `L` 对象的结构，将所有 `cli.*` 相关的语言资源指针移动到 `cli.commands.*` 下。这要求将 `packages/stitcher-common/src/stitcher/common/assets/needle/en/cli/` 目录下的 JSON 文件移动到新的 `.../cli/commands/` 子目录中，并自动更新所有 Python 代码中对这些指针的引用。
+修复 `refactor` 命令，使其能够正确理解并加载由多个分发包组成的命名空间包（如 `needle`），从而成功构建完整的语义图谱。
 
 ### 评论
 
-这是一个极佳的“吃自己的狗粮”(Dogfooding) 的实践。它不仅能提升项目结构清晰度，还能有效验证 `stitcher-refactor` 引擎的核心能力：处理文件系统操作（移动文件）并自动重构代码库中所有相关的符号引用，特别是对于 `L` 对象这种动态结构。
+这是一个非常关键的修复。一个健壮的重构引擎必须能够准确理解项目的模块结构，特别是像我们这样使用命名空间包的复杂单体仓库。修复这个问题将使重构引擎能够真正“看懂”整个项目。
 
 ### 目标
 
-1.  创建 `migrations` 目录（如果尚不存在）。
-2.  在该目录中创建一个名为 `001_refactor_cli_l_pointers.py` 的迁移脚本。
-3.  脚本将包含将 `cli/*.json` 文件移动到 `cli/commands/*.json` 的逻辑。
+修改 `packages/stitcher-cli/src/stitcher/cli/commands/refactor.py` 文件中的加载逻辑。新的逻辑将：
+1.  扫描 `packages` 目录。
+2.  识别出每个分发包提供的顶层可导入模块（例如，`pyneedle-pointer` 提供 `needle`）。
+3.  收集所有唯一的顶层模块名。
+4.  指示 `SemanticGraph` 加载这些唯一的顶层模块（`needle`, `stitcher`），而不是分发包的名称。
 
 ### 基本原理
 
-我将使用 `stitcher.refactor.migration.Move` 操作。根据 `stitcher-refactor` 的设计，`MoveFileOperation` 足够智能，能够：
-1.  根据文件的移动（从 `cli/` 到 `cli/commands/`），计算出 `L` 对象指针对应的 FQN 变更（从 `L.cli.*` 到 `L.cli.commands.*`）。
-2.  自动触发一个隐式的 `RenameSymbolOperation`，查找并更新代码库中所有对旧 FQN 的引用。
-
-这种方法将文件系统的变更作为“单一事实来源”，并让引擎自动处理代码层面的同步，是实现此重构任务最直接和最健壮的方式。
+我们将修改 `refactor_command` 中的循环。与其在循环中直接调用 `graph.load(pkg_name)`，我们将首先收集所有唯一的顶层包名到一个 `set` 中。这可以通过检查每个包的 `src/` 目录下的内容来确定。最后，在循环结束后，我们再遍历这个 `set`，一次性加载所有发现的顶层包。这将确保我们只加载 `needle` 一次，并让 `pkgutil` 和 Griffe 发挥作用，将所有 `pyneedle-*` 的部分组合成一个统一的 `needle` 命名空间。
 
 ### 标签
 
-#intent/build #flow/ready #priority/high #comp/cli #comp/common #concept/state #scope/dx #ai/instruct #task/domain/tooling #task/object/refactor-engine #task/action/dogfooding #task/state/begin
+#intent/fix #flow/ready #priority/critical #comp/cli #comp/refactor #concept/state #scope/core #ai/brainstorm #task/domain/tooling #task/object/refactor-engine #task/action/dogfooding #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建迁移脚本目录和文件
+#### Acts 1: 修正 `refactor` 命令的包加载逻辑
 
-首先，确保 `migrations` 目录存在，然后创建我们的迁移脚本。
-
-~~~~~act
-run_command
-~~~~~
-~~~~~bash
-mkdir -p migrations
-~~~~~
+我们将修补 `refactor.py` 文件，使其能够正确地发现并加载命名空间包。
 
 ~~~~~act
-write_file
-migrations/001_refactor_cli_l_pointers.py
+patch_file
+packages/stitcher-cli/src/stitcher/cli/commands/refactor.py
 ~~~~~
-~~~~~python
-from pathlib import Path
-from stitcher.refactor.migration import MigrationSpec, Move
+~~~~~python.old
+        # Discover packages to load from the monorepo structure
+        packages_dir = root_path / "packages"
+        if packages_dir.is_dir():
+            for pkg_path in packages_dir.iterdir():
+                pyproject_path = pkg_path / "pyproject.toml"
+                if pyproject_path.exists():
+                    with pyproject_path.open("rb") as f:
+                        data = tomllib.load(f)
+                        pkg_name = data.get("project", {}).get("name")
+                        if pkg_name:
+                            graph.load(pkg_name)
 
+        ctx = RefactorContext(graph)
+~~~~~
+~~~~~python.new
+        # Discover packages to load from the monorepo structure
+        top_level_imports = set()
+        packages_dir = root_path / "packages"
+        if packages_dir.is_dir():
+            for pkg_path in packages_dir.iterdir():
+                src_dir = pkg_path / "src"
+                if src_dir.is_dir():
+                    for item in src_dir.iterdir():
+                        if item.is_dir() and (item / "__init__.py").exists():
+                            top_level_imports.add(item.name)
 
-def upgrade(spec: MigrationSpec):
-    """
-    Refactors L.cli.* pointers to L.cli.commands.*.
+        for pkg_name in sorted(list(top_level_imports)):
+            bus.debug(L.debug.log.msg, msg=f"Loading top-level package: {pkg_name}")
+            graph.load(pkg_name)
 
-    This is achieved by moving the underlying JSON asset files. The
-    Stitcher refactor engine will automatically update all Python code
-    references.
-    """
-    base_path = Path("packages/stitcher-common/src/stitcher/common/assets/needle/en/cli")
-    target_dir = base_path / "commands"
-
-    # List of files to move.
-    files_to_move = ["app.json", "command.json", "option.json"]
-
-    for filename in files_to_move:
-        src_path = base_path / filename
-        dest_path = target_dir / filename
-
-        spec.add(Move(src=src_path, dest=dest_path))
+        ctx = RefactorContext(graph)
 ~~~~~
 
 ### 下一步建议
 
-脚本已创建。现在，请你手动执行以下命令来应用这个重构：
+这个补丁修正了加载逻辑。现在，请再次运行之前的迁移脚本：
 
 ```bash
 stitcher refactor apply migrations/001_refactor_cli_l_pointers.py
 ```
 
-执行后，请检查以下几点以验证结果：
-1.  `packages/stitcher-common/src/stitcher/common/assets/needle/en/cli/` 目录下的 JSON 文件是否已移动到 `commands` 子目录中。
-2.  `packages/stitcher-cli/src/stitcher/cli/` 下的 Python 文件中，类似 `L.cli.option.*` 的引用是否已自动更新为 `L.cli.commands.option.*`。
+这次它应该能够成功加载 `needle` 和 `stitcher` 命名空间，并正确地执行重构计划。
