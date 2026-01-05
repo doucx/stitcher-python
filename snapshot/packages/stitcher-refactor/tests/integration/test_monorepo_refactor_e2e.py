@@ -24,7 +24,8 @@ def test_move_file_in_monorepo_updates_cross_package_imports(tmp_path):
     #         main.py (imports SharedClass from pkga_lib.core)
     factory = WorkspaceFactory(tmp_path)
     project_root = (
-        factory.with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
+        factory.with_pyproject("packages/pkg_a")
+        .with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
         .with_source("packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass")
         .with_docs(
             "packages/pkg_a/src/pkga_lib/core.stitcher.yaml",
@@ -34,6 +35,7 @@ def test_move_file_in_monorepo_updates_cross_package_imports(tmp_path):
             ".stitcher/signatures/packages/pkg_a/src/pkga_lib/core.json",
             json.dumps({"pkga_lib.core.SharedClass": {"hash": "abc"}}),
         )
+        .with_pyproject("packages/pkg_b")
         .with_source("packages/pkg_b/src/pkgb_app/__init__.py", "")
         .with_source(
             "packages/pkg_b/src/pkgb_app/main.py",

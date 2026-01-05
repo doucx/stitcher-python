@@ -17,7 +17,8 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
     # 1. ARRANGE: Create a complex, multi-level directory structure
     factory = WorkspaceFactory(tmp_path)
     project_root = (
-        factory.with_source("src/cascade/__init__.py", "")
+        factory.with_pyproject(".")
+        .with_source("src/cascade/__init__.py", "")
         .with_source("src/cascade/core/__init__.py", "")
         .with_source("src/cascade/core/adapters/__init__.py", "")
         .with_source("src/cascade/core/adapters/cache/__init__.py", "")

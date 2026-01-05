@@ -12,7 +12,8 @@ def test_move_file_flat_layout(tmp_path):
     # 1. Arrange: Declaratively build the project structure
     factory = WorkspaceFactory(tmp_path)
     project_root = (
-        factory.with_source("mypkg/__init__.py", "")
+        factory.with_pyproject(".")
+        .with_source("mypkg/__init__.py", "")
         .with_source("mypkg/old.py", "class A:\n    pass")
         .with_source(
             "mypkg/app.py",

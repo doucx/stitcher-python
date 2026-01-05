@@ -18,7 +18,8 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
     # 1. SETUP: Declaratively build the project
     factory = WorkspaceFactory(tmp_path)
     project_root = (
-        factory.with_source("mypkg/core/__init__.py", "")
+        factory.with_pyproject(".")
+        .with_source("mypkg/core/__init__.py", "")
         .with_source("mypkg/core/utils.py", "class Helper: pass")
         .with_raw_file("mypkg/core/config.txt", "setting=value")
         .with_raw_file("mypkg/core/.env", "SECRET=123")

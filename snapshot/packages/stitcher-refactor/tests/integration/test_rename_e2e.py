@@ -15,7 +15,8 @@ def test_rename_symbol_end_to_end(tmp_path):
     # 1. Setup: Use WorkspaceFactory to declaratively build the project
     factory = WorkspaceFactory(tmp_path)
     project_root = (
-        factory.with_source(
+        factory.with_pyproject(".")
+        .with_source(
             "mypkg/core.py",
             """
         class OldHelper:
