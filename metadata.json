@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 动态调整 `cov` 命令的输出列宽以确保对齐", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767767923.9301796, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test: 为 `stitcher cov` 命令添加集成测试", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767768048.520944, "duration_ms": 0}}

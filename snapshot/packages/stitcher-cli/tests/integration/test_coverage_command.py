@@ -1,55 +1,3 @@
-当然，为新功能添加测试是确保其健壮性和正确性的关键一步。我将为 `stitcher cov` 命令创建一个集成测试，它将验证覆盖率计算的准确性、对边缘情况的处理以及输出格式的对齐。
-
-我将在 `stitcher-cli` 包的集成测试目录中添加一个新的测试文件。
-
-## [WIP] test: 为 `stitcher cov` 命令添加集成测试
-
-### 用户需求
-
-为 `stitcher cov` 命令添加一个全面的集成测试，以验证其功能的正确性。
-
-### 评论
-
-这是开发工作流程中至关重要的一步。一个好的测试套件可以防止未来的重构破坏现有功能，并确保我们交付的功能是可靠的。
-
-### 目标
-
-1.  创建一个新的测试文件 `packages/stitcher-cli/tests/integration/test_coverage_command.py`。
-2.  使用 `WorkspaceFactory` 构建一个包含多种文档覆盖情况的测试项目。
-3.  测试场景应包括：
-    *   完全文档化的模块 (100%)。
-    *   部分文档化的模块。
-    *   完全未文档化的模块 (0%)。
-    *   没有公开 API 的模块（应从报告中排除）。
-4.  使用 `typer.testing.CliRunner` 执行 `cov` 命令。
-5.  断言输出的准确性，包括每个文件和总计的 `Stmts`、`Miss` 和 `Cover` 数据。
-6.  断言输出表格的列是完美对齐的。
-
-### 基本原理
-
-测试将首先利用 `stitcher-test-utils` 中的 `WorkspaceFactory` 在一个临时目录中构建一个微型 Python 项目。该项目将包含我们设计的所有测试场景的源文件和 `.stitcher.yaml` 文件。
-
-然后，测试将 `cd` 到这个临时目录，并使用 `CliRunner` 调用 `stitcher cov` 命令，捕获其标准输出。
-
-最后，我们将对捕获到的输出进行解析和断言。我们会逐行检查报告中的数据是否与预期相符，并通过检查关键列的起始索引来验证表格的对齐是否正确，确保我们之前的修复是有效的。
-
-### 标签
-
-#intent/tooling #flow/ready #priority/high #comp/cli #comp/tests #task/domain/cli #task/object/coverage-report #task/action/testing #task/state/continue
-
----
-
-### Script
-
-#### Acts 1: 创建 `cov` 命令的集成测试文件
-
-我们将创建 `test_coverage_command.py` 文件，其中包含验证 `cov` 命令功能所需的所有逻辑。
-
-~~~~~act
-write_file
-packages/stitcher-cli/tests/integration/test_coverage_command.py
-~~~~~
-~~~~~python
 import pytest
 from typer.testing import CliRunner
 
@@ -206,10 +154,3 @@ def test_coverage_command_output_and_alignment(tmp_path, monkeypatch):
     assert short_path_line.find(str(ud_data["stmts"])) >= stmts_start
     assert short_path_line.find(str(ud_data["miss"])) >= miss_start
     assert short_path_line.find(ud_data["cover"]) >= cover_start
-~~~~~
-
-### 下一步建议
-
-我们已经为 `stitcher cov` 命令添加了一个健壮的集成测试。现在，代码和测试都已就绪。
-
-我建议将这个功能作为一个完整的单元进行提交。如果你同意，我将生成一个 `[COMMIT]` 计划来完成这个任务。
