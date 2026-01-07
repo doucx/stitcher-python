@@ -1,215 +1,91 @@
-当然，为新功能添加测试是确保其健壮性和正确性的关键一步。我将为 `stitcher cov` 命令创建一个集成测试，它将验证覆盖率计算的准确性、对边缘情况的处理以及输出格式的对齐。
+啊，你完全正确！我的测试失败了，非常感谢你提供了详细的错误日志。这清楚地表明我的假设是错误的。
 
-我将在 `stitcher-cli` 包的集成测试目录中添加一个新的测试文件。
+这是一个典型的逻辑缺陷：我期望一个没有*公开* API 的文件被视为“不可文档化”，但我的 `is_documentable` 方法的实现不够严格，它只要看到任何函数或类（即使是私有的）就将其标记为可文档化。这导致 `get_public_documentable_fqns` 错误地为该文件添加了 `__doc__` 作为唯一需要文档化的符号，从而使其出现在了报告中。
 
-## [WIP] test: 为 `stitcher cov` 命令添加集成测试
+我将立即修复这个逻辑错误。
+
+## [WIP] fix: 修正 `is_documentable` 逻辑以正确排除私有模块
+
+### 错误分析
+
+测试失败的根本原因是 `ModuleDef.is_documentable` 方法的实现过于宽松。它通过检查 `self.functions` 或 `self.classes` 列表是否为空来判断模块是否包含代码，但没有检查这些函数或类是否是公开的（即，名称不以下划线开头）。
+
+因此，对于只包含 `_private_func` 的 `not_documentable.py` 文件：
+1.  `is_documentable()` 返回了 `True`。
+2.  这导致 `get_public_documentable_fqns()` 认为该模块至少应该有一个模块级文档 (`__doc__`)。
+3.  最终，该文件被计算为 `Stmts: 1, Miss: 1, Cover: 0.0%` 并被包含在了报告中，导致了断言失败。
+
+正确的行为是，`is_documentable()` 应该只在模块包含*公开的*、可被文档化的符号时才返回 `True`。
 
 ### 用户需求
 
-为 `stitcher cov` 命令添加一个全面的集成测试，以验证其功能的正确性。
+用户要求 `stitcher cov` 报告不应包含那些只含有私有成员（private members）的模块。
 
 ### 评论
 
-这是开发工作流程中至关重要的一步。一个好的测试套件可以防止未来的重构破坏现有功能，并确保我们交付的功能是可靠的。
+这是一个非常重要的修复，它使 `cov` 命令的行为更加符合直觉和用户的期望。感谢你通过测试发现了这个缺陷。
 
 ### 目标
 
-1.  创建一个新的测试文件 `packages/stitcher-cli/tests/integration/test_coverage_command.py`。
-2.  使用 `WorkspaceFactory` 构建一个包含多种文档覆盖情况的测试项目。
-3.  测试场景应包括：
-    *   完全文档化的模块 (100%)。
-    *   部分文档化的模块。
-    *   完全未文档化的模块 (0%)。
-    *   没有公开 API 的模块（应从报告中排除）。
-4.  使用 `typer.testing.CliRunner` 执行 `cov` 命令。
-5.  断言输出的准确性，包括每个文件和总计的 `Stmts`、`Miss` 和 `Cover` 数据。
-6.  断言输出表格的列是完美对齐的。
+1.  修改 `stitcher-spec` 包中的 `ModuleDef.is_documentable` 方法。
+2.  使其在判断时，只考虑公开的函数和类。
 
 ### 基本原理
 
-测试将首先利用 `stitcher-test-utils` 中的 `WorkspaceFactory` 在一个临时目录中构建一个微型 Python 项目。该项目将包含我们设计的所有测试场景的源文件和 `.stitcher.yaml` 文件。
-
-然后，测试将 `cd` 到这个临时目录，并使用 `CliRunner` 调用 `stitcher cov` 命令，捕获其标准输出。
-
-最后，我们将对捕获到的输出进行解析和断言。我们会逐行检查报告中的数据是否与预期相符，并通过检查关键列的起始索引来验证表格的对齐是否正确，确保我们之前的修复是有效的。
+我将更新 `is_documentable` 方法中的 `any()` 检查，为函数和类列表添加一个条件，即 `not member.name.startswith("_")`，这与它检查属性的方式保持一致。
 
 ### 标签
 
-#intent/tooling #flow/ready #priority/high #comp/cli #comp/tests #task/domain/cli #task/object/coverage-report #task/action/testing #task/state/continue
+#intent/fix #flow/ready #priority/high #comp/spec #task/domain/cli #task/object/coverage-report #task/action/bug-fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建 `cov` 命令的集成测试文件
+#### Acts 1: 修正 `is_documentable` 的实现
 
-我们将创建 `test_coverage_command.py` 文件，其中包含验证 `cov` 命令功能所需的所有逻辑。
+这是解决问题的核心。我们将更新 `models.py` 中的这个方法。
 
 ~~~~~act
-write_file
-packages/stitcher-cli/tests/integration/test_coverage_command.py
+patch_file
+packages/stitcher-spec/src/stitcher/spec/models.py
 ~~~~~
-~~~~~python
-import pytest
-from typer.testing import CliRunner
-
-from stitcher.cli.main import app
-from stitcher.test_utils import WorkspaceFactory
-
-runner = CliRunner()
-
-
-def test_coverage_command_output_and_alignment(tmp_path, monkeypatch):
-    """
-    Tests the `stitcher cov` command for:
-    1. Correct coverage calculation for various scenarios.
-    2. Correct aggregation in the TOTAL line.
-    3. Proper column alignment regardless of path length.
-    4. Exclusion of non-documentable modules from the report.
-    """
-    # 1. Setup a workspace with diverse documentation coverage
-    ws_root = (
-        WorkspaceFactory(tmp_path)
-        .with_config({"scan_paths": ["src"]})
-        .with_source(
-            "src/fully_documented.py",
-            """
-            \"\"\"Module docstring.\"\"\"
-            def func_one():
-                pass
-            class MyClass:
-                def method_one(self):
-                    pass
-            """,
+~~~~~python.old
+    def is_documentable(self) -> bool:
+        # A module is documentable if it has a docstring, public attributes,
+        # functions, or classes. Boilerplate like __all__ or __path__ should be ignored.
+        has_public_attributes = any(
+            not attr.name.startswith("_") for attr in self.attributes
         )
-        .with_docs(
-            "src/fully_documented.stitcher.yaml",
-            {
-                "__doc__": "Module docstring.",
-                "func_one": "Doc for func_one.",
-                "MyClass": "Doc for MyClass.",
-                "MyClass.method_one": "Doc for method_one.",
-            },
+
+        return bool(
+            self.docstring or has_public_attributes or self.functions or self.classes
         )
-        .with_source(
-            "src/partially/documented_long_path.py",
-            """
-            \"\"\"Module docstring.\"\"\"
-            def func_documented():
-                pass
-            def func_undocumented():
-                pass
-            """,
+~~~~~
+~~~~~python.new
+    def is_documentable(self) -> bool:
+        # A module is documentable if it has a docstring, or any public
+        # attributes, functions, or classes.
+        has_public_attributes = any(
+            not attr.name.startswith("_") for attr in self.attributes
         )
-        .with_docs(
-            "src/partially/documented_long_path.stitcher.yaml",
-            {
-                "__doc__": "Module docstring.",
-                "func_documented": "Doc for func_documented.",
-            },
+        has_public_functions = any(
+            not func.name.startswith("_") for func in self.functions
         )
-        .with_source(
-            "src/undocumented.py",
-            """
-            def func_a():
-                pass
-            def func_b():
-                pass
-            """,
+        has_public_classes = any(
+            not cls.name.startswith("_") for cls in self.classes
         )
-        .with_source(
-            "src/not_documentable.py",
-            """
-            # This file contains no public, documentable symbols.
-            def _private_func():
-                pass
-            _private_var = 1
-            """,
+
+        return bool(
+            self.docstring
+            or has_public_attributes
+            or has_public_functions
+            or has_public_classes
         )
-        .build()
-    )
-    monkeypatch.chdir(ws_root)
-
-    # 2. Run the command
-    result = runner.invoke(app, ["cov"], catch_exceptions=False)
-
-    # 3. Assertions
-    assert result.exit_code == 0, f"CLI command failed: {result.stdout}"
-    output = result.stdout
-
-    # Helper to parse a report line into a dict
-    def parse_line(line_str: str) -> dict:
-        parts = line_str.split()
-        return {
-            "name": parts[0],
-            "stmts": int(parts[1]),
-            "miss": int(parts[2]),
-            "cover": parts[3],
-        }
-
-    lines = output.strip().split("\n")
-    report_lines = [l for l in lines if l.strip().startswith("src/")]
-    report_data = {parse_line(l)["name"]: parse_line(l) for l in report_lines}
-
-    # -- Assert Data Correctness --
-    assert "src/fully_documented.py" in report_data
-    fd_data = report_data["src/fully_documented.py"]
-    assert fd_data["stmts"] == 4
-    assert fd_data["miss"] == 0
-    assert fd_data["cover"] == "100.0%"
-
-    assert "src/partially/documented_long_path.py" in report_data
-    pd_data = report_data["src/partially/documented_long_path.py"]
-    assert pd_data["stmts"] == 3
-    assert pd_data["miss"] == 1
-    assert pd_data["cover"] == "66.7%"
-
-    assert "src/undocumented.py" in report_data
-    ud_data = report_data["src/undocumented.py"]
-    assert ud_data["stmts"] == 3
-    assert ud_data["miss"] == 3
-    assert ud_data["cover"] == "0.0%"
-
-    assert "src/not_documentable.py" not in report_data, "Non-documentable files should be excluded"
-
-    # -- Assert TOTAL line --
-    total_line = next((l for l in lines if l.startswith("TOTAL")), None)
-    assert total_line is not None, "TOTAL line is missing from output"
-    total_data = parse_line(total_line)
-    assert total_data["name"] == "TOTAL"
-    assert total_data["stmts"] == 10  # 4 + 3 + 3
-    assert total_data["miss"] == 4  # 0 + 1 + 3
-    assert total_data["cover"] == "60.0%" # (10-4)/10
-
-    # -- Assert Alignment --
-    header_line = next(l for l in lines if l.strip().startswith("Name"))
-    long_path_line = next(l for l in lines if "documented_long_path.py" in l)
-
-    # Find start index of each column in the header
-    stmts_start = header_line.find("Stmts")
-    miss_start = header_line.find("Miss")
-    cover_start = header_line.find("Cover")
-
-    # Check that TOTAL line columns align with header
-    # We find the start of the number, which might be padded with spaces
-    assert total_line.find(str(total_data["stmts"])) >= stmts_start
-    assert total_line.find(str(total_data["miss"])) >= miss_start
-    assert total_line.find(total_data["cover"]) >= cover_start
-
-    # Check a data line with a long path for alignment
-    assert long_path_line.find(str(pd_data["stmts"])) >= stmts_start
-    assert long_path_line.find(str(pd_data["miss"])) >= miss_start
-    assert long_path_line.find(pd_data["cover"]) >= cover_start
-
-    # Check a data line with a short path for alignment
-    short_path_line = next(l for l in lines if "undocumented.py" in l)
-    assert short_path_line.find(str(ud_data["stmts"])) >= stmts_start
-    assert short_path_line.find(str(ud_data["miss"])) >= miss_start
-    assert short_path_line.find(ud_data["cover"]) >= cover_start
 ~~~~~
 
 ### 下一步建议
 
-我们已经为 `stitcher cov` 命令添加了一个健壮的集成测试。现在，代码和测试都已就绪。
+现在逻辑已经修正。请重新运行你之前执行的测试。它现在应该能够成功通过。
 
-我建议将这个功能作为一个完整的单元进行提交。如果你同意，我将生成一个 `[COMMIT]` 计划来完成这个任务。
+一旦你确认测试通过，我将生成 `[COMMIT]` 计划来将这个功能及其测试和修复一起提交。

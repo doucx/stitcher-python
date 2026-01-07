@@ -68,14 +68,23 @@ class ModuleDef:
     dunder_all: Optional[str] = None
 
     def is_documentable(self) -> bool:
-        # A module is documentable if it has a docstring, public attributes,
-        # functions, or classes. Boilerplate like __all__ or __path__ should be ignored.
+        # A module is documentable if it has a docstring, or any public
+        # attributes, functions, or classes.
         has_public_attributes = any(
             not attr.name.startswith("_") for attr in self.attributes
         )
+        has_public_functions = any(
+            not func.name.startswith("_") for func in self.functions
+        )
+        has_public_classes = any(
+            not cls.name.startswith("_") for cls in self.classes
+        )
 
         return bool(
-            self.docstring or has_public_attributes or self.functions or self.classes
+            self.docstring
+            or has_public_attributes
+            or has_public_functions
+            or has_public_classes
         )
 
     def get_all_fqns(self) -> List[str]:
