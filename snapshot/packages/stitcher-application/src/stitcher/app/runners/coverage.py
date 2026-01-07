@@ -41,11 +41,28 @@ class CoverageRunner:
         )
 
     def _render_report(self, results: List[CoverageResult]):
-        typer.echo("\n" + ("-" * 65))
+        if not results:
+            return
+
+        # Dynamically determine column width
+        paths = [r.path for r in results if r.total_symbols > 0]
+        max_path_len = max(len(p) for p in paths) if paths else 0
+        name_col_width = max(len("Name"), len("TOTAL"), max_path_len)
+
+        # Define other column widths
+        stmts_col_width = 7
+        miss_col_width = 7
+        cover_col_width = 10
+        
+        # Calculate total width for the horizontal rule
+        total_width = name_col_width + stmts_col_width + miss_col_width + cover_col_width + 3 # For spaces
+
+        typer.echo("\n" + ("-" * total_width))
         typer.secho(
-            f"{'Name':<35} {'Stmts':>7} {'Miss':>7} {'Cover':>10}", bold=True
+            f"{'Name':<{name_col_width}} {'Stmts':>{stmts_col_width}} {'Miss':>{miss_col_width}} {'Cover':>{cover_col_width}}",
+            bold=True,
         )
-        typer.echo("-" * 65)
+        typer.echo("-" * total_width)
 
         total_stmts = 0
         total_miss = 0
@@ -56,9 +73,9 @@ class CoverageRunner:
 
             total_stmts += res.total_symbols
             total_miss += res.missing_symbols
-            
+
             cover_str = f"{res.coverage:.1f}%"
-            
+
             color = typer.colors.GREEN
             if res.coverage < 50:
                 color = typer.colors.RED
@@ -66,18 +83,30 @@ class CoverageRunner:
                 color = typer.colors.YELLOW
 
             typer.secho(
-                f"{res.path:<35} {res.total_symbols:>7} {res.missing_symbols:>7} {cover_str:>10}",
+                (
+                    f"{res.path:<{name_col_width}} "
+                    f"{res.total_symbols:>{stmts_col_width}} "
+                    f"{res.missing_symbols:>{miss_col_width}} "
+                    f"{cover_str:>{cover_col_width}}"
+                ),
                 fg=color,
             )
 
-        typer.echo("-" * 65)
+        typer.echo("-" * total_width)
 
         total_coverage = (
-            ((total_stmts - total_miss) / total_stmts * 100) if total_stmts > 0 else 100.0
+            ((total_stmts - total_miss) / total_stmts * 100)
+            if total_stmts > 0
+            else 100.0
         )
         cover_str = f"{total_coverage:.1f}%"
         typer.secho(
-            f"{'TOTAL':<35} {total_stmts:>7} {total_miss:>7} {cover_str:>10}",
+            (
+                f"{'TOTAL':<{name_col_width}} "
+                f"{total_stmts:>{stmts_col_width}} "
+                f"{total_miss:>{miss_col_width}} "
+                f"{cover_str:>{cover_col_width}}"
+            ),
             bold=True,
         )
         typer.echo("")
