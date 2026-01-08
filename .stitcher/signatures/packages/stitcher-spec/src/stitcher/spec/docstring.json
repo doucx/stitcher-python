@@ -1,0 +1,35 @@
+{
+  "DocstringIR": {
+    "baseline_yaml_content_hash": "c899e3a111ffc5bcc16858788d8a8167c5bb0fa2492bee2b9611c98147d060b9"
+  },
+  "DocstringIR.addons": {},
+  "DocstringIR.extended": {},
+  "DocstringIR.metadata": {},
+  "DocstringIR.sections": {},
+  "DocstringIR.summary": {},
+  "DocstringItem": {
+    "baseline_yaml_content_hash": "c199caa67e8bb7729de236dbaacb05478a3a2df2108d44ad92d0fdd4d3ee203f"
+  },
+  "DocstringItem.annotation": {},
+  "DocstringItem.default": {},
+  "DocstringItem.description": {},
+  "DocstringItem.name": {},
+  "DocstringSection": {
+    "baseline_yaml_content_hash": "07852a09275b76a2fd2c8afdf77a72cbea11a46bde0d1b3f3b01cb75b69ab32f"
+  },
+  "DocstringSection.content": {},
+  "DocstringSection.kind": {},
+  "DocstringSection.title": {},
+  "SectionKind": {},
+  "SectionKind.ADMONITION": {},
+  "SectionKind.ATTRIBUTES": {},
+  "SectionKind.EXAMPLES": {},
+  "SectionKind.NOTES": {},
+  "SectionKind.PARAMETERS": {},
+  "SectionKind.RAISES": {},
+  "SectionKind.RETURNS": {},
+  "SectionKind.SEE_ALSO": {},
+  "SectionKind.TEXT": {},
+  "SectionKind.WARNING": {},
+  "SectionKind.YIELDS": {}
+}

@@ -4,28 +4,7 @@ from stitcher.spec import DocstringIR
 
 
 class DocstringMerger:
-    """
-    Service responsible for merging DocstringIR objects.
-    Encapsulates strategies for resolving conflicts and preserving data (like Addons).
-    """
-
-    def merge(
-        self, base: Optional[DocstringIR], incoming: DocstringIR
-    ) -> DocstringIR:
-        """
-        Merges an incoming docstring (usually from source code) into a base docstring (usually from YAML).
-
-        Strategy:
-        - The `incoming` content (summary/sections) takes precedence (Overwrite).
-        - The `base` metadata (Addons) is preserved.
-
-        Args:
-            base: The existing documentation (can be None if new).
-            incoming: The new documentation from source.
-
-        Returns:
-            A new DocstringIR object representing the merged state.
-        """
+    def merge(self, base: Optional[DocstringIR], incoming: DocstringIR) -> DocstringIR:
         # If there is no base, there is nothing to preserve.
         if not base:
             return incoming

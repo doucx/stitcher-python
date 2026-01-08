@@ -1,8 +1,8 @@
 {
   "CheckRunner": {},
   "CheckRunner.__init__": {
-    "baseline_code_signature_text": "def __init__(self, root_path: Path, scanner: ScannerService, parser: LanguageParserProtocol, doc_manager: DocumentManager, sig_manager: SignatureManager, interaction_handler: InteractionHandler | None):",
-    "baseline_code_structure_hash": "78569a22e0d3aa79ba2d315fac03feb29c345c3e93405274b362befda3244528"
+    "baseline_code_signature_text": "def __init__(self, root_path: Path, scanner: ScannerService, parser: LanguageParserProtocol, doc_manager: DocumentManager, sig_manager: SignatureManager, differ: Differ, interaction_handler: InteractionHandler | None):",
+    "baseline_code_structure_hash": "20350e480c5d9cb602efa01ee62e3334528c3b9ad13366282e8564bf4c62458d"
   },
   "CheckRunner._analyze_file": {
     "baseline_code_signature_text": "def _analyze_file(self, module: ModuleDef) -> tuple[FileCheckResult, list[InteractionContext]]:",
@@ -16,6 +16,7 @@
     "baseline_code_signature_text": "def _generate_diff(self, a: str, b: str, label_a: str, label_b: str) -> str:",
     "baseline_code_structure_hash": "62016244a2fa1e685039c4248ad132dc2bdf55fb5b67eabda296c12fb9f79b73"
   },
+  "CheckRunner.differ": {},
   "CheckRunner.doc_manager": {},
   "CheckRunner.interaction_handler": {},
   "CheckRunner.parser": {},

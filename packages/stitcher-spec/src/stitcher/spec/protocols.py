@@ -1,4 +1,4 @@
-from typing import Protocol, Dict, Union, Optional, List
+from typing import Protocol, Dict, Union, Optional, List, Any
 from .models import ModuleDef, FunctionDef, ClassDef
 from .fingerprint import Fingerprint
 from .docstring import DocstringIR
@@ -28,3 +28,9 @@ class DocstringParserProtocol(Protocol):
 
 class DocstringRendererProtocol(Protocol):
     def render(self, docstring_ir: DocstringIR) -> str: ...
+
+
+class DocstringSerializerProtocol(Protocol):
+    def to_yaml(self, ir: DocstringIR) -> Dict[str, Any]: ...
+
+    def from_yaml(self, data: Union[str, Dict[str, Any]]) -> DocstringIR: ...

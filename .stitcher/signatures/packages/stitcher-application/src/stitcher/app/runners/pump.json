@@ -1,8 +1,8 @@
 {
   "PumpRunner": {},
   "PumpRunner.__init__": {
-    "baseline_code_signature_text": "def __init__(self, root_path: Path, scanner: ScannerService, parser: LanguageParserProtocol, doc_manager: DocumentManager, sig_manager: SignatureManager, transformer: LanguageTransformerProtocol, interaction_handler: InteractionHandler | None):",
-    "baseline_code_structure_hash": "10debbfb28e62f23c1b11510da3fe6c0f3aa6d60a740f41edca51d104c505d77"
+    "baseline_code_signature_text": "def __init__(self, root_path: Path, scanner: ScannerService, parser: LanguageParserProtocol, doc_manager: DocumentManager, sig_manager: SignatureManager, transformer: LanguageTransformerProtocol, differ: Differ, merger: DocstringMerger, interaction_handler: InteractionHandler | None):",
+    "baseline_code_structure_hash": "d28416ab99cc1b2a5cf41b66022e52de41c53f84628e729c867dd7608658c39f"
   },
   "PumpRunner._generate_diff": {
     "baseline_code_signature_text": "def _generate_diff(self, a: str, b: str, label_a: str, label_b: str) -> str:",
@@ -13,8 +13,10 @@
     "baseline_code_structure_hash": "c599468497a324893d71ada59c115f03bc36d7e4aa7b7dc191bac64d9576295e",
     "baseline_yaml_content_hash": "cbf69f638415d6a86cafdba400d9ba2409d9b0743f0aace0bf9a561c233f8556"
   },
+  "PumpRunner.differ": {},
   "PumpRunner.doc_manager": {},
   "PumpRunner.interaction_handler": {},
+  "PumpRunner.merger": {},
   "PumpRunner.parser": {},
   "PumpRunner.root_path": {},
   "PumpRunner.run": {

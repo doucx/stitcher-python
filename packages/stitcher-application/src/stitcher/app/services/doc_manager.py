@@ -17,34 +17,32 @@ class DocumentManager:
         self.parser = RawDocstringParser()
 
     def _deserialize_ir(self, data: Union[str, Dict[str, Any]]) -> DocstringIR:
-        """Converts YAML data (string or dict) into DocstringIR."""
         if isinstance(data, str):
             return self.parser.parse(data)
-        
+
         if isinstance(data, dict):
             summary = data.get("Raw", "")
             # Assume other keys starting with "Addon." are addons
             addons = {k: v for k, v in data.items() if k.startswith("Addon.")}
-            
+
             # Future: Handle structured sections (Args, Returns) here
-            
+
             ir = self.parser.parse(summary)
             ir.addons = addons
             return ir
-            
+
         return DocstringIR()
 
     def _serialize_ir(self, ir: DocstringIR) -> Union[str, Dict[str, Any]]:
-        """Converts DocstringIR back to YAML data (string or dict)."""
         summary = ir.summary or ""
-        
+
         # If we have addons, we MUST use the dictionary format (Hybrid Mode)
         if ir.addons:
             output = {"Raw": summary}
             output.update(ir.addons)
             # Future: Serialize structured sections here
             return output
-            
+
         # Otherwise, degrade to simple string (Raw Mode)
         return summary
 
@@ -57,7 +55,9 @@ class DocumentManager:
             docs[full_name] = self.parser.parse(func.docstring)
         return docs
 
-    def _extract_from_class(self, cls: ClassDef, prefix: str = "") -> Dict[str, DocstringIR]:
+    def _extract_from_class(
+        self, cls: ClassDef, prefix: str = ""
+    ) -> Dict[str, DocstringIR]:
         docs = {}
         full_name = f"{prefix}{cls.name}"
         if cls.docstring:
@@ -67,7 +67,6 @@ class DocumentManager:
         return docs
 
     def flatten_module_docs(self, module: ModuleDef) -> Dict[str, DocstringIR]:
-        """Extracts docs from source code module into a flat dict of IRs."""
         docs: Dict[str, DocstringIR] = {}
         if module.docstring:
             docs["__doc__"] = self.parser.parse(module.docstring)
@@ -85,31 +84,29 @@ class DocumentManager:
         return docs
 
     def save_docs_for_module(self, module: ModuleDef) -> Path:
-        """Extracts docs from module (code), serializes them, and saves to YAML."""
         ir_map = self.flatten_module_docs(module)
         if not ir_map:
             return Path("")
-        
+
         # Convert IRs to YAML-ready data (str or dict)
         yaml_data = {fqn: self._serialize_ir(ir) for fqn, ir in ir_map.items()}
-        
+
         module_path = self.root_path / module.file_path
         output_path = module_path.with_suffix(".stitcher.yaml")
         self.adapter.save(output_path, yaml_data)
         return output_path
 
     def load_docs_for_module(self, module: ModuleDef) -> Dict[str, DocstringIR]:
-        """Loads YAML doc file and deserializes content into DocstringIR objects."""
         if not module.file_path:
             return {}
         module_path = self.root_path / module.file_path
         doc_path = module_path.with_suffix(".stitcher.yaml")
-        
-        raw_data = self.adapter.load(doc_path) # returns Dict[str, Any] now ideally
-        
+
+        raw_data = self.adapter.load(doc_path)  # returns Dict[str, Any] now ideally
+
         # Adapter.load is typed to return Dict[str, str], but YamlAdapter actually returns parsed YAML.
         # We assume YamlAdapter can return Dict[str, Union[str, Dict]]
-        
+
         return {fqn: self._deserialize_ir(val) for fqn, val in raw_data.items()}
 
     def _apply_to_function(
@@ -120,7 +117,9 @@ class DocumentManager:
             # Injecting back to code: we only care about the summary (content)
             func.docstring = docs[full_name].summary
 
-    def _apply_to_class(self, cls: ClassDef, docs: Dict[str, DocstringIR], prefix: str = ""):
+    def _apply_to_class(
+        self, cls: ClassDef, docs: Dict[str, DocstringIR], prefix: str = ""
+    ):
         full_name = f"{prefix}{cls.name}"
         if full_name in docs:
             cls.docstring = docs[full_name].summary
@@ -175,7 +174,7 @@ class DocumentManager:
                 # Addons in YAML do not cause conflict with Source Code.
                 src_summary = source_docs[key].summary or ""
                 yaml_summary = yaml_docs[key].summary or ""
-                
+
                 if src_summary != yaml_summary:
                     doc_conflict.add(key)
                 else:
@@ -207,12 +206,12 @@ class DocumentManager:
                 "conflicts": [],
                 "reconciled_keys": [],
             }
-        
+
         yaml_docs = self.load_docs_for_module(module)
         updated_keys = []
         conflicts = []
         reconciled_keys = []
-        
+
         # Prepare new YAML state (we work with IRs)
         new_yaml_docs_ir = yaml_docs.copy()
 
@@ -224,7 +223,7 @@ class DocumentManager:
                 existing_ir = yaml_docs[key]
                 src_summary = source_ir.summary or ""
                 yaml_summary = existing_ir.summary or ""
-                
+
                 if yaml_summary != src_summary:
                     # Check for specific resolution first
                     action = resolution_map.get(key)
@@ -254,8 +253,10 @@ class DocumentManager:
 
         if updated_keys and not dry_run:
             # Serialize back to raw data
-            final_data = {fqn: self._serialize_ir(ir) for fqn, ir in new_yaml_docs_ir.items()}
-            
+            final_data = {
+                fqn: self._serialize_ir(ir) for fqn, ir in new_yaml_docs_ir.items()
+            }
+
             module_path = self.root_path / module.file_path
             output_path = module_path.with_suffix(".stitcher.yaml")
             self.adapter.save(output_path, final_data)
@@ -295,33 +296,31 @@ class DocumentManager:
         return keys
 
     def compute_yaml_content_hash(self, content: Union[str, Dict[str, Any]]) -> str:
-        """Computes a stable hash for either a string or a dict."""
         if isinstance(content, str):
             return hashlib.sha256(content.encode("utf-8")).hexdigest()
-        
+
         if isinstance(content, dict):
             # Canonicalize dict by sorting keys and ensuring JSON serialization
             canonical_json = json.dumps(content, sort_keys=True, ensure_ascii=False)
             return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
-            
+
         return hashlib.sha256(b"").hexdigest()
 
     def compute_yaml_content_hashes(self, module: ModuleDef) -> Dict[str, str]:
         # We need raw data here to compute the hash exactly as it is stored
         # But load_docs_for_module returns IRs.
         # We should load raw data directly from adapter for hashing.
-        
+
         if not module.file_path:
             return {}
         module_path = self.root_path / module.file_path
         doc_path = module_path.with_suffix(".stitcher.yaml")
-        
+
         # Load raw dict from YAML
         raw_data = self.adapter.load(doc_path)
-        
+
         return {
-            fqn: self.compute_yaml_content_hash(val)
-            for fqn, val in raw_data.items()
+            fqn: self.compute_yaml_content_hash(val) for fqn, val in raw_data.items()
         }
 
     def reformat_docs_for_module(self, module: ModuleDef) -> bool:
@@ -340,6 +339,6 @@ class DocumentManager:
         # Round-trip through IR to enforce schema
         irs = {fqn: self._deserialize_ir(val) for fqn, val in raw_data.items()}
         formatted_data = {fqn: self._serialize_ir(ir) for fqn, ir in irs.items()}
-        
+
         self.adapter.save(doc_path, formatted_data)
         return True

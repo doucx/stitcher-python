@@ -3,6 +3,12 @@ from typing import Tuple
 from stitcher.spec import DocstringParserProtocol, DocstringRendererProtocol
 from .parsers import RawDocstringParser, GriffeDocstringParser
 from .renderers import GoogleDocstringRenderer, NumpyDocstringRenderer
+from .serializers import (
+    RawSerializer,
+    GoogleSerializer,
+    NumpySerializer,
+)
+from stitcher.spec import DocstringSerializerProtocol
 
 
 class RawDocstringRenderer(DocstringRendererProtocol):
@@ -22,10 +28,10 @@ def get_docstring_codec(
 ) -> Tuple[DocstringParserProtocol, DocstringRendererProtocol]:
     """
     Factory to get the parser and renderer for a specific docstring style.
-    
+
     Args:
         style: "google", "numpy", or "raw".
-        
+
     Returns:
         (Parser, Renderer) tuple.
     """
@@ -33,6 +39,19 @@ def get_docstring_codec(
         return GriffeDocstringParser("google"), GoogleDocstringRenderer()
     elif style == "numpy":
         return GriffeDocstringParser("numpy"), NumpyDocstringRenderer()
-    
+
     # Default to raw
     return RawDocstringParser(), RawDocstringRenderer()
+
+
+def get_docstring_serializer(style: str) -> DocstringSerializerProtocol:
+    """
+    Factory to get the serializer for a specific docstring style.
+    """
+    if style == "google":
+        return GoogleSerializer()
+    elif style == "numpy":
+        return NumpySerializer()
+
+    # Default to raw
+    return RawSerializer()

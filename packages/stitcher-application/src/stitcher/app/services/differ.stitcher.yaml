@@ -1,4 +1,4 @@
 "Differ": |-
-  Service responsible for calculating and rendering differences.
+  Service responsible for generating human-readable differences between text or objects.
 "Differ.generate_text_diff": |-
-  Generates a standard unified diff between two strings.
+  Generates a unified diff string between two text blocks.

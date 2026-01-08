@@ -1,4 +1,4 @@
-from typing import Any, List, Union, cast
+from typing import List, Union
 
 import griffe
 from griffe import (
@@ -58,17 +58,17 @@ class GriffeDocstringParser(DocstringParserProtocol):
             return DocstringIR(summary=docstring_text)
 
         ir = DocstringIR()
-        
+
         # Check if the first section is text (Summary/Extended)
         # Griffe usually splits the first text block into summary and extended description implies logic.
         # But here we get a list of sections. The first one is typically the text description.
-        
+
         start_index = 0
         if parsed_sections and isinstance(parsed_sections[0], DocstringSectionText):
             text_content = parsed_sections[0].value
             # Simple heuristic: First line is summary, rest is extended.
             # Or use parsed_sections[0].title if it exists? No, text sections usually don't have titles unless explicit.
-            
+
             lines = text_content.strip().split("\n", 1)
             ir.summary = lines[0].strip()
             if len(lines) > 1:
@@ -93,7 +93,9 @@ class GriffeDocstringParser(DocstringParserProtocol):
             content = section.value
             return DocstringSection(kind="text", title=title, content=content)
 
-        if isinstance(section, (DocstringSectionParameters, DocstringSectionAttributes)):
+        if isinstance(
+            section, (DocstringSectionParameters, DocstringSectionAttributes)
+        ):
             # Parameters or Attributes (list of items)
             items = []
             for param in section.value:

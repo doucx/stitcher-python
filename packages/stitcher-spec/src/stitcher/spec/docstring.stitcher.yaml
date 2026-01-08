@@ -1,0 +1,6 @@
+"DocstringIR": |-
+  The Intermediate Representation of a docstring.
+"DocstringItem": |-
+  Represents a single item within a docstring section, like a parameter or a return value.
+"DocstringSection": |-
+  Represents a section of a docstring, like 'Args' or 'Returns'.
