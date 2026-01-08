@@ -27,13 +27,28 @@ class BaseStructuredRenderer(DocstringRendererProtocol):
 
     def _render_section(self, section: DocstringSection) -> str:
         raise NotImplementedError
+    
+    def _get_default_title(self, kind: str) -> str:
+        return ""
 
 
 class GoogleDocstringRenderer(BaseStructuredRenderer):
+    def _get_default_title(self, kind: str) -> str:
+        mapping = {
+            "parameters": "Args",
+            "returns": "Returns",
+            "raises": "Raises",
+            "yields": "Yields",
+            "attributes": "Attributes",
+        }
+        return mapping.get(kind, "")
+
     def _render_section(self, section: DocstringSection) -> str:
         lines = []
-        if section.title:
-            lines.append(f"{section.title}:")
+        title = section.title or self._get_default_title(section.kind)
+        
+        if title:
+            lines.append(f"{title}:")
         
         if section.kind == "text" or section.kind == "admonition":
              # Text content: Indent body
@@ -74,15 +89,26 @@ class GoogleDocstringRenderer(BaseStructuredRenderer):
 
 
 class NumpyDocstringRenderer(BaseStructuredRenderer):
+    def _get_default_title(self, kind: str) -> str:
+        mapping = {
+            "parameters": "Parameters",
+            "returns": "Returns",
+            "raises": "Raises",
+            "yields": "Yields",
+            "attributes": "Attributes",
+        }
+        return mapping.get(kind, "")
+
     def _render_section(self, section: DocstringSection) -> str:
         lines = []
+        title = section.title or self._get_default_title(section.kind)
         
         # NumPy Style:
         # Title
         # -----
-        if section.title:
-            lines.append(section.title)
-            lines.append("-" * len(section.title))
+        if title:
+            lines.append(title)
+            lines.append("-" * len(title))
 
         if section.kind == "text" or section.kind == "admonition":
              if isinstance(section.content, str):

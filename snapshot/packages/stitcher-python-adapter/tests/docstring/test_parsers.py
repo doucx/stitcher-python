@@ -28,7 +28,8 @@ class TestGriffeDocstringParser:
         # Note: Griffe parsing order depends on input
         
         args_section = next(s for s in ir.sections if s.kind == "parameters")
-        assert args_section.title == "Args"
+        # Griffe parses standard headers into kind, leaving title as None
+        assert args_section.title is None
         assert len(args_section.content) == 2
         assert args_section.content[0].name == "x"
         assert args_section.content[0].annotation == "int"
@@ -59,7 +60,8 @@ class TestGriffeDocstringParser:
         assert ir.summary == "Summary line."
         
         args_section = next(s for s in ir.sections if s.kind == "parameters")
-        assert args_section.title == "Parameters"
+        # Griffe parses standard headers into kind, leaving title as None
+        assert args_section.title is None
         assert args_section.content[0].name == "x"
         assert args_section.content[0].annotation == "int"
         assert args_section.content[0].description == "The x value."

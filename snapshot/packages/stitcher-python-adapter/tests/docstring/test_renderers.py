@@ -31,6 +31,10 @@ def sample_ir():
 
 class TestGoogleDocstringRenderer:
     def test_render_google(self, sample_ir):
+        # Ensure we test the default title generation logic by unsetting titles
+        for section in sample_ir.sections:
+            section.title = None
+
         renderer = GoogleDocstringRenderer()
         output = renderer.render(sample_ir)
         
@@ -50,9 +54,9 @@ Returns:
 
 class TestNumpyDocstringRenderer:
     def test_render_numpy(self, sample_ir):
-        # Adjust titles for Numpy conventions
-        sample_ir.sections[0].title = "Parameters" 
-        sample_ir.sections[1].title = "Returns" 
+        # Ensure we test the default title generation logic by unsetting titles
+        for section in sample_ir.sections:
+            section.title = None
 
         renderer = NumpyDocstringRenderer()
         output = renderer.render(sample_ir)
