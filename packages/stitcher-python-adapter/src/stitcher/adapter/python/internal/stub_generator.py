@@ -7,7 +7,6 @@ from stitcher.spec import (
     FunctionDef,
     ModuleDef,
 )
-from stitcher.common import format_docstring
 
 
 class StubGenerator:
@@ -17,13 +16,7 @@ class StubGenerator:
     def generate(self, module: ModuleDef) -> str:
         lines = []
 
-        # 1. Module Docstring
-        if module.docstring:
-            # format_docstring returns the literal without starting indent, so we prepend it.
-            # For module level (level 0), indent is empty string, but consistent logic applies.
-            formatted = format_docstring(module.docstring, self._indent(0))
-            lines.append(f"{self._indent(0)}{formatted}")
-            lines.append("")  # Empty line after docstring
+        # 1. Module Docstring (Ignored in skeleton generation)
 
         # 2. Imports (TODO: Pass these through from scanner later)
         if module.imports:
@@ -149,15 +142,8 @@ class StubGenerator:
 
         def_line = f"{indent}{prefix}def {func.name}({args_str}){ret_str}:"
 
-        # Body
-        if func.docstring:
-            lines.append(def_line)
-            formatted = format_docstring(func.docstring, self._indent(level + 1))
-            lines.append(f"{self._indent(level + 1)}{formatted}")
-            lines.append(f"{self._indent(level + 1)}...")
-        else:
-            # For functions without docstrings, use a single line format.
-            lines.append(f"{def_line} ...")
+        # Body - Always use ellipsis for skeleton
+        lines.append(f"{def_line} ...")
 
         return "\n".join(lines)
 
@@ -179,11 +165,7 @@ class StubGenerator:
         # Body
         has_content = False
 
-        # Docstring
-        if cls.docstring:
-            formatted = format_docstring(cls.docstring, self._indent(level + 1))
-            lines.append(f"{self._indent(level + 1)}{formatted}")
-            has_content = True
+        # Docstring (Ignored in skeleton)
 
         # Attributes
         for attr in cls.attributes:

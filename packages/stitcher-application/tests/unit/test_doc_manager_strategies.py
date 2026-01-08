@@ -80,9 +80,7 @@ class TestDocumentManagerStrategies:
         param_names = {item.name for item in param_section.content}
         assert param_names == {"param1", "param2"}
 
-    def test_raw_serialization_roundtrip(
-        self, doc_manager: DocumentManager, sample_ir
-    ):
+    def test_raw_serialization_roundtrip(self, doc_manager: DocumentManager, sample_ir):
         """Verify serialization for Raw style (which only keeps summary and addons)."""
         # 1. Set strategy to raw
         parser, _ = get_docstring_codec("raw")
