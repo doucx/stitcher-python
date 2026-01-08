@@ -1,4 +1,4 @@
-from typing import Protocol, Dict, Union, Optional, List
+from typing import Protocol, Dict, Union, Optional, List, Any
 from .models import ModuleDef, FunctionDef, ClassDef
 from .fingerprint import Fingerprint
 from .docstring import DocstringIR
