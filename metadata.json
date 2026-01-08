@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[COMMIT] feat(cli): 为多个子命令添加 --dry-run 选项以预览变更", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767854544.3187954, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "style: ruff and stitcher Capture: M basics.json, M pump.json, M basics.py", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767854560.3079476, "duration_ms": 0}}
