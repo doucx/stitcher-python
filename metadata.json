@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat: 解耦 DocumentManager 并集成结构化文档序列化", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767847722.7430527, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix: 导出 docstring 子模块的组件以修复导入错误", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767847860.6051056, "duration_ms": 0}}
