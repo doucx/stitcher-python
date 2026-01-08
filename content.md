@@ -1,127 +1,64 @@
 简要回答
 
-分析正确。这个 `AssertionError` 暴露了 `GriffeDocstringParser` 中一个微妙的语义映射错误。对于 `Returns` 部分，Griffe 将返回类型（如 "bool"）解析到了其内部模型的 `name` 字段。我的代码错误地将这个 `name` 直接映射到了我们 `DocstringItem` 的 `name` 字段，而不是 `annotation` 字段。
+好的，根据项目的 Monorepo 测试架构规范 (`d3-principle-pytest-monorepo-architecture`)，测试应该位于 `packages/<package>/tests/unit/` 或 `packages/<package>/tests/integration/` 目录下。
 
-我将立即修复这个映射逻辑。
+由于 `test_parsers.py` 和 `test_renderers.py` 验证的是具体的原子逻辑，它们属于单元测试。我将把它们移动到 `packages/stitcher-python-adapter/tests/unit/docstring/` 目录下，以匹配源码的目录结构。
 
-## [WIP] fix: 修正返回类型的语义映射
-
-### 错误分析
-
-**症状**: `AssertionError: assert None == 'bool'`
-**原因**: `GriffeDocstringParser` 在处理 `Returns` 类型的 Docstring Section 时，错误地将返回类型（Griffe 解析结果中的 `name`）赋给了 `DocstringItem` 的 `name` 属性，而 `annotation` 属性被置为 `None`。正确的做法是应将返回类型赋给 `annotation` 属性，`name` 属性应为 `None`（因为返回值通常没有名字）。
-**解决方案**: 修改 `_map_section` 方法，为 `DocstringSectionReturns` 和 `DocstringSectionYields` 提供专门的映射逻辑，将 Griffe `item.name` 映射到 `DocstringItem.annotation`。
+## [WIP] style: 调整测试目录结构以符合 Monorepo 规范
 
 ### 用户需求
 
-修复 `test_parsers.py` 中因 `Returns` 部分解析逻辑错误导致的断言失败。
+将文档解析器和渲染器的测试移动到更合适的位置。
 
 ### 评论
 
-这是一个关键的修复。确保 IR (Intermediate Representation) 的语义正确性是整个架构的基石。如果类型信息被错误地存储在 `name` 字段，后续的渲染器、校验器和代码生成器都将无法正常工作。这个错误暴露了对 Griffe 内部模型的假设偏差，现在我们将予以纠正。
+统一的测试目录结构对于大型 Monorepo 项目的可维护性至关重要。将测试按照 `unit/` 和 `integration/` 分类，并与源码结构对应，可以方便开发者快速定位测试用例。
 
 ### 目标
 
-1.  修改 `packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py`，分离并修正 `Returns`/`Yields`/`Raises` section 的映射逻辑。
-
-### 基本原理
-
-我们将专门处理 `DocstringSectionReturns` 和 `DocstringSectionYields`，确保从 Griffe 解析出的类型信息被正确地放入 `DocstringItem` 的 `annotation` 字段，从而使我们的 IR 模型与语义意图保持一致。
+1.  创建 `packages/stitcher-python-adapter/tests/unit/docstring/` 目录。
+2.  将 `test_parsers.py` 和 `test_renderers.py` 移动到新目录。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/high #comp/adapter #concept/parser #task/domain/docstring #task/object/adapter #task/action/fix #task/state/continue
+#intent/tune #flow/ready #priority/low #comp/tests #scope/dx #task/domain/testing #task/object/test-layout #task/action/refactor #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修正 `_map_section` 的映射逻辑
+#### Acts 1: 移动测试文件
 
-我们将重构 `_map_section` 方法，为不同类型的 Section 提供更精确的映射规则。
+我们将创建必要的目录结构并将测试文件移动到符合规范的位置。
 
 ~~~~~act
-patch_file
-packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py
+run_command
 ~~~~~
-~~~~~python.old
-        if isinstance(section, (DocstringSectionParameters, DocstringSectionAttributes)):
-            # Parameters or Attributes (list of items)
-            items = []
-            for param in section.value:
-                items.append(
-                    DocstringItem(
-                        name=param.name,
-                        annotation=str(param.annotation) if param.annotation else None,
-                        description=param.description or "",
-                        default=str(param.default) if param.default else None,
-                    )
-                )
-            return DocstringSection(kind=kind, title=title, content=items)
-
-        if isinstance(section, (DocstringSectionReturns, DocstringSectionYields, DocstringSectionRaises)):
-            # Returns, Yields, Raises (list of items, usually without name for Returns/Yields, or exception name for Raises)
-            items = []
-            for item in section.value:
-                # For Returns/Yields, 'name' might be empty or the variable name.
-                # For Raises, 'annotation' is usually the Exception type.
-                items.append(
-                    DocstringItem(
-                        name=item.name or "",
-                        annotation=str(item.annotation) if item.annotation else None,
-                        description=item.description or "",
-                    )
-                )
-            return DocstringSection(kind=kind, title=title, content=items)
-
-        if isinstance(section, DocstringSectionAdmonition):
-            # Admonitions like "Note", "Warning"
 ~~~~~
-~~~~~python.new
-        if isinstance(section, (DocstringSectionParameters, DocstringSectionAttributes)):
-            # Parameters or Attributes (list of items)
-            items = []
-            for param in section.value:
-                items.append(
-                    DocstringItem(
-                        name=param.name,
-                        annotation=str(param.annotation) if param.annotation else None,
-                        description=param.description or "",
-                        default=str(param.default) if param.default else None,
-                    )
-                )
-            return DocstringSection(kind=kind, title=title, content=items)
+mkdir -p packages/stitcher-python-adapter/tests/unit/docstring/
+~~~~~
 
-        if isinstance(section, (DocstringSectionReturns, DocstringSectionYields)):
-            # For returns/yields, Griffe often puts the type in the `name` field.
-            items = []
-            for item in section.value:
-                items.append(
-                    DocstringItem(
-                        name=None,  # The type is not a name
-                        annotation=item.name,  # The type is stored in griffe's 'name'
-                        description=item.description or "",
-                    )
-                )
-            return DocstringSection(kind=kind, title=title, content=items)
+~~~~~act
+move_file
+packages/stitcher-python-adapter/tests/docstring/test_parsers.py
+packages/stitcher-python-adapter/tests/unit/docstring/test_parsers.py
+~~~~~
 
-        if isinstance(section, DocstringSectionRaises):
-            # For raises, the exception type is in the `annotation` field.
-            items = []
-            for item in section.value:
-                items.append(
-                    DocstringItem(
-                        name=None,  # The exception type is not a name
-                        annotation=str(item.annotation) if item.annotation else None,
-                        description=item.description or "",
-                    )
-                )
-            return DocstringSection(kind=kind, title=title, content=items)
+~~~~~act
+move_file
+packages/stitcher-python-adapter/tests/docstring/test_renderers.py
+packages/stitcher-python-adapter/tests/unit/docstring/test_renderers.py
+~~~~~
 
-        if isinstance(section, DocstringSectionAdmonition):
-            # Admonitions like "Note", "Warning"
+~~~~~act
+run_command
+~~~~~
+~~~~~
+rmdir packages/stitcher-python-adapter/tests/docstring/
 ~~~~~
 
 ### 下一步建议
 
-此修复应该能解决当前的断言错误。请重新运行测试。如果所有测试都通过，适配器层的基本功能就已稳固，我们可以放心地进入 **阶段 2: 存储层升级**。
+测试目录已理顺。现在您可以运行这些测试（例如使用 `pytest packages/stitcher-python-adapter/tests/unit/docstring/`）来确保一切正常。
+
+完成此调整后，我们就正式完成了 **阶段 1**。接下来您可以授权我开始 **阶段 2: 存储层升级 (The Storage Layer)**，这将涉及到 `DocumentManager` 的重构以支持这些新实现的结构化解析与渲染。
