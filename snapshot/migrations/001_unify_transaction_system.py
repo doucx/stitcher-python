@@ -11,6 +11,6 @@ def upgrade(spec: MigrationSpec):
     into the stitcher-common package.
     """
     spec.add(Move(
-        Path("packages/stitcher-refactor/src/stitcher/refactor/engine/transaction.py"),
-        Path("packages/stitcher-common/src/stitcher/common/transaction.py")
+        Path("packages/stitcher-refactor/src/stitcher/refactor/engine/transaction.py").absolute(),
+        Path("packages/stitcher-common/src/stitcher/common/transaction.py").absolute()
     ))
