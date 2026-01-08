@@ -21,11 +21,10 @@ def test_app_scan_and_generate_single_file(tmp_path, monkeypatch):
     spy_bus = SpyBus()
 
     with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
-        # Accessing internal methods directly for this specific test case
-        # as per original test logic
+        # Directly call the runner's batch processing method to test generation logic in isolation.
         source_file = project_root / "greet.py"
         module = app.scanner.scan_files([source_file])[0]
-        app.generate_runner._generate_stubs([module], StitcherConfig())
+        app.generate_runner.run_batch([module], StitcherConfig())
 
     spy_bus.assert_id_called(L.generate.file.success, level="success")
 
