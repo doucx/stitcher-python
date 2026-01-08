@@ -1,8 +1,9 @@
 from typing import Any, List, Union, cast
 
 import griffe
-from griffe import Docstring, Parser
-from griffe.dataclasses import (
+from griffe import (
+    Docstring,
+    Parser,
     DocstringSection as GriffeSection,
     DocstringSectionAdmonition,
     DocstringSectionAttributes,
