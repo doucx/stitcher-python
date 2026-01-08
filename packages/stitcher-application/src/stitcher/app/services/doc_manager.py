@@ -13,12 +13,14 @@ from stitcher.spec import (
 )
 from stitcher.common import DocumentAdapter, YamlAdapter
 from stitcher.adapter.python import RawDocstringParser, RawSerializer
+from stitcher.common.services import AssetPathResolver
 
 
 class DocumentManager:
     def __init__(self, root_path: Path, adapter: Optional[DocumentAdapter] = None):
         self.root_path = root_path
         self.adapter = adapter or YamlAdapter()
+        self.resolver = AssetPathResolver(root_path)
         # Defaults to Raw mode for backward compatibility
         self.parser: DocstringParserProtocol = RawDocstringParser()
         self.serializer: DocstringSerializerProtocol = RawSerializer()
@@ -83,7 +85,7 @@ class DocumentManager:
         yaml_data = {fqn: self._serialize_ir(ir) for fqn, ir in ir_map.items()}
 
         module_path = self.root_path / module.file_path
-        output_path = module_path.with_suffix(".stitcher.yaml")
+        output_path = self.resolver.get_doc_path(module_path)
         self.adapter.save(output_path, yaml_data)
         return output_path
 
@@ -91,7 +93,7 @@ class DocumentManager:
         if not module.file_path:
             return {}
         module_path = self.root_path / module.file_path
-        doc_path = module_path.with_suffix(".stitcher.yaml")
+        doc_path = self.resolver.get_doc_path(module_path)
 
         raw_data = self.adapter.load(doc_path)  # returns Dict[str, Any] now ideally
 
@@ -308,7 +310,7 @@ class DocumentManager:
         if not module.file_path:
             return {}
         module_path = self.root_path / module.file_path
-        doc_path = module_path.with_suffix(".stitcher.yaml")
+        doc_path = self.resolver.get_doc_path(module_path)
 
         # Load raw dict from YAML
         raw_data = self.adapter.load(doc_path)
@@ -321,7 +323,7 @@ class DocumentManager:
         if not module.file_path:
             return False
         module_path = self.root_path / module.file_path
-        doc_path = module_path.with_suffix(".stitcher.yaml")
+        doc_path = self.resolver.get_doc_path(module_path)
         if not doc_path.exists():
             return False
 

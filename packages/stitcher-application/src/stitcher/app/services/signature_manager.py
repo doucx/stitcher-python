@@ -8,6 +8,7 @@ from stitcher.spec import (
     InvalidFingerprintKeyError,
     FingerprintStrategyProtocol,
 )
+from stitcher.common.services import AssetPathResolver
 
 
 class SignatureManager:
@@ -15,12 +16,11 @@ class SignatureManager:
         self, root_path: Path, fingerprint_strategy: FingerprintStrategyProtocol
     ):
         self.root_path = root_path
-        self.sig_root = root_path / ".stitcher" / "signatures"
+        self.resolver = AssetPathResolver(root_path)
         self.fingerprint_strategy = fingerprint_strategy
 
     def get_sig_path(self, module: ModuleDef) -> Path:
-        rel_path = Path(module.file_path)
-        return self.sig_root / rel_path.with_suffix(".json")
+        return self.resolver.get_signature_path(module.file_path)
 
     def compute_fingerprints(self, module: ModuleDef) -> Dict[str, Fingerprint]:
         fingerprints: Dict[str, Fingerprint] = {}
