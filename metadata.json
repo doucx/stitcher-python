@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] style: 调整测试目录结构以符合 Monorepo 规范", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767844668.4623675, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[COMMIT] feat(adapter): 实现结构化文档解析器与渲染器 (Phase 1)", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1767844778.329227, "duration_ms": 0}}
