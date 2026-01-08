@@ -1,12 +1,16 @@
 {
   "GenerateRunner": {},
   "GenerateRunner.__init__": {
-    "baseline_code_signature_text": "def __init__(self, root_path: Path, scanner: ScannerService, doc_manager: DocumentManager, stub_pkg_manager: StubPackageManager, generator: StubGeneratorProtocol):",
-    "baseline_code_structure_hash": "23bae91437202c37d683dc9f2367bacd3593f75a1d811e45a889e20932d0ba70"
+    "baseline_code_signature_text": "def __init__(self, root_path: Path, scanner: ScannerService, doc_manager: DocumentManager, stub_pkg_manager: StubPackageManager, generator: StubGeneratorProtocol, transformer: LanguageTransformerProtocol):",
+    "baseline_code_structure_hash": "bbf9f2f6ec536c4d3bd7713e79f463ac1720679fee2166a20b3903dc7620680e"
   },
   "GenerateRunner._generate_stubs": {
     "baseline_code_signature_text": "def _generate_stubs(self, modules: List[ModuleDef], config: StitcherConfig) -> List[Path]:",
     "baseline_code_structure_hash": "eeaa608841470a18c3769a48fba7e2966099d1e8628734dde32c1ae287b01b5a"
+  },
+  "GenerateRunner._render_docs_for_module": {
+    "baseline_code_signature_text": "def _render_docs_for_module(self, module: ModuleDef) -> Dict[str, str]:",
+    "baseline_code_structure_hash": "15c4b4d889484fb853dcd85cc28f30b392a2a5021650f9fe3d3c11d87545336e"
   },
   "GenerateRunner._scaffold_stub_package": {
     "baseline_code_signature_text": "def _scaffold_stub_package(self, config: StitcherConfig, stub_base_name: Optional[str]):",
@@ -14,6 +18,7 @@
   },
   "GenerateRunner.doc_manager": {},
   "GenerateRunner.generator": {},
+  "GenerateRunner.renderer": {},
   "GenerateRunner.root_path": {},
   "GenerateRunner.run": {
     "baseline_code_signature_text": "def run(self) -> List[Path]:",
@@ -24,5 +29,10 @@
     "baseline_code_structure_hash": "d74b488ad3eb40ab176e2f17e66e9b460f2dbb6f56b67e411971a121eaae57fe"
   },
   "GenerateRunner.scanner": {},
-  "GenerateRunner.stub_pkg_manager": {}
+  "GenerateRunner.set_renderer": {
+    "baseline_code_signature_text": "def set_renderer(self, renderer: DocstringRendererProtocol) -> None:",
+    "baseline_code_structure_hash": "dbf406fb1ca88903cbc9089be3ba1a9820b10686acdb3b9fc06f8854138f95c9"
+  },
+  "GenerateRunner.stub_pkg_manager": {},
+  "GenerateRunner.transformer": {}
 }

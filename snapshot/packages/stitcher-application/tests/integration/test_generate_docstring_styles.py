@@ -23,9 +23,7 @@ def test_generate_with_google_style_renders_correctly(tmp_path):
                         "value": "The input integer.",
                         "multiplier": "The factor to multiply by.",
                     },
-                    "Returns": {
-                        "float": "The calculated result."
-                    },
+                    "Returns": {"float": "The calculated result."},
                 }
             },
         )

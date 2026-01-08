@@ -6,8 +6,8 @@
   },
   "DocstringRendererProtocol": {},
   "DocstringRendererProtocol.render": {
-    "baseline_code_signature_text": "def render(self, docstring_ir: DocstringIR) -> str:",
-    "baseline_code_structure_hash": "bdf96e432de0f4822121dea07036d7c99676e87d01d445b5e693e9daf1290f0e"
+    "baseline_code_signature_text": "def render(self, docstring_ir: DocstringIR, context: Optional[Union[FunctionDef, ClassDef, ModuleDef]] = None) -> str:",
+    "baseline_code_structure_hash": "771c150ad2e54877bc0e41f243f0eed5594c46fd2dad4d3bd2743c6b296999f0"
   },
   "DocstringSerializerProtocol": {},
   "DocstringSerializerProtocol.from_yaml": {

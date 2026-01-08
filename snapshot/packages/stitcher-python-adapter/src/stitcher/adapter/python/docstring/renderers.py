@@ -43,7 +43,9 @@ class BaseStructuredRenderer(DocstringRendererProtocol):
         return ""
 
     def _merge_params_with_context(
-        self, items: List[DocstringItem], context: Optional[Union[FunctionDef, ClassDef, ModuleDef]]
+        self,
+        items: List[DocstringItem],
+        context: Optional[Union[FunctionDef, ClassDef, ModuleDef]],
     ) -> List[DocstringItem]:
         if not isinstance(context, FunctionDef):
             return items
@@ -73,21 +75,25 @@ class BaseStructuredRenderer(DocstringRendererProtocol):
                 )
             )
         return merged_items
-    
+
     def _merge_returns_with_context(
-        self, items: List[DocstringItem], context: Optional[Union[FunctionDef, ClassDef, ModuleDef]]
+        self,
+        items: List[DocstringItem],
+        context: Optional[Union[FunctionDef, ClassDef, ModuleDef]],
     ) -> List[DocstringItem]:
         if not isinstance(context, FunctionDef) or not context.return_annotation:
             return items
-        
+
         new_items = []
         if items:
             for item in items:
-                new_items.append(DocstringItem(
-                    name=item.name,
-                    annotation=context.return_annotation,
-                    description=item.description
-                ))
+                new_items.append(
+                    DocstringItem(
+                        name=item.name,
+                        annotation=context.return_annotation,
+                        description=item.description,
+                    )
+                )
         return new_items if new_items else items
 
 
@@ -113,9 +119,13 @@ class GoogleDocstringRenderer(BaseStructuredRenderer):
         content = section.content
         if isinstance(content, list):
             if section.kind == SectionKind.PARAMETERS:
-                content = self._merge_params_with_context(cast(List[DocstringItem], content), context)
+                content = self._merge_params_with_context(
+                    cast(List[DocstringItem], content), context
+                )
             elif section.kind == SectionKind.RETURNS:
-                content = self._merge_returns_with_context(cast(List[DocstringItem], content), context)
+                content = self._merge_returns_with_context(
+                    cast(List[DocstringItem], content), context
+                )
 
         if title:
             lines.append(f"{title}:")
@@ -126,17 +136,21 @@ class GoogleDocstringRenderer(BaseStructuredRenderer):
                     lines.append(line)
         elif isinstance(content, list):
             for item in content:
-                if not isinstance(item, DocstringItem): continue
+                if not isinstance(item, DocstringItem):
+                    continue
                 prefix = ""
                 if item.name:
                     prefix = f"{item.name}"
-                    if item.annotation: prefix += f" ({item.annotation})"
+                    if item.annotation:
+                        prefix += f" ({item.annotation})"
                 elif item.annotation:
                     prefix = f"{item.annotation}"
 
                 indent = "    "
                 if prefix:
-                    line = f"{prefix}: {item.description}" if item.description else prefix
+                    line = (
+                        f"{prefix}: {item.description}" if item.description else prefix
+                    )
                     lines.append(f"{indent}{line}")
                 elif item.description:
                     lines.append(f"{indent}{item.description}")
@@ -166,9 +180,13 @@ class NumpyDocstringRenderer(BaseStructuredRenderer):
         content = section.content
         if isinstance(content, list):
             if section.kind == SectionKind.PARAMETERS:
-                content = self._merge_params_with_context(cast(List[DocstringItem], content), context)
+                content = self._merge_params_with_context(
+                    cast(List[DocstringItem], content), context
+                )
             elif section.kind == SectionKind.RETURNS:
-                content = self._merge_returns_with_context(cast(List[DocstringItem], content), context)
+                content = self._merge_returns_with_context(
+                    cast(List[DocstringItem], content), context
+                )
 
         if title:
             lines.append(title)
@@ -176,18 +194,23 @@ class NumpyDocstringRenderer(BaseStructuredRenderer):
 
         if section.kind == SectionKind.TEXT or section.kind == SectionKind.ADMONITION:
             if isinstance(content, str):
-                for line in content.splitlines(): lines.append(line)
+                for line in content.splitlines():
+                    lines.append(line)
         elif isinstance(content, list):
             for item in content:
-                if not isinstance(item, DocstringItem): continue
+                if not isinstance(item, DocstringItem):
+                    continue
                 header = ""
                 if item.name:
                     header = item.name
-                    if item.annotation: header += f" : {item.annotation}"
+                    if item.annotation:
+                        header += f" : {item.annotation}"
                 elif item.annotation:
                     header = item.annotation
-                if header: lines.append(header)
+                if header:
+                    lines.append(header)
                 if item.description:
-                    for line in item.description.splitlines(): lines.append(f"    {line}")
+                    for line in item.description.splitlines():
+                        lines.append(f"    {line}")
 
         return "\n".join(lines)

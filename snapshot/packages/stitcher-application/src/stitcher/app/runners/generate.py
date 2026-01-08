@@ -4,12 +4,8 @@ from pathlib import Path
 from stitcher.common import bus
 from needle.pointer import L
 from stitcher.config import StitcherConfig
-from typing import List, Optional, Dict
-from pathlib import Path
+from typing import Dict
 
-from stitcher.common import bus
-from needle.pointer import L
-from stitcher.config import StitcherConfig
 from stitcher.spec import (
     ModuleDef,
     StubGeneratorProtocol,

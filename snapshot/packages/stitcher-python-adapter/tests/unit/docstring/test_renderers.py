@@ -87,41 +87,11 @@ def test_numpy_renderer_merges_types(sample_function_def, sample_docstring_ir):
     renderer = NumpyDocstringRenderer()
     result = renderer.render(sample_docstring_ir, context=sample_function_def)
 
-    expected = dedent(
-        """
-        This is a summary.
-
-        This is an extended description.
-
-        Parameters
-        ----------
-        param1 : int
-            Description for param1.
-        param2 : str
-            Description for param2.
-
-        Returns
-        -------
-        bool
-            True if successful, False otherwise.
-        """
-    ).strip()
-    # Note: NumPy return type and description are often on separate lines.
-    # Our renderer might put them together, let's adjust the test to match the implementation.
-    
-    # Adjusting expectation based on renderer's actual output for Returns
-    expected_numpy_return = dedent("""
-        Returns
-        -------
-        bool
-            True if successful, False otherwise.
-    """).strip()
-
     assert "This is a summary." in result
     assert "Parameters" in result
     assert "param1 : int" in result
     assert "Description for param1." in result
-    
+
     # A more flexible check for returns section
     assert "Returns" in result
     assert "-------" in result
