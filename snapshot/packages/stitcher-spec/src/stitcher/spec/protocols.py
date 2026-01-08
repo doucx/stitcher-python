@@ -27,7 +27,11 @@ class DocstringParserProtocol(Protocol):
 
 
 class DocstringRendererProtocol(Protocol):
-    def render(self, docstring_ir: DocstringIR) -> str: ...
+    def render(
+        self,
+        docstring_ir: DocstringIR,
+        context: Optional[Union[FunctionDef, ClassDef, ModuleDef]] = None,
+    ) -> str: ...
 
 
 class DocstringSerializerProtocol(Protocol):

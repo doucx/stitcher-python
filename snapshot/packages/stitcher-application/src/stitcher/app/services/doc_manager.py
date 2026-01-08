@@ -107,6 +107,7 @@ class DocumentManager:
         if full_name in docs:
             # Injecting back to code: we only care about the summary (content)
             func.docstring = docs[full_name].summary
+            func.docstring_ir = docs[full_name]
 
     def _apply_to_class(
         self, cls: ClassDef, docs: Dict[str, DocstringIR], prefix: str = ""
@@ -114,6 +115,7 @@ class DocumentManager:
         full_name = f"{prefix}{cls.name}"
         if full_name in docs:
             cls.docstring = docs[full_name].summary
+            cls.docstring_ir = docs[full_name]
         for method in cls.methods:
             self._apply_to_function(method, docs, prefix=f"{full_name}.")
         for attr in cls.attributes:
@@ -127,6 +129,7 @@ class DocumentManager:
             return
         if "__doc__" in docs:
             module.docstring = docs["__doc__"].summary
+            module.docstring_ir = docs["__doc__"]
         for func in module.functions:
             self._apply_to_function(func, docs)
         for cls in module.classes:

@@ -93,9 +93,13 @@ class StitcherApp:
             bus.info(L.generate.target.processing, name=config.name)
 
         # Configure Docstring Strategy
-        parser, _ = get_docstring_codec(config.docstring_style)
+        parser, renderer = get_docstring_codec(config.docstring_style)
         serializer = get_docstring_serializer(config.docstring_style)
         self.doc_manager.set_strategy(parser, serializer)
+
+        # Inject renderer into stub generator
+        if hasattr(self.generate_runner.generator, "set_renderer"):
+            self.generate_runner.generator.set_renderer(renderer)
 
         # Handle Plugins
         plugin_modules = self.scanner.process_plugins(config.plugins)
