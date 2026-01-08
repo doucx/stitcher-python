@@ -28,3 +28,9 @@ class DocstringParserProtocol(Protocol):
 
 class DocstringRendererProtocol(Protocol):
     def render(self, docstring_ir: DocstringIR) -> str: ...
+
+
+class DocstringSerializerProtocol(Protocol):
+    def to_yaml(self, ir: DocstringIR) -> Dict[str, Any]: ...
+
+    def from_yaml(self, data: Union[str, Dict[str, Any]]) -> DocstringIR: ...

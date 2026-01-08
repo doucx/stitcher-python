@@ -12,11 +12,25 @@ class DocstringItem:
     default: Optional[str] = None  # The default value as a string representation
 
 
+class SectionKind(str, Enum):
+    TEXT = "text"
+    PARAMETERS = "parameters"
+    RETURNS = "returns"
+    RAISES = "raises"
+    YIELDS = "yields"
+    ATTRIBUTES = "attributes"
+    EXAMPLES = "examples"
+    NOTES = "notes"
+    WARNING = "warning"
+    SEE_ALSO = "see_also"
+    ADMONITION = "admonition"
+
+
 @dataclass
 class DocstringSection:
     """Represents a section of a docstring, like 'Args' or 'Returns'."""
 
-    kind: str  # e.g., "params", "returns", "raises", "text"
+    kind: str  # Should use SectionKind values
     title: Optional[str] = None  # The rendered title, e.g., "Parameters"
     content: Union[str, List["DocstringItem"]] = ""
 
