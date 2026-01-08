@@ -17,6 +17,7 @@ from stitcher.app.services import (
     StubPackageManager,
     ScannerService,
 )
+from stitcher.common.transaction import TransactionManager
 
 
 class GenerateRunner:
@@ -69,7 +70,10 @@ class GenerateRunner:
         return docs
 
     def _scaffold_stub_package(
-        self, config: StitcherConfig, stub_base_name: Optional[str]
+        self,
+        config: StitcherConfig,
+        stub_base_name: Optional[str],
+        tm: TransactionManager,
     ):
         if not config.stub_package or not stub_base_name:
             return
@@ -89,7 +93,7 @@ class GenerateRunner:
         stub_pkg_name = f"{stub_base_name}-stubs"
         bus.info(L.generate.stub_pkg.scaffold, name=stub_pkg_name)
         created = self.stub_pkg_manager.scaffold(
-            pkg_path, stub_base_name, package_namespace
+            pkg_path, stub_base_name, package_namespace, tm, self.root_path
         )
         if created:
             bus.success(L.generate.stub_pkg.success, name=stub_pkg_name)
@@ -100,6 +104,7 @@ class GenerateRunner:
         self,
         modules: List[ModuleDef],
         config: StitcherConfig,
+        tm: TransactionManager,
         project_name: Optional[str] = None,
     ) -> List[Path]:
         generated_files: List[Path] = []
@@ -107,7 +112,7 @@ class GenerateRunner:
 
         if config.stub_package:
             stub_base_name = config.name if config.name != "default" else project_name
-            self._scaffold_stub_package(config, stub_base_name)
+            self._scaffold_stub_package(config, stub_base_name, tm)
 
         for module in modules:
             self.doc_manager.apply_docs_to_module(module)
@@ -140,8 +145,8 @@ class GenerateRunner:
                         / stub_logical_path.parts[0]
                     )
                     if top_level_pkg_dir not in created_py_typed:
-                        top_level_pkg_dir.mkdir(parents=True, exist_ok=True)
-                        (top_level_pkg_dir / "py.typed").touch(exist_ok=True)
+                        py_typed_path = top_level_pkg_dir / "py.typed"
+                        tm.add_write(str(py_typed_path.relative_to(self.root_path)), "")
                         created_py_typed.add(top_level_pkg_dir)
             elif config.stub_path:
                 logical_path = self.scanner.derive_logical_path(module.file_path)
@@ -152,15 +157,18 @@ class GenerateRunner:
                 output_path = self.root_path / Path(module.file_path).with_suffix(
                     ".pyi"
                 )
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            relative_path = output_path.relative_to(self.root_path)
+
             if config.stub_package:
                 src_root = self.root_path / config.stub_package / "src"
                 current = output_path.parent
                 while current != src_root and src_root in current.parents:
-                    (current / "__init__.pyi").touch(exist_ok=True)
+                    init_path = current / "__init__.pyi"
+                    tm.add_write(str(init_path.relative_to(self.root_path)), "")
                     current = current.parent
-            output_path.write_text(final_content, encoding="utf-8")
-            relative_path = output_path.relative_to(self.root_path)
+
+            tm.add_write(str(relative_path), final_content)
             bus.success(L.generate.file.success, path=relative_path)
             generated_files.append(output_path)
         return generated_files

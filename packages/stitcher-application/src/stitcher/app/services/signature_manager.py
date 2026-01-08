@@ -18,7 +18,7 @@ class SignatureManager:
         self.sig_root = root_path / ".stitcher" / "signatures"
         self.fingerprint_strategy = fingerprint_strategy
 
-    def _get_sig_path(self, module: ModuleDef) -> Path:
+    def get_sig_path(self, module: ModuleDef) -> Path:
         rel_path = Path(module.file_path)
         return self.sig_root / rel_path.with_suffix(".json")
 
@@ -36,12 +36,12 @@ class SignatureManager:
         self, module: ModuleDef, hashes: Dict[str, Fingerprint]
     ) -> None:
         if not hashes:
-            sig_path = self._get_sig_path(module)
+            sig_path = self.get_sig_path(module)
             if sig_path.exists():
                 sig_path.unlink()
             return
 
-        sig_path = self._get_sig_path(module)
+        sig_path = self.get_sig_path(module)
         sig_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Serialize Fingerprint objects to dicts
@@ -51,7 +51,7 @@ class SignatureManager:
             json.dump(serialized_data, f, indent=2, sort_keys=True)
 
     def load_composite_hashes(self, module: ModuleDef) -> Dict[str, Fingerprint]:
-        sig_path = self._get_sig_path(module)
+        sig_path = self.get_sig_path(module)
         if not sig_path.exists():
             return {}
         try:
@@ -72,7 +72,7 @@ class SignatureManager:
             return {}
 
     def reformat_hashes_for_module(self, module: ModuleDef) -> bool:
-        sig_path = self._get_sig_path(module)
+        sig_path = self.get_sig_path(module)
         if not sig_path.exists():
             return False
 

@@ -1,8 +1,5 @@
 "SignatureManager": |-
   Manages the persistence of composite hashes (signature and document).
-"SignatureManager._get_sig_path": |-
-  Determines the storage path for a module's signatures.
-  e.g. src/app.py -> .stitcher/signatures/src/app.json
 "SignatureManager.compute_fingerprints": |-
   Computes the complete fingerprints for all entities in the module
   using the injected strategy.

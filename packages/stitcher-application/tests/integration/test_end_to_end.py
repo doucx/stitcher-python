@@ -4,6 +4,7 @@ from stitcher.test_utils import create_test_app
 from stitcher.config import StitcherConfig
 from needle.pointer import L
 from stitcher.test_utils import SpyBus, WorkspaceFactory
+from stitcher.common.transaction import TransactionManager
 
 
 def test_app_scan_and_generate_single_file(tmp_path, monkeypatch):
@@ -19,17 +20,21 @@ def test_app_scan_and_generate_single_file(tmp_path, monkeypatch):
 
     app = create_test_app(root_path=project_root)
     spy_bus = SpyBus()
+    tm = TransactionManager(root_path=project_root)
 
     with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
         # Directly call the runner's batch processing method to test generation logic in isolation.
         source_file = project_root / "greet.py"
         module = app.scanner.scan_files([source_file])[0]
-        app.generate_runner.run_batch([module], StitcherConfig())
+        app.generate_runner.run_batch([module], StitcherConfig(), tm)
+        tm.commit()
 
     spy_bus.assert_id_called(L.generate.file.success, level="success")
 
     error_messages = [m for m in spy_bus.get_messages() if m["level"] == "error"]
     assert not error_messages, f"Found unexpected error messages: {error_messages}"
+
+    assert (project_root / "greet.pyi").exists()
 
 
 def test_app_run_from_config_with_source_files(tmp_path, monkeypatch):

@@ -89,8 +89,8 @@
   },
   "TransactionManager": {},
   "TransactionManager.__init__": {
-    "baseline_code_signature_text": "def __init__(self, root_path: Path, fs: Optional[FileSystemAdapter] = None):",
-    "baseline_code_structure_hash": "1ca06774dfe8f0c1f31a5bf655e070c1b62e2ccf3327d326a21c39ae17c17875"
+    "baseline_code_signature_text": "def __init__(self, root_path: Path, fs: Optional[FileSystemAdapter] = None, dry_run: bool = False):",
+    "baseline_code_structure_hash": "7c02eb43624db9caab4889343b4e3b0141906aeec696ab042cdbb899e7f508a1"
   },
   "TransactionManager._ops": {},
   "TransactionManager._rebase_ops": {
@@ -118,6 +118,7 @@
     "baseline_code_signature_text": "def commit(self) -> None:",
     "baseline_code_structure_hash": "95e5246b1328e6191a7ccc1de1b30b6f1c46a216740933777a311550317b75f8"
   },
+  "TransactionManager.dry_run": {},
   "TransactionManager.fs": {},
   "TransactionManager.pending_count": {},
   "TransactionManager.preview": {

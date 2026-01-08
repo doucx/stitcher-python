@@ -19,6 +19,10 @@
   "SignatureManager.fingerprint_strategy": {
     "baseline_yaml_content_hash": "414621d325ff585cf42097ea5e421955422e603c675f3e58fb8a0568fc426f87"
   },
+  "SignatureManager.get_sig_path": {
+    "baseline_code_signature_text": "def get_sig_path(self, module: ModuleDef) -> Path:",
+    "baseline_code_structure_hash": "d10c95b93a6e9d837089e66f9916026dd8ae1fbb00257389b574640619fa8b9d"
+  },
   "SignatureManager.load_composite_hashes": {
     "baseline_code_signature_text": "def load_composite_hashes(self, module: ModuleDef) -> Dict[str, Fingerprint]:",
     "baseline_code_structure_hash": "88cd00d2adf0bca45c697e80267630aecc18c387c67701063560498e655d11f5",

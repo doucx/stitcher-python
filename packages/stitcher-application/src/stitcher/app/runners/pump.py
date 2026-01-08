@@ -1,4 +1,5 @@
 import copy
+import json
 from pathlib import Path
 from typing import Dict, List
 from collections import defaultdict
@@ -23,6 +24,8 @@ from stitcher.app.services import (
 from stitcher.app.protocols import InteractionHandler, InteractionContext
 from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
 from stitcher.app.types import PumpResult
+
+from stitcher.common.transaction import TransactionManager
 
 
 class PumpRunner:
@@ -81,6 +84,7 @@ class PumpRunner:
         self,
         modules: List[ModuleDef],
         config: StitcherConfig,
+        tm: TransactionManager,
         strip: bool = False,
         force: bool = False,
         reconcile: bool = False,
@@ -221,10 +225,28 @@ class PumpRunner:
                     }
                     module_path = self.root_path / module.file_path
                     doc_path = module_path.with_suffix(".stitcher.yaml")
-                    self.doc_manager.adapter.save(doc_path, final_data)
+                    yaml_content = self.doc_manager.adapter.dump(final_data)
+                    tm.add_write(
+                        str(doc_path.relative_to(self.root_path)), yaml_content
+                    )
 
                 if signatures_need_save:
-                    self.sig_manager.save_composite_hashes(module, new_hashes)
+                    sig_path = self.sig_manager.get_sig_path(module)
+                    if not new_hashes:
+                        if sig_path.exists():
+                            tm.add_delete_file(
+                                str(sig_path.relative_to(self.root_path))
+                            )
+                    else:
+                        serialized_data = {
+                            fqn: fp.to_dict() for fqn, fp in new_hashes.items()
+                        }
+                        sig_content = json.dumps(
+                            serialized_data, indent=2, sort_keys=True
+                        )
+                        tm.add_write(
+                            str(sig_path.relative_to(self.root_path)), sig_content
+                        )
 
                 if file_has_redundancy:
                     redundant_files_list.append(self.root_path / module.file_path)
@@ -257,11 +279,12 @@ class PumpRunner:
                     stripped_content = self.transformer.strip(
                         original_content, whitelist=whitelist
                     )
+                    relative_path = source_path.relative_to(self.root_path)
                     if original_content != stripped_content:
-                        source_path.write_text(stripped_content, "utf-8")
+                        tm.add_write(str(relative_path), stripped_content)
                         bus.success(
                             L.strip.file.success,
-                            path=source_path.relative_to(self.root_path),
+                            path=relative_path,
                         )
                         total_stripped_files += 1
                 except Exception as e:

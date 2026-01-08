@@ -8,8 +8,8 @@
     "baseline_yaml_content_hash": "cc8d741d72323adbbe1cf22c650ac44b6749cf27a9c0f8012d250dc3eed4db58"
   },
   "StubPackageManager.scaffold": {
-    "baseline_code_signature_text": "def scaffold(self, package_path: Path, source_project_name: str, package_namespace: str) -> bool:",
-    "baseline_code_structure_hash": "4f3cca78e3cb73c75cb815281e5d96f0191d5bd3162b5d2719c9b9d04116c1ab",
+    "baseline_code_signature_text": "def scaffold(self, package_path: Path, source_project_name: str, package_namespace: str, tm: TransactionManager, root_path: Path) -> bool:",
+    "baseline_code_structure_hash": "888151e3e9987d43913fbed7a9d419c3d97ec084ffcaa4ec85f1d3a1e87768da",
     "baseline_yaml_content_hash": "aedbbb0da493dd5df12efb374c504a31809f48c620f7cd810da903ac1aaed91c"
   }
 }

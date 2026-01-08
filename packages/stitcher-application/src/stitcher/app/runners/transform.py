@@ -5,6 +5,7 @@ from stitcher.common import bus
 from needle.pointer import L
 from stitcher.spec import LanguageTransformerProtocol, ModuleDef
 from stitcher.app.services import DocumentManager
+from stitcher.common.transaction import TransactionManager
 
 
 class TransformRunner:
@@ -18,7 +19,7 @@ class TransformRunner:
         self.doc_manager = doc_manager
         self.transformer = transformer
 
-    def run_strip(self, files: List[Path]) -> List[Path]:
+    def run_strip(self, files: List[Path], tm: TransactionManager) -> List[Path]:
         all_modified_files: List[Path] = []
         for file_path in files:
             try:
@@ -27,9 +28,9 @@ class TransformRunner:
                     original_content, whitelist=None
                 )
                 if original_content != stripped_content:
-                    file_path.write_text(stripped_content, encoding="utf-8")
-                    all_modified_files.append(file_path)
                     relative_path = file_path.relative_to(self.root_path)
+                    tm.add_write(str(relative_path), stripped_content)
+                    all_modified_files.append(file_path)
                     bus.success(L.strip.file.success, path=relative_path)
             except Exception as e:
                 bus.error(L.error.generic, error=e)
@@ -38,7 +39,9 @@ class TransformRunner:
             bus.success(L.strip.run.complete, count=len(all_modified_files))
         return all_modified_files
 
-    def run_inject_batch(self, modules: List[ModuleDef]) -> List[Path]:
+    def run_inject_batch(
+        self, modules: List[ModuleDef], tm: TransactionManager
+    ) -> List[Path]:
         modified_files: List[Path] = []
         total_docs_found = 0
 
@@ -54,9 +57,9 @@ class TransformRunner:
                 original_content = source_path.read_text(encoding="utf-8")
                 injected_content = self.transformer.inject(original_content, docs_str)
                 if original_content != injected_content:
-                    source_path.write_text(injected_content, encoding="utf-8")
-                    modified_files.append(source_path)
                     relative_path = source_path.relative_to(self.root_path)
+                    tm.add_write(str(relative_path), injected_content)
+                    modified_files.append(source_path)
                     bus.success(L.inject.file.success, path=relative_path)
             except Exception as e:
                 bus.error(L.error.generic, error=e)

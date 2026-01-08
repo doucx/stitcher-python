@@ -24,8 +24,8 @@
     "baseline_code_structure_hash": "43c277941d6c604f282848bae3e473260a276d998ff2c2db940147f66b52375d"
   },
   "PumpRunner.run_batch": {
-    "baseline_code_signature_text": "def run_batch(self, modules: List[ModuleDef], config: StitcherConfig, strip: bool = False, force: bool = False, reconcile: bool = False) -> PumpResult:",
-    "baseline_code_structure_hash": "e52f554808a12f199ee9e5bfd3325ee14e32a3d1c400d49bfceac770d8b75919"
+    "baseline_code_signature_text": "def run_batch(self, modules: List[ModuleDef], config: StitcherConfig, tm: TransactionManager, strip: bool = False, force: bool = False, reconcile: bool = False) -> PumpResult:",
+    "baseline_code_structure_hash": "10275f1445fae0ddf9d6c9a93ed190107938c114c9ec54dd8c7c7a63228b183a"
   },
   "PumpRunner.scanner": {},
   "PumpRunner.sig_manager": {},
