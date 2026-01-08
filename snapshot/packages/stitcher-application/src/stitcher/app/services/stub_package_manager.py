@@ -1,6 +1,8 @@
 from pathlib import Path
 import tomli_w
 
+from stitcher.common.transaction import TransactionManager
+
 
 class StubPackageManager:
     @staticmethod
@@ -14,20 +16,21 @@ class StubPackageManager:
         return Path(f"{namespace}-stubs", *rest_of_path)
 
     def scaffold(
-        self, package_path: Path, source_project_name: str, package_namespace: str
+        self,
+        package_path: Path,
+        source_project_name: str,
+        package_namespace: str,
+        tm: TransactionManager,
+        root_path: Path,
     ) -> bool:
         config_path = package_path / "pyproject.toml"
         if config_path.exists():
             return False
 
-        # Ensure root directory exists
-        package_path.mkdir(parents=True, exist_ok=True)
-
-        # Use the centralized logic to determine the stub source directory name
+        # Note: Directory creation is now handled implicitly by add_write.
         stub_src_dirname = self._get_pep561_logical_path(
             Path(package_namespace)
         ).as_posix()
-        (package_path / "src" / stub_src_dirname).mkdir(parents=True, exist_ok=True)
 
         # Create pyproject.toml
         pyproject_content = {
@@ -53,7 +56,11 @@ class StubPackageManager:
                 }
             },
         }
-        with config_path.open("wb") as f:
-            tomli_w.dump(pyproject_content, f)
+        # Convert dict to TOML string
+        toml_bytes = tomli_w.dumps(pyproject_content).encode("utf-8")
+
+        # Add operation to transaction manager
+        relative_config_path = config_path.relative_to(root_path)
+        tm.add_write(str(relative_config_path), toml_bytes.decode("utf-8"))
 
         return True

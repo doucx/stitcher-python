@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Union, Protocol, Optional
 
+from stitcher.common import bus
+from needle.pointer import L
+
 
 class FileSystemAdapter(Protocol):
     def write_text(self, path: Path, content: str) -> None: ...
@@ -90,9 +93,15 @@ class DeleteDirectoryOp(FileOp):
 
 
 class TransactionManager:
-    def __init__(self, root_path: Path, fs: Optional[FileSystemAdapter] = None):
+    def __init__(
+        self,
+        root_path: Path,
+        fs: Optional[FileSystemAdapter] = None,
+        dry_run: bool = False,
+    ):
         self.root_path = root_path
         self.fs = fs or RealFileSystem()
+        self.dry_run = dry_run
         self._ops: List[FileOp] = []
 
     def add_write(self, path: Union[str, Path], content: str) -> None:
@@ -114,6 +123,16 @@ class TransactionManager:
 
     def commit(self) -> None:
         rebased_ops = self._rebase_ops(self._ops)
+        if self.dry_run:
+            if rebased_ops:
+                bus.info(L.refactor.run.dry_run_header, count=len(rebased_ops))
+                for op in rebased_ops:
+                    bus.info(f"  {op.describe()}")
+            else:
+                bus.info(L.refactor.run.no_ops)
+            self._ops.clear()
+            return
+
         for op in rebased_ops:
             op.execute(self.fs, self.root_path)
         self._ops.clear()

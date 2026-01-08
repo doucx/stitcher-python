@@ -3,6 +3,7 @@
   "planning": "📝 Planning refactoring operations...",
   "no_ops": "✅ No operations planned. Nothing to do.",
   "preview_header": "⚠️  The following {count} operations will be performed:",
+  "dry_run_header": "DRY RUN: The following {count} operations would be performed:",
   "confirm": "Do you want to apply these changes?",
   "aborted": "🚫 Refactor aborted by user.",
   "applying": "🚀 Applying changes...",

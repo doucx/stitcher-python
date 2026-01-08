@@ -29,6 +29,7 @@ from .runners import (
     CoverageRunner,
     RefactorRunner,
 )
+from stitcher.common.transaction import TransactionManager
 from typing import Callable
 from .types import PumpResult, FileCheckResult, CoverageResult
 from stitcher.adapter.python.docstring import (
@@ -119,10 +120,11 @@ class StitcherApp:
 
         return all_modules
 
-    def run_from_config(self) -> List[Path]:
+    def run_from_config(self, dry_run: bool = False) -> List[Path]:
         configs, project_name = self._load_configs()
         all_generated: List[Path] = []
         found_any = False
+        tm = TransactionManager(self.root_path, dry_run=dry_run)
 
         for config in configs:
             modules = self._configure_and_scan(config)
@@ -130,13 +132,15 @@ class StitcherApp:
                 continue
             found_any = True
 
-            paths = self.generate_runner.run_batch(modules, config, project_name)
+            paths = self.generate_runner.run_batch(modules, config, tm, project_name)
             all_generated.extend(paths)
 
-        if not found_any and len(configs) == 1:
+        if not found_any and len(configs) == 1 and not tm.dry_run:
             bus.warning(L.warning.no_files_or_plugins_found)
 
-        if all_generated:
+        tm.commit()
+
+        if all_generated and not tm.dry_run:
             bus.success(L.generate.run.complete, count=len(all_generated))
         return all_generated
 
@@ -199,10 +203,15 @@ class StitcherApp:
         return self.check_runner.report(all_results)
 
     def run_pump(
-        self, strip: bool = False, force: bool = False, reconcile: bool = False
+        self,
+        strip: bool = False,
+        force: bool = False,
+        reconcile: bool = False,
+        dry_run: bool = False,
     ) -> PumpResult:
         bus.info(L.pump.run.start)
         configs, _ = self._load_configs()
+        tm = TransactionManager(self.root_path, dry_run=dry_run)
 
         global_success = True
         all_redundant: List[Path] = []
@@ -213,15 +222,18 @@ class StitcherApp:
                 continue
 
             result = self.pump_runner.run_batch(
-                modules, config, strip, force, reconcile
+                modules, config, tm, strip, force, reconcile
             )
             if not result.success:
                 global_success = False
             all_redundant.extend(result.redundant_files)
 
+        tm.commit()
         return PumpResult(success=global_success, redundant_files=all_redundant)
 
-    def run_strip(self, files: Optional[List[Path]] = None) -> List[Path]:
+    def run_strip(
+        self, files: Optional[List[Path]] = None, dry_run: bool = False
+    ) -> List[Path]:
         files_to_process = []
         if files:
             files_to_process = files
@@ -231,12 +243,16 @@ class StitcherApp:
                 files_to_process.extend(self.scanner.get_files_from_config(config))
             files_to_process = sorted(list(set(files_to_process)))
 
-        return self.transform_runner.run_strip(files_to_process)
+        tm = TransactionManager(self.root_path, dry_run=dry_run)
+        modified = self.transform_runner.run_strip(files_to_process, tm)
+        tm.commit()
+        return modified
 
-    def run_inject(self) -> List[Path]:
+    def run_inject(self, dry_run: bool = False) -> List[Path]:
         configs, _ = self._load_configs()
         all_modified: List[Path] = []
         found_any_docs = False
+        tm = TransactionManager(self.root_path, dry_run=dry_run)
 
         for config in configs:
             modules = self._configure_and_scan(config)
@@ -245,14 +261,16 @@ class StitcherApp:
 
             # We assume if modules exist, docs might exist.
             # Transform runner will check doc existence.
-            modified = self.transform_runner.run_inject_batch(modules)
+            modified = self.transform_runner.run_inject_batch(modules, tm)
             if modified:
                 found_any_docs = True
             all_modified.extend(modified)
 
-        if all_modified:
+        tm.commit()
+
+        if all_modified and not tm.dry_run:
             bus.success(L.inject.run.complete, count=len(all_modified))
-        elif not found_any_docs:
+        elif not found_any_docs and not tm.dry_run:
             bus.info(L.inject.no_docs_found)
 
         return all_modified
