@@ -30,7 +30,9 @@ class BaseStructuredRenderer(DocstringRendererProtocol):
             if rendered_section:
                 blocks.append(rendered_section)
 
-        return "\n\n".join(blocks)
+        # Filter out any potential empty strings that might have slipped through
+        # before joining, to prevent multiple newlines.
+        return "\n\n".join(filter(None, blocks))
 
     def _render_section(
         self,
