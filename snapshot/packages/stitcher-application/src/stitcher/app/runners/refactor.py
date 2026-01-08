@@ -13,6 +13,7 @@ from stitcher.refactor.migration import MigrationLoader, MigrationError
 from stitcher.refactor.workspace import Workspace
 from stitcher.refactor.sidecar.manager import SidecarManager
 
+from stitcher.common.transaction import TransactionManager
 
 class RefactorRunner:
     def __init__(self, root_path: Path):

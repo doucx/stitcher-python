@@ -25,6 +25,7 @@ from stitcher.app.protocols import InteractionHandler, InteractionContext
 from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
 from stitcher.app.types import PumpResult
 
+from stitcher.common.transaction import TransactionManager
 
 class PumpRunner:
     def __init__(
