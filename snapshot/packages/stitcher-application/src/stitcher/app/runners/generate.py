@@ -146,9 +146,7 @@ class GenerateRunner:
                     )
                     if top_level_pkg_dir not in created_py_typed:
                         py_typed_path = top_level_pkg_dir / "py.typed"
-                        tm.add_write(
-                            str(py_typed_path.relative_to(self.root_path)), ""
-                        )
+                        tm.add_write(str(py_typed_path.relative_to(self.root_path)), "")
                         created_py_typed.add(top_level_pkg_dir)
             elif config.stub_path:
                 logical_path = self.scanner.derive_logical_path(module.file_path)

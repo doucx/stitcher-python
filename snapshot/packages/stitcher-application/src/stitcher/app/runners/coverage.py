@@ -6,7 +6,6 @@ from stitcher.app.services import DocumentManager
 from stitcher.app.types import CoverageResult
 from stitcher.spec import ModuleDef
 
-from stitcher.common.transaction import TransactionManager
 
 class CoverageRunner:
     def __init__(

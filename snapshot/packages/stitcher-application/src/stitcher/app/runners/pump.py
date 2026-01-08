@@ -27,6 +27,7 @@ from stitcher.app.types import PumpResult
 
 from stitcher.common.transaction import TransactionManager
 
+
 class PumpRunner:
     def __init__(
         self,

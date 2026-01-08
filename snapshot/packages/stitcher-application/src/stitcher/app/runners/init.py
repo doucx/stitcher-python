@@ -6,7 +6,6 @@ from needle.pointer import L
 from stitcher.spec import Fingerprint, ModuleDef
 from stitcher.app.services import DocumentManager, SignatureManager
 
-from stitcher.common.transaction import TransactionManager
 
 class InitRunner:
     def __init__(

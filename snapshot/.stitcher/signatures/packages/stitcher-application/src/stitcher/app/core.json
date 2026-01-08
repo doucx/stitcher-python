@@ -102,8 +102,8 @@
     "baseline_code_structure_hash": "467e61a0733f6f49800fe43d3649708031cab08812b084481a5bd06ea22de03f"
   },
   "StitcherApp.run_from_config": {
-    "baseline_code_signature_text": "def run_from_config(self) -> List[Path]:",
-    "baseline_code_structure_hash": "6e3770a9189483804818929e5a4f6a38d686ba399418ce16b2c984a7b23f2fac",
+    "baseline_code_signature_text": "def run_from_config(self, dry_run: bool = False) -> List[Path]:",
+    "baseline_code_structure_hash": "528ccaeb33903a69fbd5b4d22eb6a66a25ccae68915cf10281ed89c5e7295a02",
     "baseline_yaml_content_hash": "d3d8bfddf45bd9dc9e558765c4952f7d36f45d238030eb9a355badfdda220dcb"
   },
   "StitcherApp.run_init": {
@@ -112,13 +112,13 @@
     "baseline_yaml_content_hash": "013f787d7bb1c9ea65c00d15ed54e57d1117496a37a7418128fcb3b6f063a07e"
   },
   "StitcherApp.run_inject": {
-    "baseline_code_signature_text": "def run_inject(self) -> List[Path]:",
-    "baseline_code_structure_hash": "c3eccd0304a6e04a22b2ac1857ba9c4400031be4b1e2309ccc7a7d4160acfb02",
+    "baseline_code_signature_text": "def run_inject(self, dry_run: bool = False) -> List[Path]:",
+    "baseline_code_structure_hash": "1a75ce89196266bb6ddbc245dfa3f3dbeb3bd673b14983151479549a8b3c67d5",
     "baseline_yaml_content_hash": "ed7ee4c7531bc1122810817a589133d29736a98713165670b405cf4ae944f287"
   },
   "StitcherApp.run_pump": {
-    "baseline_code_signature_text": "def run_pump(self, strip: bool = False, force: bool = False, reconcile: bool = False) -> PumpResult:",
-    "baseline_code_structure_hash": "763f9eb957504d7a09170f91882675bfef77a43552c2e9341a7f0135c4738b8b",
+    "baseline_code_signature_text": "def run_pump(self, strip: bool = False, force: bool = False, reconcile: bool = False, dry_run: bool = False) -> PumpResult:",
+    "baseline_code_structure_hash": "ddd6f6930b3b24564069aef55e178568b9e2cfbf571fff8e43c27dfcca2d8fa0",
     "baseline_yaml_content_hash": "a4087469e851d91b53efc885c5003ab5a83c7e5b68582f9bf1029bce0cbb73bf"
   },
   "StitcherApp.run_refactor_apply": {
@@ -126,8 +126,8 @@
     "baseline_code_structure_hash": "1f70a2403d1deb812868717568abd06e3bcae9a73175c3a5ce0a0ced8a49928c"
   },
   "StitcherApp.run_strip": {
-    "baseline_code_signature_text": "def run_strip(self, files: Optional[List[Path]] = None) -> List[Path]:",
-    "baseline_code_structure_hash": "bda2820f9698db31dce2dee53b15d50409bed5407bd167b2c7e252a2a1c35392",
+    "baseline_code_signature_text": "def run_strip(self, files: Optional[List[Path]] = None, dry_run: bool = False) -> List[Path]:",
+    "baseline_code_structure_hash": "2dcfc6fba8d17f78f1e9e99629019c4706207f3e51273131ed43c184d98860b3",
     "baseline_yaml_content_hash": "14c8ff8d578021db2d09829ff2f435a87bfae34896a5bb8340a117bf2baec81c"
   },
   "StitcherApp.scanner": {},
