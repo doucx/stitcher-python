@@ -21,6 +21,9 @@ def pump_command(
         "--non-interactive",
         help=nexus(L.cli.option.non_interactive.help),
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help=nexus(L.cli.option.refactor_dry_run.help)
+    ),
 ):
     if force and reconcile:
         bus.error(L.error.cli.conflicting_options, opt1="force", opt2="reconcile")
@@ -35,7 +38,9 @@ def pump_command(
     app_instance = make_app(handler)
 
     # 1. Run Pump
-    result = app_instance.run_pump(strip=strip, force=force, reconcile=reconcile)
+    result = app_instance.run_pump(
+        strip=strip, force=force, reconcile=reconcile, dry_run=dry_run
+    )
     if not result.success:
         raise typer.Exit(code=1)
 
@@ -48,4 +53,4 @@ def pump_command(
             fg=typer.colors.YELLOW,
         )
         if typer.confirm("Do you want to strip them now?", default=True):
-            app_instance.run_strip(files=result.redundant_files)
+            app_instance.run_strip(files=result.redundant_files, dry_run=dry_run)
