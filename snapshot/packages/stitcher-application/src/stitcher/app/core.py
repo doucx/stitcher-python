@@ -20,6 +20,16 @@ from stitcher.app.services import (
     DocstringMerger,
 )
 from .protocols import InteractionHandler
+from stitcher.refactor.engine import (
+    TransactionManager,
+    SemanticGraph,
+    Planner,
+    RefactorContext,
+)
+from stitcher.refactor.migration import MigrationLoader
+from stitcher.refactor.workspace import Workspace
+from stitcher.refactor.sidecar.manager import SidecarManager
+
 from .runners import (
     CheckRunner,
     GenerateRunner,
@@ -27,6 +37,7 @@ from .runners import (
     PumpRunner,
     TransformRunner,
     CoverageRunner,
+    RefactorRunner,
 )
 from .types import PumpResult, FileCheckResult, CoverageResult
 from stitcher.adapter.python.docstring import (

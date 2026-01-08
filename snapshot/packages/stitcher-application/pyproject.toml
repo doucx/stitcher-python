@@ -12,6 +12,7 @@ dependencies = [
     "stitcher-common",
     "stitcher-config",
     "stitcher-python-adapter",
+    "stitcher-refactor",
     "pyneedle",
 ]
 
