@@ -4,10 +4,11 @@ from .generator import PythonStubGenerator
 from .fingerprint import PythonFingerprintStrategy
 from .inspector import parse_plugin_entry, InspectionError
 from .griffe_parser import GriffePythonParser
-from .docstring.raw_parser import RawDocstringParser
+from .docstring import RawDocstringParser, GriffeDocstringParser
 
 __all__ = [
     "RawDocstringParser",
+    "GriffeDocstringParser",
     "PythonParser",
     "PythonTransformer",
     "PythonStubGenerator",
