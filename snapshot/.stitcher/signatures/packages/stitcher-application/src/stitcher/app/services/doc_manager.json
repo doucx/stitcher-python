@@ -7,27 +7,37 @@
     "baseline_code_structure_hash": "8b9ee809fb5bdfc54978f20fafa97974e3d1f98a6128116b9af1b0d22e4afe7b"
   },
   "DocumentManager._apply_to_class": {
-    "baseline_code_signature_text": "def _apply_to_class(self, cls: ClassDef, docs: Dict[str, str], prefix: str = ''):",
-    "baseline_code_structure_hash": "5b974812afef0c262b7a9bb9464aeabaf79bb3fd7e2e1d773444ec54055302c5"
+    "baseline_code_signature_text": "def _apply_to_class(self, cls: ClassDef, docs: Dict[str, DocstringIR], prefix: str = ''):",
+    "baseline_code_structure_hash": "2157275cbd571a861fa9ccb640d5b4e50ae44173ec835f6ab9d8508decac76f7"
   },
   "DocumentManager._apply_to_function": {
-    "baseline_code_signature_text": "def _apply_to_function(self, func: FunctionDef, docs: Dict[str, str], prefix: str = ''):",
-    "baseline_code_structure_hash": "5a94f225bb81a136f72f9dcca8a328c621d70203df1bda3a9ceb6733c80e2b60"
+    "baseline_code_signature_text": "def _apply_to_function(self, func: FunctionDef, docs: Dict[str, DocstringIR], prefix: str = ''):",
+    "baseline_code_structure_hash": "9b71aea848284900be67e2b9d58d988bf866dc92c6b6c07cbe5eb915e7683d01"
+  },
+  "DocumentManager._deserialize_ir": {
+    "baseline_code_signature_text": "def _deserialize_ir(self, data: Union[str, Dict[str, Any]]) -> DocstringIR:",
+    "baseline_code_structure_hash": "d540c75ebbf8ac16bc068a35f5530518b1cea50bc05543f18f973876eeb2f3e2",
+    "baseline_yaml_content_hash": "d2b9abddef8299d3f9a652e7bcd29e27e709579ec3bd3a98c20183fd5b526bf2"
   },
   "DocumentManager._extract_from_class": {
-    "baseline_code_signature_text": "def _extract_from_class(self, cls: ClassDef, prefix: str = '') -> Dict[str, str]:",
-    "baseline_code_structure_hash": "b641cac7957ce1e9f760e4773b349672d8895b3c8bf6f449bfed8abb740fb65f",
+    "baseline_code_signature_text": "def _extract_from_class(self, cls: ClassDef, prefix: str = '') -> Dict[str, DocstringIR]:",
+    "baseline_code_structure_hash": "04658528dda48ba6f4553631c892e17ace2f350167ace9186581a222082e5397",
     "baseline_yaml_content_hash": "a7d2e19478cc208c6ac38b9d8894e24f732ca1d6c66b27f5251160beb592b8f3"
   },
   "DocumentManager._extract_from_function": {
-    "baseline_code_signature_text": "def _extract_from_function(self, func: FunctionDef, prefix: str = '') -> Dict[str, str]:",
-    "baseline_code_structure_hash": "355f7f04917ea79f8802aab31831de14f1c370bd4a5d97e19392cd15bd95cd33",
+    "baseline_code_signature_text": "def _extract_from_function(self, func: FunctionDef, prefix: str = '') -> Dict[str, DocstringIR]:",
+    "baseline_code_structure_hash": "fcdf03f80b7df20eb645399a1b3970a47c6a78b3d98364ac3dbd34739f06cfd1",
     "baseline_yaml_content_hash": "d618bc5c7f5f8567fdf81168eed319ecd3ba82b43fba4f75d7aa64fc2ed8b8e0"
   },
   "DocumentManager._extract_keys": {
     "baseline_code_signature_text": "def _extract_keys(self, module: ModuleDef, public_only: bool) -> set:",
     "baseline_code_structure_hash": "7a2c8ee81bdded8693b6ab2a3034c3459b54ccda65b0a41f3c84f4f2e7ab9682",
     "baseline_yaml_content_hash": "1ce6c578a26aaa0fbbfca857442133ee3295592534adce0009938acb12f371e3"
+  },
+  "DocumentManager._serialize_ir": {
+    "baseline_code_signature_text": "def _serialize_ir(self, ir: DocstringIR) -> Union[str, Dict[str, Any]]:",
+    "baseline_code_structure_hash": "e56a0adff3469aa6298fdb962bf102b0ba1154d1d861c3a7668a0fffb4def6ea",
+    "baseline_yaml_content_hash": "16e102b61434fa6dd4b1ea93a3270f57784033d8b58f51aff23ac67a6630b5ce"
   },
   "DocumentManager.adapter": {
     "baseline_yaml_content_hash": "0bd0ae12d5d4a6d7b48ad371777ab4a728d2d38f1af1ff7ed506318c76a872c4"
@@ -43,9 +53,9 @@
     "baseline_yaml_content_hash": "e23620966b1257a1218186cf795fa98caccde9df4fcbb53f6dcec3e7fcc066b5"
   },
   "DocumentManager.compute_yaml_content_hash": {
-    "baseline_code_signature_text": "def compute_yaml_content_hash(self, content: str) -> str:",
-    "baseline_code_structure_hash": "d3b123b66789e19e8bf27b8ffe812ba1b587f09ffc978cd4fc4ac52d75a4db2d",
-    "baseline_yaml_content_hash": "15ad56e892edf11ae8d0042ec172594b926061e836b2c86c01fbf934c1e4de57"
+    "baseline_code_signature_text": "def compute_yaml_content_hash(self, content: Union[str, Dict[str, Any]]) -> str:",
+    "baseline_code_structure_hash": "9b0193fc54ae81f01144d1408e8008630f86ad52d4feca7eaea809e9ef11ae6c",
+    "baseline_yaml_content_hash": "cf76c9a02656f387dcdd2153bc83fa7fae974c30b829eba1df05dc7e592eba25"
   },
   "DocumentManager.compute_yaml_content_hashes": {
     "baseline_code_signature_text": "def compute_yaml_content_hashes(self, module: ModuleDef) -> Dict[str, str]:",
@@ -53,9 +63,9 @@
     "baseline_yaml_content_hash": "5af0e615ba0abfb5c4d821de4ea0ac9e210366143d1dfe17a892512f424afd29"
   },
   "DocumentManager.flatten_module_docs": {
-    "baseline_code_signature_text": "def flatten_module_docs(self, module: ModuleDef) -> Dict[str, str]:",
-    "baseline_code_structure_hash": "3e21d0079fb4b5461eff0eb362eff326fe5b545956faca61a518e9d9e1c3b302",
-    "baseline_yaml_content_hash": "5b362466cad657f4b895ce4e61d05d11bf967671a34e9f21e092b3a16b9f8574"
+    "baseline_code_signature_text": "def flatten_module_docs(self, module: ModuleDef) -> Dict[str, DocstringIR]:",
+    "baseline_code_structure_hash": "743d7524d695e466e9bb0d5e32b9e05a599f694eb69f25a912e5f398fb2035d5",
+    "baseline_yaml_content_hash": "89f431b2c76878b80efef2a6d92fef633fab317702b4368dbf495fb0e64982d4"
   },
   "DocumentManager.hydrate_module": {
     "baseline_code_signature_text": "def hydrate_module(self, module: ModuleDef, force: bool = False, reconcile: bool = False, resolution_map: Optional[Dict[str, Any]] = None, dry_run: bool = False) -> Dict[str, Any]:",
@@ -63,10 +73,11 @@
     "baseline_yaml_content_hash": "a4fb37a5f60218d39cfc657bedba077ef1f7ae6229ef6f9b2d6c4d58f4d7fc52"
   },
   "DocumentManager.load_docs_for_module": {
-    "baseline_code_signature_text": "def load_docs_for_module(self, module: ModuleDef) -> Dict[str, str]:",
-    "baseline_code_structure_hash": "eb4fa00952ea163205e00d0e7060553f0bbc605c62664019a3678916c978dae5",
-    "baseline_yaml_content_hash": "67e798f027779b1afac5d6fcf03d35d0e0b1bac08e920a7c2624ad2c0919d6c9"
+    "baseline_code_signature_text": "def load_docs_for_module(self, module: ModuleDef) -> Dict[str, DocstringIR]:",
+    "baseline_code_structure_hash": "7470cd97a7b59b0e4d822b7c274493787c7254fb4c5aeaac42549a35b62002a0",
+    "baseline_yaml_content_hash": "a5f256c4763afa098eab47a6b83969a567577883e8db685bdb66ef3f60643c43"
   },
+  "DocumentManager.parser": {},
   "DocumentManager.reformat_docs_for_module": {
     "baseline_code_signature_text": "def reformat_docs_for_module(self, module: ModuleDef) -> bool:",
     "baseline_code_structure_hash": "a2f948dc6e91ac5cadfae6dd35803e41ac4599d7f1a652ab5837e4cabb34d632",
@@ -78,6 +89,6 @@
   "DocumentManager.save_docs_for_module": {
     "baseline_code_signature_text": "def save_docs_for_module(self, module: ModuleDef) -> Path:",
     "baseline_code_structure_hash": "02e5fe452fa0690256cf2ccf7dd9bf4ee571745329485156eea4f2879692527a",
-    "baseline_yaml_content_hash": "f78e4597c85a7579c94c58dac85fd9c9e3860a5cba078c318dc565fa07588273"
+    "baseline_yaml_content_hash": "c30f2cec878e8951aebe24bc87a7adb9fd507c0c59aafe0d2a5902e3f1b413b3"
   }
 }

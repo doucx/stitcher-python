@@ -1,31 +1,33 @@
 import pytest
 from stitcher.spec import DocstringIR, DocstringSection, DocstringItem
-from stitcher.adapter.python.docstring.renderers import GoogleDocstringRenderer, NumpyDocstringRenderer
+from stitcher.adapter.python.docstring.renderers import (
+    GoogleDocstringRenderer,
+    NumpyDocstringRenderer,
+)
 
 
 @pytest.fixture
 def sample_ir():
-    ir = DocstringIR(
-        summary="Summary line.",
-        extended="Extended description."
-    )
+    ir = DocstringIR(summary="Summary line.", extended="Extended description.")
     # Add Args
-    ir.sections.append(DocstringSection(
-        kind="parameters",
-        title="Args",
-        content=[
-            DocstringItem(name="x", annotation="int", description="The x value."),
-            DocstringItem(name="y", description="The y value.")
-        ]
-    ))
+    ir.sections.append(
+        DocstringSection(
+            kind="parameters",
+            title="Args",
+            content=[
+                DocstringItem(name="x", annotation="int", description="The x value."),
+                DocstringItem(name="y", description="The y value."),
+            ],
+        )
+    )
     # Add Returns
-    ir.sections.append(DocstringSection(
-        kind="returns",
-        title="Returns",
-        content=[
-            DocstringItem(annotation="bool", description="True if success.")
-        ]
-    ))
+    ir.sections.append(
+        DocstringSection(
+            kind="returns",
+            title="Returns",
+            content=[DocstringItem(annotation="bool", description="True if success.")],
+        )
+    )
     return ir
 
 
@@ -37,7 +39,7 @@ class TestGoogleDocstringRenderer:
 
         renderer = GoogleDocstringRenderer()
         output = renderer.render(sample_ir)
-        
+
         expected = """Summary line.
 
 Extended description.
@@ -48,7 +50,7 @@ Args:
 
 Returns:
     bool: True if success."""
-        
+
         assert output.strip() == expected.strip()
 
 
@@ -60,7 +62,7 @@ class TestNumpyDocstringRenderer:
 
         renderer = NumpyDocstringRenderer()
         output = renderer.render(sample_ir)
-        
+
         expected = """Summary line.
 
 Extended description.
@@ -76,5 +78,5 @@ Returns
 -------
 bool
     True if success."""
-        
+
         assert output.strip() == expected.strip()

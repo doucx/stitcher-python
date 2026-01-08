@@ -1,12 +1,16 @@
 "DocumentManager": |-
   Service responsible for managing documentation assets.
   Handles extraction of docstrings from IR and persistence via adapters.
+"DocumentManager._deserialize_ir": |-
+  Converts YAML data (string or dict) into DocstringIR.
 "DocumentManager._extract_from_class": |-
   Recursively extracts docstrings from a class and its methods.
 "DocumentManager._extract_from_function": |-
   Recursively extracts docstrings from a function.
 "DocumentManager._extract_keys": |-
   Extracts addressable FQNs from the module IR.
+"DocumentManager._serialize_ir": |-
+  Converts DocstringIR back to YAML data (string or dict).
 "DocumentManager.adapter": |-
   The document adapter for reading/writing docs.
 "DocumentManager.apply_docs_to_module": |-
@@ -16,23 +20,20 @@
   Compares module structure against external docs.
   Returns a dict of issues: {'missing': set(...), 'extra': set(...), 'conflict': set(...)}
 "DocumentManager.compute_yaml_content_hash": |-
-  Computes the hash of a docstring content string.
+  Computes a stable hash for either a string or a dict.
 "DocumentManager.compute_yaml_content_hashes": |-
   Computes hashes for each docstring in the corresponding YAML.
 "DocumentManager.flatten_module_docs": |-
-  Converts a ModuleDef IR into a flat dictionary of docstrings.
-  Keys are relative FQNs (e.g. "MyClass.method").
+  Extracts docs from source code module into a flat dict of IRs.
 "DocumentManager.hydrate_module": |-
   Merges docstrings from Code into YAML.
   Returns a dict with 'success': bool, 'updated_keys': list, 'conflicts': list, 'reconciled_keys': list
 "DocumentManager.load_docs_for_module": |-
-  Loads documentation from the corresponding .stitcher.yaml file.
-  Returns empty dict if file does not exist.
+  Loads YAML doc file and deserializes content into DocstringIR objects.
 "DocumentManager.reformat_docs_for_module": |-
   Re-formats an existing documentation file to enforce canonical styling.
   Returns True if the file was reformatted, False otherwise.
 "DocumentManager.root_path": |-
   The root path of the project.
 "DocumentManager.save_docs_for_module": |-
-  Extracts docs from the module and saves them to a sidecar .stitcher.yaml file.
-  Returns the path to the saved file.
+  Extracts docs from module (code), serializes them, and saves to YAML.

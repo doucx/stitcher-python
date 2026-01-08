@@ -1,6 +1,4 @@
-import pytest
 from stitcher.adapter.python.docstring.parsers import GriffeDocstringParser
-from stitcher.spec import DocstringIR
 
 
 class TestGriffeDocstringParser:
@@ -22,11 +20,11 @@ class TestGriffeDocstringParser:
 
         assert ir.summary == "Summary line."
         assert ir.extended == "Extended description."
-        
+
         # Check Sections
         # Order: Args, Returns
         # Note: Griffe parsing order depends on input
-        
+
         args_section = next(s for s in ir.sections if s.kind == "parameters")
         # Griffe parses standard headers into kind, leaving title as None
         assert args_section.title is None
@@ -34,7 +32,7 @@ class TestGriffeDocstringParser:
         assert args_section.content[0].name == "x"
         assert args_section.content[0].annotation == "int"
         assert args_section.content[0].description == "The x value."
-        
+
         returns_section = next(s for s in ir.sections if s.kind == "returns")
         assert len(returns_section.content) == 1
         assert returns_section.content[0].annotation == "bool"
@@ -56,9 +54,9 @@ class TestGriffeDocstringParser:
         """
         parser = GriffeDocstringParser(style="numpy")
         ir = parser.parse(doc.strip())
-        
+
         assert ir.summary == "Summary line."
-        
+
         args_section = next(s for s in ir.sections if s.kind == "parameters")
         # Griffe parses standard headers into kind, leaving title as None
         assert args_section.title is None

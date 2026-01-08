@@ -1,4 +1,16 @@
 "DocstringMerger": |-
-  Service responsible for merging conflicting DocstringIR objects.
+  Service responsible for merging DocstringIR objects.
+  Encapsulates strategies for resolving conflicts and preserving data (like Addons).
 "DocstringMerger.merge": |-
-  Merges an incoming docstring into a base docstring, preserving addons from the base.
+  Merges an incoming docstring (usually from source code) into a base docstring (usually from YAML).
+
+  Strategy:
+  - The `incoming` content (summary/sections) takes precedence (Overwrite).
+  - The `base` metadata (Addons) is preserved.
+
+  Args:
+      base: The existing documentation (can be None if new).
+      incoming: The new documentation from source.
+
+  Returns:
+      A new DocstringIR object representing the merged state.

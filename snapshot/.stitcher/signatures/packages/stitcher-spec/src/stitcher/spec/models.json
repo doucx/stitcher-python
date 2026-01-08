@@ -62,6 +62,7 @@
   "ClassDef.docstring": {
     "baseline_yaml_content_hash": "00edb6e4924ebecf4341c3e4287b6c255338b101dbe0945f80cc7be8862e4364"
   },
+  "ClassDef.docstring_ir": {},
   "ClassDef.methods": {
     "baseline_yaml_content_hash": "65e1c7eb0a72c6985c0b56cf99e9dd37d5390a61cead3b5af39d06abbed32bdc"
   },
@@ -93,6 +94,7 @@
   "FunctionDef.docstring": {
     "baseline_yaml_content_hash": "532766530fa64e27afa8d76bfd767d524e94cd3156060de9698d676645562eb0"
   },
+  "FunctionDef.docstring_ir": {},
   "FunctionDef.is_async": {
     "baseline_yaml_content_hash": "f89efbf7d8cc3804134869a90435348d77cf6add0c2dcdcfa457cedaae55cfce"
   },
@@ -128,6 +130,7 @@
   "ModuleDef.docstring": {
     "baseline_yaml_content_hash": "5c6aae510b59fca91de8e1d4784dc24bd9d93a44f409e9f4994f86b8a8452a28"
   },
+  "ModuleDef.docstring_ir": {},
   "ModuleDef.dunder_all": {
     "baseline_yaml_content_hash": "abba6c9371744cccb21f7479869e904b9f5df23cfb0d913fa1b27417f2d84dc7"
   },

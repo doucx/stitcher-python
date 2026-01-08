@@ -1,5 +1,4 @@
 import copy
-import difflib
 from pathlib import Path
 from typing import Dict, List
 from collections import defaultdict
@@ -116,8 +115,12 @@ class PumpRunner:
                     yaml_docs = self.doc_manager.load_docs_for_module(module)
                     for key in res["conflicts"]:
                         # Extract summaries for diffing
-                        yaml_summary = yaml_docs[key].summary if key in yaml_docs else ""
-                        src_summary = source_docs[key].summary if key in source_docs else ""
+                        yaml_summary = (
+                            yaml_docs[key].summary if key in yaml_docs else ""
+                        )
+                        src_summary = (
+                            source_docs[key].summary if key in source_docs else ""
+                        )
 
                         doc_diff = self.differ.generate_text_diff(
                             yaml_summary or "",
@@ -221,14 +224,16 @@ class PumpRunner:
                         # Note: This source_docs[fqn] has addons merged in previous step if it was updated!
                         # Wait, source_docs came from flatten_module_docs(module) at start of loop.
                         # It does NOT have addons.
-                        
+
                         # We need the IR that we are about to save (which might have addons).
                         ir_to_save = new_yaml_docs.get(fqn)
                         if ir_to_save:
-                             serialized = self.doc_manager._serialize_ir(ir_to_save)
-                             doc_hash = self.doc_manager.compute_yaml_content_hash(serialized)
-                             fp["baseline_yaml_content_hash"] = doc_hash
-                             fqn_was_updated = True
+                            serialized = self.doc_manager._serialize_ir(ir_to_save)
+                            doc_hash = self.doc_manager.compute_yaml_content_hash(
+                                serialized
+                            )
+                            fp["baseline_yaml_content_hash"] = doc_hash
+                            fqn_was_updated = True
 
                 if fqn_was_updated:
                     new_hashes[fqn] = fp
@@ -254,14 +259,14 @@ class PumpRunner:
             if not file_has_errors:
                 if file_had_updates:
                     # new_yaml_docs is Dict[str, DocstringIR], need to serialize!
-                    # BUT doc_manager.adapter.save expects raw Dict. 
+                    # BUT doc_manager.adapter.save expects raw Dict.
                     # We should rely on doc_manager helper instead of calling adapter directly,
                     # OR manually serialize here.
                     # Since doc_manager.save_docs_for_module re-extracts from module (which we don't want, we have merged state),
                     # we must serialize here.
-                    
+
                     final_data = {
-                        k: self.doc_manager._serialize_ir(v) 
+                        k: self.doc_manager._serialize_ir(v)
                         for k, v in new_yaml_docs.items()
                     }
                     module_path = self.root_path / module.file_path

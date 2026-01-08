@@ -28,10 +28,10 @@ def get_docstring_codec(
 ) -> Tuple[DocstringParserProtocol, DocstringRendererProtocol]:
     """
     Factory to get the parser and renderer for a specific docstring style.
-    
+
     Args:
         style: "google", "numpy", or "raw".
-        
+
     Returns:
         (Parser, Renderer) tuple.
     """
@@ -39,7 +39,7 @@ def get_docstring_codec(
         return GriffeDocstringParser("google"), GoogleDocstringRenderer()
     elif style == "numpy":
         return GriffeDocstringParser("numpy"), NumpyDocstringRenderer()
-    
+
     # Default to raw
     return RawDocstringParser(), RawDocstringRenderer()
 

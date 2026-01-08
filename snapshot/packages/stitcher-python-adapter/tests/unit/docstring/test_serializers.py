@@ -45,7 +45,9 @@ def complex_ir() -> DocstringIR:
             ),
             DocstringSection(
                 kind=SectionKind.RAISES,
-                content=[DocstringItem(annotation="ValueError", description="If invalid.")],
+                content=[
+                    DocstringItem(annotation="ValueError", description="If invalid.")
+                ],
             ),
             DocstringSection(
                 kind=SectionKind.EXAMPLES,
@@ -106,7 +108,7 @@ class TestGoogleSerializer:
         assert reconstructed_ir.summary == complex_ir.summary
         assert reconstructed_ir.extended == complex_ir.extended
         assert reconstructed_ir.addons == complex_ir.addons
-        
+
         # A simple equality check might fail due to ordering or minor differences.
         # Let's check section by section.
         assert len(reconstructed_ir.sections) == len(complex_ir.sections)

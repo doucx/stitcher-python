@@ -1,4 +1,3 @@
-from typing import List, Union
 from stitcher.spec import (
     DocstringIR,
     DocstringSection,
@@ -27,7 +26,7 @@ class BaseStructuredRenderer(DocstringRendererProtocol):
 
     def _render_section(self, section: DocstringSection) -> str:
         raise NotImplementedError
-    
+
     def _get_default_title(self, kind: str) -> str:
         return ""
 
@@ -46,25 +45,25 @@ class GoogleDocstringRenderer(BaseStructuredRenderer):
     def _render_section(self, section: DocstringSection) -> str:
         lines = []
         title = section.title or self._get_default_title(section.kind)
-        
+
         if title:
             lines.append(f"{title}:")
-        
+
         if section.kind == "text" or section.kind == "admonition":
-             # Text content: Indent body
-             if isinstance(section.content, str):
-                 for line in section.content.splitlines():
-                     lines.append(f"    {line}")
-        
+            # Text content: Indent body
+            if isinstance(section.content, str):
+                for line in section.content.splitlines():
+                    lines.append(f"    {line}")
+
         elif isinstance(section.content, list):
             # Items (Args, Returns, Raises)
             for item in section.content:
                 if not isinstance(item, DocstringItem):
                     continue
-                
+
                 # Format: name (type): description
                 # Or for Returns: type: description
-                
+
                 prefix = ""
                 if item.name:
                     prefix = f"{item.name}"
@@ -75,15 +74,15 @@ class GoogleDocstringRenderer(BaseStructuredRenderer):
 
                 if prefix:
                     if item.description:
-                        # Check if description fits on same line? 
+                        # Check if description fits on same line?
                         # Google style usually: "name (type): description"
                         lines.append(f"    {prefix}: {item.description}")
                     else:
-                         lines.append(f"    {prefix}")
+                        lines.append(f"    {prefix}")
                 else:
                     # Just description case?
                     if item.description:
-                         lines.append(f"    {item.description}")
+                        lines.append(f"    {item.description}")
 
         return "\n".join(lines)
 
@@ -102,7 +101,7 @@ class NumpyDocstringRenderer(BaseStructuredRenderer):
     def _render_section(self, section: DocstringSection) -> str:
         lines = []
         title = section.title or self._get_default_title(section.kind)
-        
+
         # NumPy Style:
         # Title
         # -----
@@ -111,36 +110,38 @@ class NumpyDocstringRenderer(BaseStructuredRenderer):
             lines.append("-" * len(title))
 
         if section.kind == "text" or section.kind == "admonition":
-             if isinstance(section.content, str):
-                 for line in section.content.splitlines():
-                     lines.append(line) # NumPy text sections usually not indented relative to title? Or are they?
-                                        # Usually no indentation for the block itself relative to module indent, 
-                                        # but here we are producing the docstring content.
-                                        # Standard NumPy: text is at same level.
-                                        
+            if isinstance(section.content, str):
+                for line in section.content.splitlines():
+                    lines.append(
+                        line
+                    )  # NumPy text sections usually not indented relative to title? Or are they?
+                    # Usually no indentation for the block itself relative to module indent,
+                    # but here we are producing the docstring content.
+                    # Standard NumPy: text is at same level.
+
         elif isinstance(section.content, list):
             for item in section.content:
                 if not isinstance(item, DocstringItem):
                     continue
-                
+
                 # Format:
                 # name : type
                 #     description
-                
+
                 header_parts = []
                 if item.name:
                     header_parts.append(item.name)
-                
+
                 if item.annotation:
                     if item.name:
                         header_parts.append(f" : {item.annotation}")
                     else:
-                        header_parts.append(item.annotation) # For returns
+                        header_parts.append(item.annotation)  # For returns
 
                 header = "".join(header_parts)
                 if header:
                     lines.append(header)
-                
+
                 if item.description:
                     for line in item.description.splitlines():
                         lines.append(f"    {line}")
