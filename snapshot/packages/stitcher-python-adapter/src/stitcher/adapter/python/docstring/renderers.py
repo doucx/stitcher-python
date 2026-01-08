@@ -134,10 +134,12 @@ class GoogleDocstringRenderer(BaseStructuredRenderer):
                 elif item.annotation:
                     prefix = f"{item.annotation}"
 
+                indent = "    "
                 if prefix:
-                    lines.append(f"{prefix}: {item.description}" if item.description else prefix)
+                    line = f"{indent}{prefix}: {item.description}" if item.description else f"{indent}{prefix}"
+                    lines.append(line)
                 elif item.description:
-                    lines.append(item.description)
+                    lines.append(f"{indent}{item.description}")
 
         return "\n".join(lines)
 
