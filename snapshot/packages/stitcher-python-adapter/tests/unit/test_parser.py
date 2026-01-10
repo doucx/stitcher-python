@@ -1,4 +1,4 @@
-from stitcher.adapter.python.internal.parser import parse_source_code
+from stitcher.python.analysis.cst.visitors import parse_source_code
 
 
 class TestParser:
