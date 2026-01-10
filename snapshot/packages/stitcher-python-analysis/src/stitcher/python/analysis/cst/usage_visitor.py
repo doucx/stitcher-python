@@ -108,7 +108,8 @@ class UsageScanVisitor(cst.CSTVisitor):
                     top_level = absolute_module.split(".")[0]
                     self.active_symbols[top_level] = top_level
 
-        return True
+        # Prevent visiting children to avoid double-counting in visit_Name
+        return False
 
     def visit_ImportFrom(self, node: cst.ImportFrom) -> Optional[bool]:
         absolute_module = None
@@ -145,8 +146,9 @@ class UsageScanVisitor(cst.CSTVisitor):
                             local_name = alias.asname.name.value
                         
                         self.active_symbols[local_name] = full_fqn
-                        
-        return True
+        
+        # Prevent visiting children to avoid double-counting in visit_Name
+        return False
 
     def visit_Attribute(self, node: cst.Attribute) -> Optional[bool]:
         full_name = helpers.get_full_name_for_node(node)
