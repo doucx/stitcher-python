@@ -31,6 +31,11 @@
     "baseline_yaml_content_hash": "5cfeb1e08afea9b2afe1a006826769d9ea0de0929fd1b3f841f3dcb22e083498"
   },
   "Workspace.import_to_source_dirs": {},
+  "Workspace.is_peripheral": {
+    "baseline_code_signature_text": "def is_peripheral(self, file_path: Path) -> bool:",
+    "baseline_code_structure_hash": "e24accfaaa1c631476d9fd8ce2da5958abc720a3d5fae40ebf35ade6c0042064"
+  },
+  "Workspace.peripheral_source_dirs": {},
   "Workspace.root_path": {},
   "log": {}
 }
