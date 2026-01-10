@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat(adapter): 实现 PythonAdapter 以支持 Stitcher Index 协议", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768046756.9925313, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "Capture: M uv.lock", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768046963.589146, "duration_ms": 0}}
