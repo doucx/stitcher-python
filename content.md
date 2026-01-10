@@ -1,93 +1,65 @@
-好的，我明白了。构建失败是因为 `setuptools` 在项目根目录进行包的自动发现时，错误地将 `migrations` 目录也识别为了一个顶层包，从而因不确定性而中止构建。
+太棒了。所有的测试都已通过，这意味着我们这次重大的架构重构——将存根生成逻辑解耦到专门的 `stitcher-stubgen` 包中——已经圆满完成，并且保持了系统的完整性。
 
-您提出的白名单机制是正确的解决思路。我将修改根目录的 `pyproject.toml` 文件，明确告知 `setuptools` 在进行包发现时，应当排除 `migrations` 目录，从而只考虑 `packages` 目录下的内容。
+我将生成一个 `[COMMIT]` 计划，将这些变更作为一个完整的逻辑单元提交到版本控制中。
 
-## [WIP] fix: 配置 setuptools 以防止意外的包发现
-
-### 错误分析
-
-构建过程失败，错误信息为 `Multiple top-level packages discovered in a flat-layout: ['packages', 'migrations']`。
-
-根本原因是，在执行开发环境安装（如 `pip install -e .` 或 `uv sync`）时，构建工具 `setuptools` 会自动扫描项目根目录以发现可分发的 Python 包。在我们的项目中，它同时发现了 `packages` 和 `migrations` 两个目录，并认为它们都是顶层包。由于项目采用的是“flat-layout”（即源码不在统一的 `src` 目录下），`setuptools` 为了防止意外打包无关文件，在这种模棱两可的情况下会主动失败。
+## [COMMIT] refactor(arch): decouple stub generation into a specialized package
 
 ### 用户需求
 
-修改根 `pyproject.toml` 文件，使用白名单（或等效的排除机制）来确保构建系统只考虑 `packages` 目录下的代码，忽略 `migrations` 目录。
+将过去分散在多个包中的存根生成逻辑整合并提取到一个新的独立包 `stitcher-stubgen` 中，并完成相关的清理和集成工作。
 
 ### 评论
 
-这是一个在 Monorepo 结构中很常见的问题。通过显式配置构建工具的包发现行为，可以消除歧义，确保构建过程的确定性和稳定性。这是保持开发环境健康的关键一步。
+这次重构是项目演进过程中的一个重要里程碑。它不仅将 `stitcher-application` 的职责精简为纯粹的应用编排，还通过引入 `StubgenService` 外观模式，为存根生成这一复杂领域建立了一个清晰、稳定的 API 边界。虽然过程中遇到了一些由于 monorepo 复杂性导致的集成挑战（如命名空间冲突和类型不一致），但我们通过静态分析和自动化测试逐一克服了它们，最终使项目结构变得更加稳健和易于扩展。
 
 ### 目标
 
-在根 `pyproject.toml` 文件中添加 `[tool.setuptools.packages.find]` 配置，以从包发现路径中排除 `migrations` 目录。
+1.  将所有变更（包括新包的创建、代码迁移、API 切换、类型修复以及冗余清理）添加到 Git 暂存区。
+2.  创建一个包含详细说明的提交记录，阐述这次架构重构的核心变动和意义。
 
 ### 基本原理
 
-我们将遵循 `setuptools` 的官方建议，通过 `pyproject.toml` 中的 `[tool.setuptools.packages.find]` 表来定制包发现逻辑。最直接且最稳健的方法是使用 `exclude` 选项，明确将 `migrations` 目录排除掉。这实际上达到了“白名单”的效果，因为它确保了只有我们期望的目录（即 `packages` 及其子目录中的内容）会被进一步处理。
-
-此修改将直接解决 `setuptools` 的歧义问题，使构建过程能够顺利进行。
+通过 Git 指令将目前工作区中所有经过验证的更改永久化。提交信息将详细列出重构的关键点，包括新服务的引入、协议的修正以及对 monorepo 构建配置的微调，以便未来的维护者能够清晰地理解这次变动的意图和范围。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/critical #comp/build #scope/dx #ai/instruct #task/domain/tooling #task/object/build-system #task/action/configuration #task/state/continue
+#intent/architect #flow/ready #priority/high #comp/build #comp/stubgen #comp/application #scope/core #ai/delegate #task/domain/architecture #task/object/stubgen-package #task/action/cleanup #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 修改根 `pyproject.toml` 以排除 `migrations` 目录
+#### Acts 1: 提交架构重构变更
 
-我将对根 `pyproject.toml` 文件进行 `patch` 操作，添加 `tool.setuptools.packages.find` 配置块。
+我们将所有经过验证的变更添加到暂存区，并创建一个内容详尽的原子提交。
 
 ~~~~~act
-patch_file
-pyproject.toml
+git_add
+.
 ~~~~~
-~~~~~toml.old
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-cov",
-    "pytest-timeout",
-    "pytest-mock",
-    "ruff",
-    "mypy",
-    "pyneedle",
-    "pyneedle-pointer",
-    "pyneedle-spec",
-    "stitcher-cli",
-    "stitcher-application",
-    "stitcher-stubgen",
-    "stitcher-test-utils",
-    "stitcher-refactor",
-]
-~~~~~
-~~~~~toml.new
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "pytest-cov",
-    "pytest-timeout",
-    "pytest-mock",
-    "ruff",
-    "mypy",
-    "pyneedle",
-    "pyneedle-pointer",
-    "pyneedle-spec",
-    "stitcher-cli",
-    "stitcher-application",
-    "stitcher-stubgen",
-    "stitcher-test-utils",
-    "stitcher-refactor",
-]
 
-[tool.setuptools.packages.find]
-exclude = ["migrations*"]
+~~~~~act
+git_commit
+~~~~~
+~~~~~text
+refactor(arch): decouple stub generation into a specialized package
+
+This major structural refactoring extracts all stub generation logic from 'stitcher-python-adapter' and 'stitcher-application' into a new, dedicated 'stitcher-stubgen' package.
+
+Key Changes:
+- Extracted 'GenerateRunner', 'StubPackageManager', and 'PythonStubGenerator' into 'stitcher-stubgen'.
+- Introduced 'StubgenService' as a clean, high-level facade for the stub generation domain, significantly reducing 'StitcherApp's internal complexity.
+- Refactored 'StitcherApp' constructor and updated all associated factories, command handlers, and test utilities (including 'create_test_app').
+- Standardized namespace package declarations across the project using 'pkgutil.extend_path' to resolve cross-package integration issues.
+- Fixed several type-safety issues and protocol mismatches identified by Pyright during the transition.
+- Refined root 'pyproject.toml' configuration to exclude the 'migrations' directory from setuptools discovery, preventing build ambiguity.
+- Removed now-redundant files and dead code in original packages to maintain a lean codebase.
+
+This move aligns the project with HFEA principles by enforcing strict domain boundaries and providing a specialized environment for the stub generation engine to evolve independently.
 ~~~~~
 
 ### 下一步建议
 
-配置已更新。请重新运行您的构建或安装命令（例如 `uv sync` 或 `pip install -e .`），构建过程现在应该可以成功通过。
-
-如果成功，我们可以将这些修复工作作为一个完整的单元进行提交。
+架构已经焕然一新。下一步，我建议：
+-   **文档更新**：如果项目中存在架构说明文档或 README，建议更新它们以反映 `stitcher-stubgen` 包的引入和新 API。
+-   **探索新功能**：既然存根生成现在已经是一个独立的模块，我们可以更容易地为其添加新特性，例如支持更复杂的模板、支持不同的输出格式，或者优化大规模项目的并行生成性能。
