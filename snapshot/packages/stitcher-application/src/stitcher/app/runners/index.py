@@ -15,7 +15,7 @@ class IndexRunner:
 
         bus.info(L.index.run.start)
         stats = self.scanner.scan()
-        
+
         bus.success(
             L.index.run.complete,
             added=stats["added"],
