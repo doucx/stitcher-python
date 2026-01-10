@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[COMMIT] feat(cli): 集成增量索引扫描器并添加 `stitcher index build` 命令", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768047141.1151845, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[COMMIT] feat(cli): 完整集成持久化索引系统并提供 Python 支持", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768047239.5779355, "duration_ms": 0}}
