@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "Acts 1: 创建回归测试以捕获解析 Bug", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768036046.5601473, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test: 修复解析器鲁棒性测试的脆弱性", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768036396.760348, "duration_ms": 0}}
