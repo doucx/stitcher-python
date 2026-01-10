@@ -31,6 +31,13 @@ class DatabaseManager:
         return conn
 
     def initialize(self) -> None:
+        # 1. Ensure directory structure and gitignore
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        gitignore_path = self.db_path.parent / ".gitignore"
+        if not gitignore_path.exists():
+            gitignore_path.write_text("*\n", encoding="utf-8")
+
+        # 2. Initialize Schema
         schema_path = files("stitcher.index").joinpath("schema.sql")
         schema_sql = schema_path.read_text(encoding="utf-8")
 
