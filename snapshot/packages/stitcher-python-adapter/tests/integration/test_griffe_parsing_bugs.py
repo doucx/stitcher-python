@@ -1,12 +1,3 @@
-#### Acts 1: 创建回归测试以捕获解析 Bug
-
-我们首先创建新的测试文件。这个测试会直接调用 `GriffePythonParser` 来解析一个包含局部 `typing` 导入的字符串，并断言 `griffe` 抛出 `AliasResolutionError`。这完全符合“捕获错误”的要求。
-
-~~~~~act
-write_file
-packages/stitcher-python-adapter/tests/integration/test_griffe_parsing_bugs.py
-~~~~~
-~~~~~python
 from textwrap import dedent
 import pytest
 from griffe import AliasResolutionError
@@ -36,4 +27,3 @@ def test_parser_fails_on_local_typing_import():
     # This test serves to document this dependency limitation.
     with pytest.raises(AliasResolutionError):
         parser.parse(source_code, "buggy_module.py")
-~~~~~
