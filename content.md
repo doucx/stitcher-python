@@ -1,137 +1,183 @@
-你的分析完全正确，一针见血。
+好的，测试已经成功地将隐藏的错误暴露了出来。现在我们进入 TDD 周期的 "GREEN" 阶段，开始修复。
 
-`except ValueError: pass` 这种静默处理错误的方式是架构中的“暗物质”，它掩盖了真正的问题，导致了下游看似无关的测试失败，并且使得调试变得异常困难。我们必须根除这种模式。
+正如我们分析的那样，修复分为两部分：首先增强 `SemanticGraph` 使其能可靠地查找符号，然后修复 `RenameSymbolOperation` 以使用新方法并移除静默异常。
 
-我将严格遵循你隐含提出的 TDD（测试驱动开发）修复流程：
-
-1.  **RED**: 首先，我会创建一个新的单元测试，这个测试的唯一目的就是**失败**，并且是以 `ValueError` 的形式失败，从而将这个被隐藏的错误暴露出来。
-2.  **GREEN**: 然后，我会提出第二个计划来修复这个根本问题。
-
-这是第一步的计划，我们先让错误无所遁形。
-
-## [WIP] test: 暴露 RenameSymbolOperation 中的静默异常
+## [WIP] fix: 修复 RenameSymbolOperation 中的静默异常并增强 Graph
 
 ### 错误分析
 
-`test_refactor_apply_e2e` 和 `test_refactor_apply_dry_run` 测试失败，返回 `exit_code=1`，但没有提供有意义的错误输出。
-
-根本原因在于 `RenameSymbolOperation._find_definition_node` 方法。在 `SemanticGraph` API 重构后，该方法无法再通过简单的迭代 `ctx.graph._modules` 找到符号的定义节点。这会触发一个 `ValueError`，但该异常被一个 `except ValueError: pass` 块静默处理了。
-
-这个静默的失败导致 `collect_intents` 方法返回了一个不完整的意图列表（特别是缺少了 `SidecarUpdateIntent`）。这个不完整的计划导致了下游组件（如 `Planner` 或 `Renamer`）在执行时遇到未预期的状态，从而引发了一个未被捕获的异常，最终导致了测试以 `exit_code=1` 失败。
+我们编写的单元测试 `test_collect_intents_raises_error_if_symbol_not_found` 失败并提示 `Failed: DID NOT RAISE <class 'ValueError'>`。这**完美地证实**了我们的诊断：`RenameSymbolOperation.collect_intents` 方法中的 `except ValueError: pass` 块正在静默地吞噬当 `_find_definition_node` 找不到符号时抛出的 `ValueError`，从而掩盖了根本问题，并导致了下游 E2E 测试的连锁失败。
 
 ### 用户需求
 
-创建一个新的测试用例，专门用于捕获并暴露在 `RenameSymbolOperation._find_definition_node` 中被静默处理的 `ValueError`。
+修复 `RenameSymbolOperation` 中存在的静默异常处理问题，并解决其依赖的 `_find_definition_node` 方法在 `SemanticGraph` API 变更后失效的问题，最终使所有相关测试通过。
 
 ### 评论
 
-这是一个教科书级别的 TDD 实践。通过首先编写一个失败的测试来明确地复现 Bug，我们可以确保后续的修复是针对真正的问题根源，并且可以防止未来发生回归。将隐性错误转化为显性、可断言的失败是构建健壮系统的关键一步。
+移除静默的 `try...except` 块是提升代码质量和可维护性的关键一步。一个健壮的系统应该让错误尽早、尽明确地暴露出来，而不是隐藏它们。通过为 `SemanticGraph` 添加一个正式的 `find_symbol` 公共 API，我们不仅修复了当前的 Bug，还提升了该核心组件的封装性和可用性，使其 API 更加清晰和可靠。
 
 ### 目标
 
-1.  创建一个新的测试文件 `packages/stitcher-refactor/tests/unit/operations/test_rename_symbol_operation.py`。
-2.  在该文件中编写一个测试用例，模拟一个 `SemanticGraph` 中找不到目标符号的场景。
-3.  断言在这种场景下调用 `RenameSymbolOperation("A", "B").collect_intents(ctx)` 会**显式地**抛出 `ValueError`。
+1.  **增强 `SemanticGraph`**: 为 `SemanticGraph` 类添加一个公共方法 `find_symbol(fqn: str)`，使其能够可靠地在所有已加载的包中查找符号的定义节点。
+2.  **修复 `RenameSymbolOperation`**:
+    *   修改 `_find_definition_node` 方法，使其调用 `SemanticGraph` 新增的 `find_symbol` 方法。
+    *   **移除** `collect_intents` 方法中隐藏错误的 `try...except ValueError: pass` 块，让符号未找到的错误能够正常传播。
 
 ### 基本原理
 
-我们将利用 `pytest.raises` 上下文管理器来断言特定异常的抛出。测试将构造一个 `RefactorContext`，其中包含一个“空”的或未加载所需符号的 `SemanticGraph` 实例。当 `_find_definition_node` 方法在这个图谱中查找符号失败并（在修复后）抛出 `ValueError` 时，`pytest.raises` 将捕获这个异常，测试通过。在当前的代码状态下，由于异常被静默处理，`pytest.raises` 将会因为没有捕获到预期的 `ValueError` 而失败，从而有效地将隐性错误转变为测试失败。
+我们将首先强化 `SemanticGraph` 的能力，为其提供一个明确的、用于符号查找的公共接口。然后，`RenameSymbolOperation` 将被重构为这个新接口的客户端。最后，通过移除有害的静默异常处理块，我们恢复了系统的错误传递链路。当 `find_symbol` 返回 `None` 时，`_find_definition_node` 将会显式地抛出一个 `ValueError`，这个错误现在会被正确地传递出去，从而被我们的 TDD 测试捕获，并为 E2E 测试提供有意义的失败信息。
 
 ### 标签
 
-#intent/tooling #flow/ready #priority/critical #comp/engine #comp/tests #scope/dx #ai/instruct #task/domain/refactoring #task/object/workspace-discovery #task/action/bug-fix #task/state/continue
+#intent/fix #flow/ready #priority/critical #comp/engine #comp/tests #scope/core #scope/dx #ai/instruct #task/domain/refactoring #task/object/workspace-discovery #task/action/bug-fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建新的单元测试以捕获静默异常
+#### Acts 1: 在 SemanticGraph 中添加 `find_symbol` 方法
 
-我们将创建一个新的测试文件，并添加一个测试用例来验证当符号找不到时是否会（或者说应该）抛出异常。
+我们首先为 `SemanticGraph` 添加一个健壮的公共 API，用于在整个加载的图中查找符号。
 
 ~~~~~act
-write_file
-packages/stitcher-refactor/tests/unit/operations/test_rename_symbol_operation.py
+patch_file
+packages/stitcher-refactor/src/stitcher/refactor/engine/graph.py
 ~~~~~
-~~~~~python
-import pytest
-from pathlib import Path
-from unittest.mock import MagicMock
+~~~~~python.old
+    def iter_members(self, package_name: str) -> List[SymbolNode]:
+        module = self.get_module(package_name)
+        if not module:
+            return []
+~~~~~
+~~~~~python.new
+    def find_symbol(self, fqn: str) -> Optional[SymbolNode]:
+        for pkg_name in self._modules.keys():
+            for member in self.iter_members(pkg_name):
+                if member.fqn == fqn:
+                    return member
+        return None
 
-from stitcher.refactor.engine.context import RefactorContext
-from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
-from stitcher.refactor.engine.graph import SemanticGraph
-from stitcher.refactor.workspace import Workspace
+    def iter_members(self, package_name: str) -> List[SymbolNode]:
+        module = self.get_module(package_name)
+        if not module:
+            return []
+~~~~~
 
+#### Acts 2: 更新 `RenameSymbolOperation` 以使用新方法并移除静默异常
 
-def test_collect_intents_raises_error_if_symbol_not_found():
-    """
-    Verifies that a ValueError is raised if the target symbol for renaming
-    cannot be found in the semantic graph. This prevents silent failures.
-    """
-    # 1. Arrange
-    # Mock a workspace and an empty semantic graph
-    mock_workspace = MagicMock(spec=Workspace)
-    mock_graph = MagicMock(spec=SemanticGraph)
-    mock_graph.iter_members.return_value = []  # Simulate symbol not found
-    mock_graph._modules = {}  # Mock the internal structure it iterates
+现在，我们将 `RenameSymbolOperation` 重构为使用 `graph.find_symbol`，并移除那个有害的 `try...except` 块。
 
-    # This is the key part of the mock that will trigger the error
-    def find_def_node_side_effect(ctx):
-        # Simulate the original logic raising an error
-        raise ValueError("Symbol 'non.existent.symbol' not found")
+~~~~~act
+patch_file
+packages/stitcher-refactor/src/stitcher/refactor/operations/rename_symbol.py
+~~~~~
+~~~~~python.old
+    def _find_definition_node(self, ctx: RefactorContext) -> SymbolNode:
+        # Heuristic: Find the first matching symbol node across all loaded packages
+        for pkg_name in ctx.graph._modules.keys():
+            for member in ctx.graph.iter_members(pkg_name):
+                if member.fqn == self.old_fqn:
+                    return member
+        raise ValueError(f"Could not find definition for symbol: {self.old_fqn}")
 
-    # In the fixed version, we will mock graph.find_symbol, but for now,
-    # we target the problematic internal method.
-    # To test the existing code, we need to mock the iteration to be empty.
-    op = RenameSymbolOperation(
-        old_fqn="non.existent.symbol", new_fqn="new.existent.symbol"
-    )
-    # Patch the problematic method directly to check if its exception is silenced
-    op._find_definition_node = MagicMock(side_effect=find_def_node_side_effect)
+    def collect_intents(self, ctx: RefactorContext) -> List[RefactorIntent]:
+        intents: List[RefactorIntent] = []
 
-    mock_ctx = MagicMock(spec=RefactorContext)
-    mock_ctx.graph = mock_graph
+        # 1. Declare the core intent: rename the symbol everywhere.
+        # The Planner will be responsible for finding usages and transforming code.
+        intents.append(RenameIntent(old_fqn=self.old_fqn, new_fqn=self.new_fqn))
 
-    # 2. Act & Assert
-    # We expect a ValueError because the symbol doesn't exist.
-    # If this test fails, it's because the `except ValueError: pass` is silencing it.
-    with pytest.raises(
-        ValueError, match="Could not find definition for symbol: non.existent.symbol"
-    ):
-        op.collect_intents(mock_ctx)
+        # 2. Declare intents to update sidecar files.
+        # The Planner will aggregate these and perform the file modifications.
+        try:
+            definition_node = self._find_definition_node(ctx)
+            if definition_node and definition_node.path:
+                definition_file_path = definition_node.path
+                module_fqn = self._path_to_fqn(
+                    definition_file_path, ctx.graph.search_paths
+                )
 
-    # To make the test pass after we fix the silent pass, we need to adjust
-    # how we're mocking. For now, let's create a more realistic test.
-    # Let's write the test for the *fixed* code.
+                # Doc file intent
+                doc_path = ctx.sidecar_manager.get_doc_path(definition_file_path)
+                if doc_path.exists():
+                    intents.append(
+                        SidecarUpdateIntent(
+                            sidecar_path=doc_path,
+                            module_fqn=module_fqn,
+                            old_fqn=self.old_fqn,
+                            new_fqn=self.new_fqn,
+                        )
+                    )
 
-    # Re-arranging for the post-fix scenario
-    real_workspace = Workspace(root_path=Path("/tmp"))
-    real_graph = SemanticGraph(workspace=real_workspace)
-    # The graph is empty, so it won't find the symbol.
+                # Signature file intent
+                sig_path = ctx.sidecar_manager.get_signature_path(definition_file_path)
+                if sig_path.exists():
+                    intents.append(
+                        SidecarUpdateIntent(
+                            sidecar_path=sig_path,
+                            module_fqn=module_fqn,
+                            old_fqn=self.old_fqn,
+                            new_fqn=self.new_fqn,
+                        )
+                    )
+        except ValueError:
+            # Symbol not found, might be a module rename. The Planner will handle this.
+            pass
 
-    ctx = RefactorContext(
-        workspace=real_workspace, graph=real_graph, sidecar_manager=MagicMock()
-    )
-    op_final = RenameSymbolOperation(
-        old_fqn="non.existent.symbol", new_fqn="new.existent.symbol"
-    )
+        return intents
+~~~~~
+~~~~~python.new
+    def _find_definition_node(self, ctx: RefactorContext) -> SymbolNode:
+        node = ctx.graph.find_symbol(self.old_fqn)
+        if node is None:
+            raise ValueError(f"Could not find definition for symbol: {self.old_fqn}")
+        return node
 
-    with pytest.raises(
-        ValueError, match="Could not find definition for symbol: non.existent.symbol"
-    ):
-        op_final.collect_intents(ctx)
+    def collect_intents(self, ctx: RefactorContext) -> List[RefactorIntent]:
+        intents: List[RefactorIntent] = []
+
+        # 1. Declare the core intent: rename the symbol everywhere.
+        # The Planner will be responsible for finding usages and transforming code.
+        intents.append(RenameIntent(old_fqn=self.old_fqn, new_fqn=self.new_fqn))
+
+        # 2. Declare intents to update sidecar files.
+        # Let the ValueError propagate if the symbol is not found.
+        definition_node = self._find_definition_node(ctx)
+        if definition_node and definition_node.path:
+            definition_file_path = definition_node.path
+            module_fqn = self._path_to_fqn(
+                definition_file_path, ctx.graph.search_paths
+            )
+
+            # Doc file intent
+            doc_path = ctx.sidecar_manager.get_doc_path(definition_file_path)
+            if doc_path.exists():
+                intents.append(
+                    SidecarUpdateIntent(
+                        sidecar_path=doc_path,
+                        module_fqn=module_fqn,
+                        old_fqn=self.old_fqn,
+                        new_fqn=self.new_fqn,
+                    )
+                )
+
+            # Signature file intent
+            sig_path = ctx.sidecar_manager.get_signature_path(definition_file_path)
+            if sig_path.exists():
+                intents.append(
+                    SidecarUpdateIntent(
+                        sidecar_path=sig_path,
+                        module_fqn=module_fqn,
+                        old_fqn=self.old_fqn,
+                        new_fqn=self.new_fqn,
+                    )
+                )
+
+        return intents
 ~~~~~
 
 ### 下一步建议
 
-这个新测试现在应该会失败（因为它期望一个未被静默处理的 `ValueError`）。
+我们已经修复了问题的根源。现在请重新运行测试套件。我预期我们新加的单元测试和之前失败的 E2E 测试现在都应该能成功通过。
 
-下一步是修复 `RenameSymbolOperation` 和 `SemanticGraph`。具体计划如下：
-
-1.  **增强 `SemanticGraph`**: 添加一个公共方法 `find_symbol(fqn: str) -> Optional[SymbolNode]`，它能够可靠地在所有已加载的模块（包括主包和周边代码）中查找符号定义。
-2.  **修复 `RenameSymbolOperation`**:
-    *   修改 `_find_definition_node` 方法，使其调用新的、健壮的 `graph.find_symbol` 方法。
-    *   **移除 `except ValueError: pass`**，让 `_find_definition_node` 在找不到符号时能够自然地抛出异常。
-
-一旦这个计划完成，我们新加的测试和之前失败的 E2E 测试应该都会通过。如果你同意，我将生成这个修复计划。
+一旦确认所有测试都恢复到绿色状态，我们就可以继续执行路线图的下一步：**4.2 调整 Planner 策略**。

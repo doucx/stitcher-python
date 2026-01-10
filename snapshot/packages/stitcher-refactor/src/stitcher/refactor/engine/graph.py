@@ -280,6 +280,13 @@ class SemanticGraph:
 
         return current if isinstance(current, griffe.Module) else None
 
+    def find_symbol(self, fqn: str) -> Optional[SymbolNode]:
+        for pkg_name in self._modules.keys():
+            for member in self.iter_members(pkg_name):
+                if member.fqn == fqn:
+                    return member
+        return None
+
     def iter_members(self, package_name: str) -> List[SymbolNode]:
         module = self.get_module(package_name)
         if not module:
