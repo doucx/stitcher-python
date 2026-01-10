@@ -62,17 +62,24 @@ class PythonAdapter(LanguageAdapter):
 
             # Location is currently not provided by ModuleDef in a granular way easily
             # (Griffe objects have lineno, but ModuleDef might have lost it or it's deep).
-            # For MVP, we use 0, 0 as placeholder or we need to extend ModuleDef to carry location.
-            # Extending ModuleDef is the right way, but for now we proceed.
-            # TODO: Enhance ModuleDef to carry source location info.
+            location_start = (
+                entity_for_hash.location.start.line
+                if entity_for_hash and entity_for_hash.location
+                else 0
+            )
+            location_end = (
+                entity_for_hash.location.end.line
+                if entity_for_hash and entity_for_hash.location
+                else 0
+            )
 
             symbols.append(
                 SymbolRecord(
                     id=suri,
                     name=name,
                     kind=kind,
-                    location_start=0,  # Placeholder
-                    location_end=0,  # Placeholder
+                    location_start=location_start,
+                    location_end=location_end,
                     logical_path=fragment,  # This is relative logical path in file
                     signature_hash=sig_hash,
                 )
@@ -166,12 +173,7 @@ class PythonAdapter(LanguageAdapter):
                         ReferenceRecord(
                             target_id=target_suri,
                             kind=loc.ref_type.value,
-                            location_start=loc.lineno,  # Simplification: use lineno as start offset proxy for now?
-                            # Wait, ReferenceRecord expects byte offsets (integers) usually,
-                            # but currently we don't have easy byte offset access from UsageLocation (it has line/col).
-                            # TODO: Fix UsageLocation to carry byte offsets or convert line/col to offset.
-                            # For MVP, we will store LINENO in location_start just to signal "not empty".
-                            # This is Technical Debt but allows progress.
+                            location_start=loc.lineno,
                             location_end=loc.end_lineno,
                         )
                     )
