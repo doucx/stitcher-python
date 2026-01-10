@@ -33,9 +33,7 @@ class RenameSymbolOperation(AbstractOperation, SidecarUpdateMixin):
         definition_node = self._find_definition_node(ctx)
         if definition_node and definition_node.path:
             definition_file_path = definition_node.path
-            module_fqn = self._path_to_fqn(
-                definition_file_path, ctx.graph.search_paths
-            )
+            module_fqn = self._path_to_fqn(definition_file_path, ctx.graph.search_paths)
 
             # Doc file intent
             doc_path = ctx.sidecar_manager.get_doc_path(definition_file_path)

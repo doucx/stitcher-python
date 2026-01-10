@@ -260,9 +260,7 @@ class SemanticGraph:
                     target_fqn = member.path
                 local_symbols[name] = target_fqn
             except Exception as e:
-                log.warning(
-                    f"Failed to resolve symbol '{name}' in {module.path}: {e}"
-                )
+                log.warning(f"Failed to resolve symbol '{name}' in {module.path}: {e}")
 
         try:
             source = module.filepath.read_text(encoding="utf-8")

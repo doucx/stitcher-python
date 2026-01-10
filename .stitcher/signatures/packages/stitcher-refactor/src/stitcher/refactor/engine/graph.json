@@ -18,6 +18,10 @@
     "baseline_code_signature_text": "def _scan_module_usages(self, module: griffe.Module):",
     "baseline_code_structure_hash": "76b35afeae83b88b22092c466eab3ca58250a9aee95de24c59f3819123a71952"
   },
+  "SemanticGraph.find_symbol": {
+    "baseline_code_signature_text": "def find_symbol(self, fqn: str) -> Optional[SymbolNode]:",
+    "baseline_code_structure_hash": "0e54ff0ca01f3a1035db618129357de8cbfa7995704b7785fd18aa6ca23b6162"
+  },
   "SemanticGraph.get_module": {
     "baseline_code_signature_text": "def get_module(self, package_name: str) -> Optional[griffe.Module]:",
     "baseline_code_structure_hash": "7c7c46478e42f9acb9374bb4612a99c58463121f0329adc05887ba617de4cc67"
@@ -29,6 +33,10 @@
   "SemanticGraph.load": {
     "baseline_code_signature_text": "def load(self, package_name: str, submodules: bool = True) -> None:",
     "baseline_code_structure_hash": "2260094850da912c9148938adc2adebb1ede5146cd6c17fe5faf2491f7c51609"
+  },
+  "SemanticGraph.load_from_workspace": {
+    "baseline_code_signature_text": "def load_from_workspace(self) -> None:",
+    "baseline_code_structure_hash": "e5f029f7b4d9d097285699c4c3939b657f0c1c326004d9e9f7dd14b6b83e9c8e"
   },
   "SemanticGraph.registry": {},
   "SemanticGraph.root_path": {},
@@ -109,5 +117,6 @@
   "_UsageVisitor.visit_Name": {
     "baseline_code_signature_text": "def visit_Name(self, node: cst.Name):",
     "baseline_code_structure_hash": "cd22b676f96a3ec757b09d2c11277d6b56e755f04646f134ed579260699b2a96"
-  }
+  },
+  "log": {}
 }

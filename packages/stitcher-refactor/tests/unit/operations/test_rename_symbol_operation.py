@@ -1,5 +1,3 @@
-import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
 
 from stitcher.refactor.engine.context import RefactorContext
@@ -10,6 +8,7 @@ from stitcher.refactor.workspace import Workspace
 
 from stitcher.refactor.engine.intent import RenameIntent
 
+
 def test_collect_intents_skips_sidecars_if_symbol_not_found():
     """
     Verifies that if the target symbol definition cannot be found, the operation
@@ -17,7 +16,6 @@ def test_collect_intents_skips_sidecars_if_symbol_not_found():
     any SidecarUpdateIntents, without raising an error.
     """
     # 1. Arrange
-    mock_workspace = MagicMock(spec=Workspace)
     mock_graph = MagicMock(spec=SemanticGraph)
     # Mock find_symbol to return None (Simulate symbol not found)
     mock_graph.find_symbol.return_value = None
