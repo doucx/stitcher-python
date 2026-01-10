@@ -23,7 +23,14 @@ def test_parser_fails_on_local_typing_import():
     )
 
     # 2. Verification
-    # This should raise AliasResolutionError until the bug in Griffe is fixed.
-    # This test serves to document this dependency limitation.
-    with pytest.raises(AliasResolutionError):
-        parser.parse(source_code, "buggy_module.py")
+    # Previously this raised AliasResolutionError.
+    # Now we handle it gracefully by returning an Attribute with no location.
+    module = parser.parse(source_code, "buggy_module.py")
+    
+    # Verify that the parser survived and produced the alias
+    # "from typing import Optional" -> Attribute named "Optional"
+    opt = next((a for a in module.attributes if a.name == "Optional"), None)
+    assert opt is not None
+    assert opt.alias_target == "typing.Optional"
+    # Location should be None because resolution failed
+    assert opt.location is None

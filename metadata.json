@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 修复 Griffe 解析器中的 Alias 解析崩溃与测试错误", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768051714.3581161, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix: 优化 Alias 处理逻辑并修复副作用", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768051865.7824123, "duration_ms": 0}}

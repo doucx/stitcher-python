@@ -1,8 +1,10 @@
 import ast
 from pathlib import Path
 from typing import List, cast, Any, Optional
+import logging
 
 import griffe
+from griffe import AliasResolutionError
 from stitcher.spec import (
     ModuleDef,
     LanguageParserProtocol,
@@ -88,8 +90,7 @@ class GriffePythonParser(LanguageParserProtocol):
         try:
             # Accessing lineno on an Alias triggers target resolution.
             # If the target is external/unresolvable, this raises AliasResolutionError (or KeyError).
-            # We catch generic Exception here to be safe against Griffe internals,
-            # accepting that unresolvable aliases will have no location for now.
+            # We catch specific exceptions to safely degrade to "no location" for unresolvable aliases.
             if obj.lineno:
                 # Safely access end_lineno as it might not be present on base Object type
                 end_lineno = getattr(obj, "end_lineno", None) or obj.lineno
@@ -99,8 +100,15 @@ class GriffePythonParser(LanguageParserProtocol):
                     end_lineno=end_lineno,
                     end_col_offset=0,
                 )
-        except Exception:
+        except (AliasResolutionError, KeyError):
+            # This is expected for external imports in single-file mode.
+            # We swallow the error and return None for location.
             pass
+        except Exception as e:
+            # Log unexpected errors but don't crash the scanner
+            logging.getLogger(__name__).warning(
+                f"Unexpected error extracting location for {obj.name}: {e}"
+            )
         return None
 
     def _map_class(self, gc: griffe.Class) -> ClassDef:
