@@ -5,7 +5,7 @@ from typing import Union
 class AssetPathResolver:
     """
     Centralized resolver for Stitcher asset paths (Sidecars and Signatures).
-    
+
     This class encapsulates the logic for mapping a source code file to its
     corresponding documentation sidecar (.stitcher.yaml) and signature file (.json).
     """
@@ -28,7 +28,7 @@ class AssetPathResolver:
         The signature sidecar sits in .stitcher/signatures/, mirroring the source tree.
         """
         path = Path(source_path)
-        
+
         # If path is absolute, make it relative to root
         if path.is_absolute():
             try:
@@ -36,7 +36,7 @@ class AssetPathResolver:
                 # though usually source_path comes from trusted traversal
                 rel_path = path.resolve().relative_to(self.root_path)
             except ValueError:
-                # If the path is absolute but not inside root_path, 
+                # If the path is absolute but not inside root_path,
                 # we can't map it to the internal signature store structure.
                 raise ValueError(
                     f"Source path {path} is not within the project root {self.root_path}"

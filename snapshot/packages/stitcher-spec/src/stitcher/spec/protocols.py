@@ -34,7 +34,7 @@ class DocstringRendererProtocol(Protocol):
     ) -> str: ...
 
 
-from typing import Protocol, Dict, Union, Optional, List, Any
+from typing import Protocol, Dict, Union, Optional, List
 from .models import ModuleDef, FunctionDef, ClassDef
 from .fingerprint import Fingerprint
 from .docstring import DocstringIR
