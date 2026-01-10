@@ -1,46 +1,3 @@
-## [WIP] refactor(analysis): 迁移 Griffe 解析逻辑至 stitcher-python-analysis
-
-### 用户需求
-将 `stitcher-python-adapter` 中基于 Griffe 的解析逻辑 (`GriffePythonParser`) 迁移到 `stitcher-python-analysis` 包中，继续推进分析能力的下沉。
-
-### 评论
-这是架构重构的第二步。Griffe 是一个强大的静态分析工具，不仅 Adapter 需要用它来解析单文件以生成 IR，Refactor 引擎也用它来构建整个项目的语义图谱。将 Griffe 相关的封装逻辑集中到 `stitcher-python-analysis` 中，为未来统一这两者的使用方式奠定了基础。
-
-### 目标
-1.  在 `stitcher-python-analysis` 中建立 `griffe` 子模块。
-2.  将 `GriffePythonParser` 类及其辅助类 `_ImportVisitor` 完整迁移到新包。
-3.  更新 `stitcher-python-adapter`，使其通过导入新包来提供 `GriffePythonParser`，保持对外的 API 兼容性。
-
-### 基本原理
-通过将具体的解析实现（基于 Griffe）与适配器接口分离，我们使得 `stitcher-python-analysis` 成为一个纯粹的、无状态的分析工具库。`stitcher-python-adapter` 则回归其本质——作为 Stitcher 核心协议（Protocol）与具体实现（Analysis Lib）之间的胶水层。
-
-### 标签
-#intent/refine #flow/ready #priority/high #comp/build #scope/core #ai/instruct #task/domain/architecture #task/object/analysis-layer #task/action/migrate #task/state/continue
-
----
-
-### Script
-
-#### Acts 1: 建立新包的 Griffe 模块结构
-
-~~~~~act
-run_command
-~~~~~
-~~~~~
-mkdir -p packages/stitcher-python-analysis/src/stitcher/python/analysis/griffe
-touch packages/stitcher-python-analysis/src/stitcher/python/analysis/griffe/__init__.py
-~~~~~
-
-#### Acts 2: 迁移 Griffe 解析逻辑
-
-我们将 `stitcher-python-adapter/.../griffe_parser.py` 的内容迁移到新包的 `parser.py` 中。
-注意：我们需要调整 `_enrich_typing_imports` 的导入路径，使其指向同包内的 `cst` 模块。
-
-~~~~~act
-write_file
-packages/stitcher-python-analysis/src/stitcher/python/analysis/griffe/parser.py
-~~~~~
-~~~~~python
 import ast
 from pathlib import Path
 from typing import List, cast, Any
@@ -193,28 +150,3 @@ class GriffePythonParser(LanguageParserProtocol):
         return Argument(
             name=param.name, kind=st_kind, annotation=annotation, default=default
         )
-~~~~~
-
-#### Acts 3: 更新 Adapter 引用
-
-现在我们将 `stitcher-python-adapter` 中的 `griffe_parser.py` 简化为一个重新导出模块。
-
-~~~~~act
-write_file
-packages/stitcher-python-adapter/src/stitcher/adapter/python/griffe_parser.py
-~~~~~
-~~~~~python
-from stitcher.python.analysis.griffe.parser import GriffePythonParser
-
-__all__ = ["GriffePythonParser"]
-~~~~~
-
-### 下一步建议
-
-Griffe 解析逻辑已成功迁移。现在 `stitcher-python-adapter` 变得非常轻量，几乎只剩下了 Docstring 的解析/渲染逻辑（这些是特定的适配逻辑，暂留在此处是合适的）以及对 Analysis 层的引用。
-
-下一步，我们可以：
-1.  **运行测试**: 再次验证迁移的正确性。
-2.  **重构 Refactor 包**: `stitcher-refactor` 目前还在直接使用 LibCST 和 Griffe。我们应该修改它，使其依赖 `stitcher-python-analysis`，复用这里的 `visitors` 和 `transformers`。特别是 `SemanticGraph` 类中扫描 Usages 的部分，可以提取到 Analysis 层。
-
-我建议下一步开始 **重构 stitcher-refactor 以使用新的 Analysis 层**。
