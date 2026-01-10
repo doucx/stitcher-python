@@ -1,208 +1,113 @@
-好的，我们继续执行路线图，开始任务 2.2：统一工作区构建。
+分析完全正确。在我们上次的重构中，`RefactorRunner` 和 `Workspace` 的初始化流程被改变为强制依赖于一个 `StitcherConfig` 对象。然而，相关的集成测试 `test_refactor_apply_e2e` 和 `test_refactor_apply_dry_run` 没有被同步更新，它们创建的测试环境中缺少了 `[tool.stitcher]` 配置。
 
-这个任务的目标是消除 `stitcher-refactor` 中独立的配置解析逻辑，使其完全依赖于 `stitcher-config` 提供的统一配置模型。这将确保重构引擎看到的文件系统视图与项目中其他部分（如 `scanner`）完全一致。
+因此，当测试运行 `refactor apply` 命令时：
+1.  `StitcherApp.run_refactor_apply` 调用 `_load_configs()`。
+2.  `_load_configs()` 在测试生成的 `pyproject.toml` 中找不到 `[tool.stitcher]` 部分，因此返回一个空列表。
+3.  `run_refactor_apply` 检测到 `configs` 为空，发出 `L.error.config.not_found` 错误消息，并返回 `False`。
+4.  CLI 命令接收到 `False` 的结果，随即以 `typer.Exit(code=1)` 退出，导致测试断言失败。
 
-我将生成一个计划来执行这项重构。
+应用程序的行为是完全正确的——它正确地指出了配置缺失的错误。我们需要修复的是测试用例，使其提供一个完整的、有效的测试环境。
 
-## [WIP] refactor: Unify Workspace construction to use StitcherConfig
+我将生成一个计划来修复这些测试。
+
+## [WIP] fix: Update refactor command tests to provide Stitcher config
+
+### 错误分析
+
+在将 `Workspace` 的构建逻辑重构为依赖 `StitcherConfig` 后，`refactor apply` 命令现在强制要求在 `pyproject.toml` 中存在一个有效的 `[tool.stitcher]` 配置节。
+
+当前的集成测试 (`test_refactor_apply_e2e` 和 `test_refactor_apply_dry_run`) 使用 `WorkspaceFactory` 创建测试项目，但没有为 `refactor` 命令提供必要的配置。这导致 `StitcherApp` 在执行时无法加载到任何配置，从而提前返回失败状态，CLI 随之以退出码 1 终止，导致测试失败。
+
+此问题并非应用逻辑的 Bug，而是测试环境与应用最新前置条件不匹配导致的。
 
 ### 用户需求
 
-执行路线图中的任务 2.2，统一 `stitcher-refactor` 的工作区构建逻辑。需要修改 `Workspace` 类，使其不再自行解析 `pyproject.toml`，而是通过接收一个 `StitcherConfig` 对象来初始化。同时，需要调整调用链（`StitcherApp` -> `RefactorRunner`）以加载并传递此配置对象。
+修复 `packages/stitcher-cli/tests/integration/test_refactor_command.py` 中两个失败的测试，使其能够适应 `refactor apply` 命令对 `StitcherConfig` 的新依赖。
 
 ### 评论
 
-这是一次至关重要的架构对齐。通过让 `Workspace` 依赖于 `StitcherConfig`，我们不仅遵循了 DRY (Don't Repeat Yourself) 原则，消除了重复的配置加载代码，更重要的是，我们确保了整个系统对于“项目包含哪些文件”这个核心问题有了一个单一的、权威的答案。这为后续实现对 `examples/` 等周边路径的重构支持（阶段四）铺平了道路，是架构走向统一和稳健的关键一步。
+这是一个很好的例子，展示了测试套件如何在我们重构和增强系统时，充当安全网并明确地指出契约变化。测试的失败不是一个问题，而是一个信号，它告诉我们命令的外部依赖已经改变。通过修复测试，我们使其更准确地反映了应用的当前行为和要求。
 
 ### 目标
 
-1.  **重构 `Workspace`**: 修改 `stitcher.refactor.engine.workspace.py`，移除其内部的 `pyproject.toml` 发现和解析逻辑。
-2.  **更新 `Workspace` 构造函数**: 更改其 `__init__` 方法，使其接受一个 `StitcherConfig` 实例。
-3.  **调整 `RefactorRunner`**: 修改 `stitcher.app.runners.refactor.py` 中的 `run_apply` 方法，使其能够接收 `StitcherConfig` 并将其传递给 `Workspace`。
-4.  **打通 `StitcherApp`**: 修改 `stitcher.app.core.py` 中的 `run_refactor_apply` 方法，使其在执行重构前加载配置，并将配置传递给 `RefactorRunner`。
+1.  定位到 `test_refactor_command.py` 文件中 `test_refactor_apply_e2e` 和 `test_refactor_apply_dry_run` 两个测试函数。
+2.  在每个测试的 `WorkspaceFactory` 构建链中，使用 `.with_config()` 方法添加一个最小化的 `[tool.stitcher]` 配置。
+3.  该配置必须包含 `scan_paths = ["src"]`，以确保 `Workspace` 能够正确发现测试代码。
 
 ### 基本原理
 
-我们将采用自顶向下的方式进行修改：
-1.  首先在 `StitcherApp` 的 `run_refactor_apply` 方法中，调用 `_load_configs()` 来获取配置。考虑到一次重构通常针对一个目标，我们将使用找到的第一个配置。
-2.  然后，将这个配置对象作为参数传递给 `RefactorRunner.run_apply`。
-3.  接着，在 `RefactorRunner` 中，我们将配置对象再传递给 `Workspace` 的构造函数。
-4.  最后，对 `Workspace` 类本身进行重构。我们将用一个 `_build_from_config` 的新方法取代旧的 `_discover_packages` 方法。这个新方法将直接从传入的 `StitcherConfig` 对象的 `scan_paths` 和 `peripheral_paths` 字段中读取路径，从而完成工作区文件视图的构建。
+我们将利用 `stitcher-test-utils` 包中提供的 `WorkspaceFactory` 的流式 API。通过在其构建链上增加一个 `.with_config({"scan_paths": ["src"]})` 调用，`WorkspaceFactory` 将在生成的 `pyproject.toml` 文件中自动创建 `[tool.stitcher]` 表，并填入指定的 `scan_paths`。这将为 `refactor` 命令提供其现在必需的配置信息，使得 `_load_configs()` 能够成功加载配置，从而让测试流程可以继续执行并验证核心的重构逻辑。
 
 ### 标签
 
-#intent/refine #flow/ready #priority/high #comp/refactor #comp/application #concept/config #scope/core #ai/instruct #task/domain/architecture #task/object/config-unification #task/action/implementation #task/state/continue
+#intent/fix #flow/ready #priority/high #comp/tests #comp/cli #concept/config #scope/dx #ai/instruct #task/domain/architecture #task/object/config-unification #task/action/implementation #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 重构 Workspace 引擎
+#### Acts 1: 修复集成测试
 
-我们将彻底重写 `workspace.py`，移除其文件发现逻辑，改为直接消费 `StitcherConfig` 对象。这是一个结构性的大改动，因此使用 `write_file` 是最合适的策略。
+我们将为两个失败的测试用例的 `WorkspaceFactory` 设置添加 `.with_config()` 调用。
 
-~~~~~act
-write_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/workspace.py
-~~~~~
-~~~~~python
-import logging
-from collections import defaultdict
-from pathlib import Path
-from typing import Dict, List, Set
-
-from stitcher.config import StitcherConfig
-
-log = logging.getLogger(__name__)
-
-
-class Workspace:
-    def __init__(self, root_path: Path, config: StitcherConfig):
-        self.root_path = root_path
-        self.config = config
-        # 'cascade' -> {'/path/to/cascade-application/src', '/path/to/cascade-engine/src'}
-        self.import_to_source_dirs: Dict[str, Set[Path]] = defaultdict(set)
-        self._build_from_config()
-
-    def _build_from_config(self) -> None:
-        all_paths_str = self.config.scan_paths + self.config.peripheral_paths
-        for path_str in all_paths_str:
-            code_dir = self.root_path / path_str
-            if code_dir.is_dir():
-                import_names = self._get_top_level_importables(code_dir)
-                for import_name in import_names:
-                    # The directory to add to the search path is the code_dir itself
-                    self.import_to_source_dirs[import_name].add(code_dir)
-
-    def _get_top_level_importables(self, src_path: Path) -> List[str]:
-        names: Set[str] = set()
-        if not src_path.is_dir():
-            return []
-
-        for item in src_path.iterdir():
-            # A potential top-level package is a directory whose name is a valid identifier,
-            # explicitly excluding special dunders like __pycache__.
-            if (
-                item.is_dir()
-                and item.name.isidentifier()
-                and item.name != "__pycache__"
-            ):
-                names.add(item.name)
-            # A potential top-level module is a .py file whose stem is a valid identifier.
-            elif (
-                item.is_file()
-                and item.name.endswith(".py")
-                and item.stem.isidentifier()
-            ):
-                names.add(item.stem)
-        return list(names)
-
-    def get_search_paths(self) -> List[Path]:
-        all_paths: Set[Path] = set()
-        for paths in self.import_to_source_dirs.values():
-            all_paths.update(paths)
-        # Also add the root path itself to handle cases where pyproject.toml is nested
-        # but top-level modules need to be found.
-        all_paths.add(self.root_path)
-        return sorted(list(all_paths))
-~~~~~
-
-#### Acts 2: 更新 RefactorRunner
-
-现在 `Workspace` 需要一个 `StitcherConfig` 对象，我们需要修改 `RefactorRunner` 来提供它。我们将修改 `run_apply` 方法的签名和实现。
-
-首先，添加必要的 `import` 语句。
+首先是 `test_refactor_apply_e2e`：
 
 ~~~~~act
 patch_file
-packages/stitcher-application/src/stitcher/app/runners/refactor.py
+packages/stitcher-cli/tests/integration/test_refactor_command.py
 ~~~~~
 ~~~~~python.old
-from typing import Callable, Optional
+def test_refactor_apply_e2e(tmp_path, monkeypatch):
+    # 1. Arrange: Create a project and a migration script
+    factory = WorkspaceFactory(tmp_path)
+    # Project with a symbol to be renamed
+    (
+        factory.with_project_name("mypkg")
+        .with_source("src/mypkg/__init__.py", "")
+        .with_source("src/mypkg/core.py", "class Old: pass")
+        .with_source("src/mypkg/app.py", "from mypkg.core import Old")
+    ).build()
 ~~~~~
 ~~~~~python.new
-from typing import Callable, Optional
-from stitcher.config import StitcherConfig
+def test_refactor_apply_e2e(tmp_path, monkeypatch):
+    # 1. Arrange: Create a project and a migration script
+    factory = WorkspaceFactory(tmp_path)
+    # Project with a symbol to be renamed
+    (
+        factory.with_project_name("mypkg")
+        .with_config({"scan_paths": ["src"]})
+        .with_source("src/mypkg/__init__.py", "")
+        .with_source("src/mypkg/core.py", "class Old: pass")
+        .with_source("src/mypkg/app.py", "from mypkg.core import Old")
+    ).build()
 ~~~~~
 
-然后，更新 `run_apply` 方法以接受并使用 `config` 对象。
+然后是 `test_refactor_apply_dry_run`：
 
 ~~~~~act
 patch_file
-packages/stitcher-application/src/stitcher/app/runners/refactor.py
+packages/stitcher-cli/tests/integration/test_refactor_command.py
 ~~~~~
 ~~~~~python.old
-    def run_apply(
-        self,
-        migration_script: Path,
-        dry_run: bool = False,
-        confirm_callback: Optional[Callable[[int], bool]] = None,
-    ) -> bool:
-        try:
-            # 1. Bootstrap services
-            bus.info(L.refactor.run.loading_graph)
-            workspace = Workspace(self.root_path)
+    (
+        factory.with_project_name("mypkg")
+        .with_source("src/mypkg/__init__.py", "")
+        .with_source("src/mypkg/core.py", "class Old: pass")
+        .with_source("src/mypkg/app.py", "from mypkg.core import Old")
+    ).build()
 ~~~~~
 ~~~~~python.new
-    def run_apply(
-        self,
-        migration_script: Path,
-        config: StitcherConfig,
-        dry_run: bool = False,
-        confirm_callback: Optional[Callable[[int], bool]] = None,
-    ) -> bool:
-        try:
-            # 1. Bootstrap services
-            bus.info(L.refactor.run.loading_graph)
-            workspace = Workspace(self.root_path, config)
-~~~~~
-
-#### Acts 3: 更新 StitcherApp
-
-最后一步是打通调用链，让 `StitcherApp` 在调用 `RefactorRunner` 之前加载配置。
-
-~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
-~~~~~
-~~~~~python.old
-    def run_refactor_apply(
-        self,
-        migration_script: Path,
-        dry_run: bool = False,
-        confirm_callback: Optional[Callable[[int], bool]] = None,
-    ) -> bool:
-        return self.refactor_runner.run_apply(
-            migration_script, dry_run, confirm_callback
-        )
-~~~~~
-~~~~~python.new
-    def run_refactor_apply(
-        self,
-        migration_script: Path,
-        dry_run: bool = False,
-        confirm_callback: Optional[Callable[[int], bool]] = None,
-    ) -> bool:
-        configs, _ = self._load_configs()
-        if not configs:
-            bus.error(L.error.config.not_found)
-            return False
-
-        # For refactoring, we use the first available config.
-        # This could be extended in the future to allow target selection via CLI.
-        config_to_use = configs[0]
-
-        return self.refactor_runner.run_apply(
-            migration_script, config_to_use, dry_run, confirm_callback
-        )
+    (
+        factory.with_project_name("mypkg")
+        .with_config({"scan_paths": ["src"]})
+        .with_source("src/mypkg/__init__.py", "")
+        .with_source("src/mypkg/core.py", "class Old: pass")
+        .with_source("src/mypkg/app.py", "from mypkg.core import Old")
+    ).build()
 ~~~~~
 
 ### 下一步建议
 
-我们已经成功地将 `refactor` 引擎的配置与发现机制与系统其他部分统一起来了。现在，`refactor` 引擎可以“看到”由 `peripheral_paths` 定义的周边文件了。
+我们已经修复了因上次重构而损坏的测试。现在，测试套件应该能再次成功通过 (回到 GREEN 状态)。
 
-根据路线图，下一步是进入 **阶段四：全域重构支持**，具体任务是：
--   **任务 4.1：实现“观测域”逻辑**：修改 `SemanticGraph.load()`，使其能够加载并解析 `peripheral_paths` 中定义的脚本文件。
--   **任务 4.2：调整 Planner 策略**：修改 `Planner`，使其在处理位于 `peripheral_paths` 中的文件时，能够跳过 Sidecar 相关的操作，因为这些文件通常没有 `.stitcher.yaml`。
-
-如果你同意，我将开始制定执行任务 4.1 的计划。
+我建议先在本地运行测试以确认修复。一旦确认，我们就可以继续执行路线图的下一个任务：**阶段 4.1：实现“观测域”逻辑**，即让 `SemanticGraph` 能够加载并解析 `peripheral_paths` 中定义的脚本文件。
