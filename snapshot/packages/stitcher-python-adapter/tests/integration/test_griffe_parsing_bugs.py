@@ -1,6 +1,4 @@
 from textwrap import dedent
-import pytest
-from griffe import AliasResolutionError
 
 from stitcher.adapter.python import GriffePythonParser
 
@@ -26,7 +24,7 @@ def test_parser_fails_on_local_typing_import():
     # Previously this raised AliasResolutionError.
     # Now we handle it gracefully by returning an Attribute with no location.
     module = parser.parse(source_code, "buggy_module.py")
-    
+
     # Verify that the parser survived and produced the alias
     # "from typing import Optional" is inside MyService, so check the class attributes
     cls_def = next((c for c in module.classes if c.name == "MyService"), None)
