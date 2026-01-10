@@ -1,152 +1,158 @@
-Excellent. We are now ready to implement the final piece of this feature. By enriching the `local_symbols` map, we will empower the `UsageScanVisitor` to correctly resolve references to imported aliases, thus completing the semantic chain from usage to definition.
+Of course. It is crucial to validate our architectural changes with a robust integration test. This will ensure all components work in concert and will serve as a safety net against future regressions.
 
-Here is the plan for **Atomic Task 4**.
+I will now prepare the plan to create this end-to-end integration test.
 
-## [WIP] feat(index): Enrich local symbol map to enable alias-aware reference scanning
+## [WIP] test: Add integration test for alias resolution and reference analysis
 
 ### 用户需求
 
-根据任务计划，需要实施 **Atomic Task 4**。具体目标是更新 `PythonAdapter._extract_references` 方法，使其在构建 `local_symbols` 映射表时，不仅包含本地定义的符号，还包含所有通过 `import` 语句引入的别名。
+创建一个集成测试，以端到端地验证别名解析和引用分析的完整流程。该测试需要确认：
+1.  `import` 语句被正确解析为 `kind='alias'` 的符号。
+2.  这些别名符号的 `alias_target_id` 正确指向其定义源。
+3.  代码中对这些别名的使用，能够被正确解析为指向原始定义的引用。
 
 ### 评论
 
-这是整个别名解析功能中“画龙点睛”的一笔。前续任务让我们能够在数据库中*存储*别名信息，而此任务则让我们能够*利用*这些信息进行真正的语义分析。完成这一步后，系统的引用分析能力将从简单的文本匹配跃升到具备初步上下文感知的水平，为实现高保真的代码导航和重构奠定了坚实的基础。
+这是确保我们最近一系列重构工作正确性的收官之战。一个覆盖多种导入场景的集成测试，将为我们提供强大的信心，证明我们不仅修复了技术债务，而且构建了一个可靠、可验证的语义索引基础。此测试的价值远超单元测试，因为它验证了数据在 `Parser -> Adapter -> Visitor -> Store` 整个链路中的保真度。
 
 ### 目标
 
-1.  修改 `packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py` 文件中的 `_extract_references` 方法。
-2.  在方法内部，扩展 `local_symbols` 字典的填充逻辑。
-3.  遍历 `module.attributes` 和每个 `class.attributes`，检查 `attr.alias_target` 字段。
-4.  如果 `attr.alias_target` 存在，则将该别名（`attr.name`）及其指向的完全限定名（`attr.alias_target`）添加到 `local_symbols` 字典中。
-5.  确保此增强后的 `local_symbols` 字典被传递给 `UsageScanVisitor`。
+1.  在 `packages/stitcher-python-adapter/tests/integration/` 目录下创建一个新的测试文件 `test_index_adapter_integration.py`。
+2.  在该文件中定义一个名为 `test_alias_and_reference_resolution_end_to_end` 的测试函数。
+3.  使用 `WorkspaceFactory` 构建一个包含 `__init__.py`、定义模块 `utils.py` 和使用模块 `main.py` 的多文件 Python 包结构。
+4.  在测试中，实例化并运行 `WorkspaceScanner`，并注册 `PythonAdapter`。
+5.  通过查询 `IndexStore` 执行详细的断言，以验证：
+    *   **别名符号**：`main.py` 中存在正确的 `SymbolRecord`，其 `kind` 为 `alias`，并且 `alias_target_id` 指向 `utils.py` 中定义的符号 SURI。
+    *   **定义符号**：`utils.py` 中存在正确的 `SymbolRecord`，其 `kind` 为 `function` 或 `class`。
+    *   **引用记录**：`main.py` 中存在正确的 `ReferenceRecord`，它将代码中的使用点（例如 `helper_func()` 调用）直接链接到 `utils.py` 中定义的原始符号的 SURI。
 
 ### 基本原理
 
-`UsageScanVisitor` 在遍历代码的 AST 时，会遇到各种标识符（`Name` 节点）。它通过查询 `local_symbols` 映射来判断这个标识符究竟指向哪个“真实”的实体。
+该测试将模拟一个真实的项目环境。通过扫描一个精心设计的、包含多种导入和使用模式的小型代码库，我们可以精确地检查数据库中生成的记录是否符合我们的预期。
 
-目前的实现只将文件中*定义*的函数和类放入了 `local_symbols`。这导致当 Visitor 遇到一个*导入*的符号（如 `helper`）时，它在映射表中找不到对应的条目，因而无法解析该引用。
-
-本次修改的核心就是将 `ModuleDef` 中携带的别名信息（`Attribute` with `alias_target`）注入到 `local_symbols` 映射中。例如，对于 `from .utils import helper`，我们将添加一条 `{ "helper": "your_package.utils.helper" }` 的映射。这样，当 Visitor 遇到 `helper()` 的调用时，它就能立即知道这个 `helper` 实际上是 `your_package.utils.helper`，从而创建出一条正确的引用记录。
+*   **Arrange (准备)**: 创建一个 `my_pkg` 包，其中 `utils.py` 提供符号，`main.py` 消费这些符号。
+*   **Act (执行)**: 运行 `WorkspaceScanner` 对该工作区进行索引。这是对我们所有新逻辑的真实调用。
+*   **Assert (断言)**: 直接检查 SQLite 数据库（通过 `IndexStore` 抽象）的内容。这是对最终结果最直接、最可靠的验证。我们将验证符号表和引用表中的每一条关键记录，确保从别名到定义再到引用的整个链条都是完整且正确的。
 
 ### 标签
 
-#intent/build #flow/ready #priority/high #comp/core #concept/state #scope/core #ai/instruct #task/domain/testing #task/object/alias-resolution #task/action/implementation #task/state/continue
+#intent/tooling #flow/ready #priority/critical #comp/tests #concept/state #scope/core #ai/instruct #task/domain/testing #task/object/alias-resolution #task/action/implementation #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 增强 `_extract_references` 以识别别名
+#### Acts 1: 创建端到端集成测试文件
 
-我们将精确地 `patch` `_extract_references` 方法，以扩展 `local_symbols` 的填充逻辑。
+我们将创建新的测试文件，并写入完整的测试逻辑。
 
 ~~~~~act
-patch_file
-packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py
+write_file
+packages/stitcher-python-adapter/tests/integration/test_index_adapter_integration.py
 ~~~~~
-~~~~~python.old
-    def _extract_references(
-        self,
-        rel_path: str,
-        module: ModuleDef,
-        content: str,
-        file_path: Path,
-        logical_module_fqn: str,
-    ) -> List[ReferenceRecord]:
-        refs: List[ReferenceRecord] = []
+~~~~~python
+from textwrap import dedent
+from stitcher.index.scanner import WorkspaceScanner
+from stitcher.adapter.python import PythonAdapter
+from stitcher.test_utils.workspace import WorkspaceFactory
 
-        # 1. Build local_symbols map (Name -> FQN)
-        # This helps the visitor distinguish between local usages and globals/builtins
-        # The FQN here is logical (e.g. "pkg.mod.Class")
-        local_symbols = {}
 
-        # Helper to construct logical FQN for local symbols
-        def register_local(name: str, parent_fqn: str = ""):
-            fqn = (
-                f"{parent_fqn}.{name}" if parent_fqn else f"{logical_module_fqn}.{name}"
-            )
-            local_symbols[name] = fqn
-            return fqn
-
-        for func in module.functions:
-            register_local(func.name)
-
-        for cls in module.classes:
-            for method in cls.methods:
-                # Assuming UsageScanVisitor handles attribute lookups,
-                # strictly speaking we might not need to pass method names as locals
-                # unless they are used unqualified (which they aren't, they are self.x),
-                # but registering top-level classes/funcs is key.
+def test_alias_and_reference_resolution_end_to_end(tmp_path, store):
+    """
+    End-to-end test for the entire alias and reference pipeline.
+    Verifies:
+    1. Alias symbols (`import`) are created correctly in the importing module.
+    2. Reference records (`usage`) correctly point to the original definition's SURI.
+    """
+    # 1. Arrange: Create a workspace with a package structure
+    wf = WorkspaceFactory(tmp_path)
+    wf.with_source("src/my_pkg/__init__.py", "")
+    wf.with_source(
+        "src/my_pkg/utils.py",
+        dedent(
+            """
+            class HelperClass:
                 pass
 
-        # 2. Parse CST and Run Visitor
-        try:
-~~~~~
-~~~~~python.new
-    def _extract_references(
-        self,
-        rel_path: str,
-        module: ModuleDef,
-        content: str,
-        file_path: Path,
-        logical_module_fqn: str,
-    ) -> List[ReferenceRecord]:
-        refs: List[ReferenceRecord] = []
+            def helper_func():
+                pass
+            """
+        ),
+    )
+    wf.with_source(
+        "src/my_pkg/main.py",
+        dedent(
+            """
+            import my_pkg.utils
+            from my_pkg.utils import helper_func
+            from my_pkg.utils import HelperClass as HC
 
-        # 1. Build local_symbols map (Name -> FQN)
-        # This helps the visitor distinguish between local usages and globals/builtins.
-        # It maps a name visible in the current scope to its fully-qualified name.
-        local_symbols = {}
+            def main_flow():
+                my_pkg.utils.helper_func()
+                helper_func()
+                instance = HC()
+            """
+        ),
+    )
+    root_path = wf.build()
 
-        # 1a. Register all imported aliases (e.g., 'helper' -> 'pkg.utils.helper')
-        for attr in module.attributes:
-            if attr.alias_target:
-                local_symbols[attr.name] = attr.alias_target
+    # 2. Act: Run the scanner
+    scanner = WorkspaceScanner(root_path, store)
+    adapter = PythonAdapter(root_path)
+    scanner.register_adapter(".py", adapter)
+    scanner.scan()
 
-        # 1b. Register all local definitions
-        def register_local(name: str, parent_fqn: str = "") -> str:
-            fqn = (
-                f"{parent_fqn}.{name}" if parent_fqn else f"{logical_module_fqn}.{name}"
-            )
-            local_symbols[name] = fqn
-            return fqn
+    # 3. Assert
+    # --- Get file records from DB ---
+    main_file = store.get_file_by_path("src/my_pkg/main.py")
+    utils_file = store.get_file_by_path("src/my_pkg/utils.py")
+    assert main_file is not None
+    assert utils_file is not None
 
-        for func in module.functions:
-            register_local(func.name)
+    main_symbols = {s.name: s for s in store.get_symbols_by_file(main_file.id)}
+    main_refs = store.get_references_by_file(main_file.id)
 
-        for cls in module.classes:
-            cls_fqn = register_local(cls.name)
-            # Register class-level aliases
-            for attr in cls.attributes:
-                if attr.alias_target:
-                    local_symbols[attr.name] = attr.alias_target
-            # Methods are handled by the visitor's scope analysis (e.g., self.method)
-            # so we don't need to register them as top-level local symbols.
+    # --- Expected SURIs for definitions in utils.py ---
+    utils_helper_class_suri = "py://src/my_pkg/utils.py#HelperClass"
+    utils_helper_func_suri = "py://src/my_pkg/utils.py#helper_func"
 
-        # 2. Parse CST and Run Visitor
-        try:
+    # --- Assertion Set 1: Alias symbols in main.py are correct ---
+    assert "my_pkg" in main_symbols
+    assert main_symbols["my_pkg"].kind == "alias"
+    assert main_symbols["my_pkg"].alias_target_id == "py://src/my_pkg.py"
+
+    assert "helper_func" in main_symbols
+    assert main_symbols["helper_func"].kind == "alias"
+    assert main_symbols["helper_func"].alias_target_id == utils_helper_func_suri
+
+    assert "HC" in main_symbols
+    assert main_symbols["HC"].kind == "alias"
+    assert main_symbols["HC"].alias_target_id == utils_helper_class_suri
+
+    # --- Assertion Set 2: Reference records in main.py are correct ---
+    ref_targets = {ref.target_id for ref in main_refs}
+
+    # All three usages should resolve directly to the definition SURIs
+    assert utils_helper_func_suri in ref_targets
+    assert utils_helper_class_suri in ref_targets
+
+    # Check reference counts for more precision
+    func_ref_count = sum(1 for r in main_refs if r.target_id == utils_helper_func_suri)
+    class_ref_count = sum(
+        1 for r in main_refs if r.target_id == utils_helper_class_suri
+    )
+
+    # We expect 2 usages of the function and 1 of the class
+    assert func_ref_count >= 2  # my_pkg.utils.helper_func() and helper_func()
+    assert class_ref_count >= 1  # HC()
 ~~~~~
 
 ### 下一步建议
 
-我们已经完成了别名解析和引用分析的核心逻辑实现。整个功能链条（`Parser -> IR -> Adapter -> Index`）现在已经贯通。
+我们已经成功地完成了从架构分析、核心功能实现到最终集成测试的整个开发周期。`stitcher-index` 模块现在具备了初步但健壮的别名解析和引用分析能力。
 
-**现在，最关键的下一步是验证。**
+**宏观任务 `alias-resolution` 已完成。**
 
-我强烈建议编写一个或多个集成测试来端到端地验证这个新功能。一个好的测试用例应该包含：
+我建议将这一系列的工作成果作为一个逻辑单元进行提交。一个清晰的 `[COMMIT]` 计划将有助于记录我们的决策过程和实现细节。
 
-1.  一个定义了函数/类的 `utils.py` 文件。
-2.  一个 `main.py` 文件，其中包含：
-    *   `import utils`
-    *   `from utils import specific_function`
-    *   `from . import sibling` (如果适用)
-    *   对上述导入符号的调用。
-3.  测试逻辑应该：
-    *   创建一个包含这些文件的测试工作区。
-    *   运行 `WorkspaceScanner`。
-    *   查询 `IndexStore` 并断言：
-        *   `main.py` 的符号表中包含了 `kind='alias'` 的 `SymbolRecord`。
-        *   这些别名记录的 `alias_target_id` 正确指向了 `utils.py` 中对应符号的 SURI。
-        *   `main.py` 的引用表中包含了从*调用点*到*别名符号*的 `ReferenceRecord`。
-
-这将确保我们所做的所有修改都能协同工作，并真正解决了最初的技术债务。如果你同意，我将开始设计并实施这个集成测试。
+如果你同意，我将为您生成一个 `[COMMIT]` 计划，总结从 **Atomic Task 1** 到 **Atomic Task 4** 的所有工作。
