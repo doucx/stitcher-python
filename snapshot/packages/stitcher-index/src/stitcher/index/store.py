@@ -136,3 +136,21 @@ class IndexStore:
                 "SELECT * FROM 'references' WHERE source_file_id = ?", (file_id,)
             ).fetchall()
             return [ReferenceRecord(**dict(row)) for row in rows]
+
+    def get_all_file_paths(self) -> Set[str]:
+        """Returns the set of all relative paths known to the index."""
+        with self.db.get_connection() as conn:
+            rows = conn.execute("SELECT path FROM files").fetchall()
+            return {row["path"] for row in rows}
+
+    def prune_files(self, paths_to_delete: Set[str]) -> None:
+        """Deletes files and their associated data from the index."""
+        with self.db.get_connection() as conn:
+            # We can delete in batches for very large sets of deleted files
+            # but for now a single transaction is fine.
+            # Foreign key ON DELETE CASCADE will handle symbols and references.
+            placeholders = ",".join("?" for _ in paths_to_delete)
+            conn.execute(
+                f"DELETE FROM files WHERE path IN ({placeholders})",
+                tuple(paths_to_delete),
+            )
