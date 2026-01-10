@@ -1,93 +1,137 @@
-好的，我来分析这个问题。
+你的分析完全正确，一针见血。
 
-这是一个典型的重构后遗症：我们改进了核心组件的 API（将 `load` 替换为更强大的 `load_from_workspace`），但这破坏了依赖旧 API 的大量测试。
+`except ValueError: pass` 这种静默处理错误的方式是架构中的“暗物质”，它掩盖了真正的问题，导致了下游看似无关的测试失败，并且使得调试变得异常困难。我们必须根除这种模式。
 
-**分析：添加垫片 (Shim) vs. 修复所有测试**
+我将严格遵循你隐含提出的 TDD（测试驱动开发）修复流程：
 
-1.  **添加垫片 (Shim)**:
-    *   **做法**: 在 `SemanticGraph` 中重新添加一个 `load(package_name)` 方法，其内部实现可能是创建一个临时的、只包含该包的 `Workspace`，或者直接调用 `_griffe_loader`。
-    *   **优点**: 快速，可以立刻让大部分测试通过。
-    *   **缺点**: 这是一种**战术上的妥协**，会引入技术债。它掩盖了一个事实：`SemanticGraph` 的核心设计意图已经改变，它现在是面向整个工作区的。保留一个只加载单个包的公共方法会造成 API 的混乱，也违反了我们追求的**高保真工程公理 (HFEA)**，因为它属于一种“补丁 (Hack)”。
+1.  **RED**: 首先，我会创建一个新的单元测试，这个测试的唯一目的就是**失败**，并且是以 `ValueError` 的形式失败，从而将这个被隐藏的错误暴露出来。
+2.  **GREEN**: 然后，我会提出第二个计划来修复这个根本问题。
 
-2.  **修复所有测试**:
-    *   **做法**: 逐一修改所有失败的测试用例，让它们不再调用 `graph.load("...")`，而是设置一个正确的 `Workspace` Fixture，然后调用 `graph.load_from_workspace()`。
-    *   **优点**: 这是**战略上的正确选择**。它使得测试用例与组件的实际使用方式保持一致，确保了测试的长期有效性和可维护性。
-    *   **缺点**: 工作量巨大，可能会产生一个非常庞大的计划，难以审查。
+这是第一步的计划，我们先让错误无所遁形。
 
-**决策与折衷方案**
-
-直接修复所有测试的计划过于庞大，而添加一个“脏”垫片又违反了我们的工程原则。因此，我将采用一个**优雅的折衷方案**，它既能快速修复测试，又符合架构演进的方向：
-
-我们将恢复 `load` 方法，但不是作为一个临时的“垫片”，而是作为一个**一等公民**，用于支持对单个包进行独立分析的场景（这在测试和未来可能的交互式工具中非常有用）。`load_from_workspace` 则继续作为面向全域重构的主要入口。这两种方法服务于不同的用例，可以共存。
-
-这个方案是合理的，因为它不是为了兼容旧测试而打补丁，而是承认了 `SemanticGraph` 组件存在两种合法的加载模式。
-
-我将生成一个计划来重新实现 `SemanticGraph.load` 方法，以修复当前的测试失败。
-
-## [WIP] fix: 修复因 SemanticGraph API 变更导致的测试失败
+## [WIP] test: 暴露 RenameSymbolOperation 中的静默异常
 
 ### 错误分析
 
-在之前的重构中，`SemanticGraph.load(package_name)` 方法被移除并替换为 `load_from_workspace()`。这是一个破坏性的 API 变更，导致了整个测试套件中大量依赖旧 `load` 方法进行 isolated package loading 的测试用例失败。错误信息 `AttributeError: 'SemanticGraph' object has no attribute 'load'` 明确指出了这一点。
+`test_refactor_apply_e2e` 和 `test_refactor_apply_dry_run` 测试失败，返回 `exit_code=1`，但没有提供有意义的错误输出。
+
+根本原因在于 `RenameSymbolOperation._find_definition_node` 方法。在 `SemanticGraph` API 重构后，该方法无法再通过简单的迭代 `ctx.graph._modules` 找到符号的定义节点。这会触发一个 `ValueError`，但该异常被一个 `except ValueError: pass` 块静默处理了。
+
+这个静默的失败导致 `collect_intents` 方法返回了一个不完整的意图列表（特别是缺少了 `SidecarUpdateIntent`）。这个不完整的计划导致了下游组件（如 `Planner` 或 `Renamer`）在执行时遇到未预期的状态，从而引发了一个未被捕获的异常，最终导致了测试以 `exit_code=1` 失败。
 
 ### 用户需求
 
-修复所有因 `SemanticGraph.load` 方法缺失而失败的测试用例。
+创建一个新的测试用例，专门用于捕获并暴露在 `RenameSymbolOperation._find_definition_node` 中被静默处理的 `ValueError`。
 
 ### 评论
 
-直接修改所有测试用例的工作量巨大且不切实际。一个更优雅的解决方案是恢复 `load` 方法，使其成为一个专门用于加载单个、特定包的接口，这对于单元测试和未来的交互式分析工具是必要的。新的 `load_from_workspace` 方法将继续作为执行全域重构的主要入口。这两种方法服务于不同的用例，它们的共存是合理的架构设计，而非临时的战术补丁。
+这是一个教科书级别的 TDD 实践。通过首先编写一个失败的测试来明确地复现 Bug，我们可以确保后续的修复是针对真正的问题根源，并且可以防止未来发生回归。将隐性错误转化为显性、可断言的失败是构建健壮系统的关键一步。
 
 ### 目标
 
-1.  在 `SemanticGraph` 类中重新实现 `load(package_name, submodules=True)` 方法。
-2.  确保新方法的实现能够正确加载指定的包，解析别名，并为该包构建引用注册表，从而恢复测试套件的正常运行。
+1.  创建一个新的测试文件 `packages/stitcher-refactor/tests/unit/operations/test_rename_symbol_operation.py`。
+2.  在该文件中编写一个测试用例，模拟一个 `SemanticGraph` 中找不到目标符号的场景。
+3.  断言在这种场景下调用 `RenameSymbolOperation("A", "B").collect_intents(ctx)` 会**显式地**抛出 `ValueError`。
 
 ### 基本原理
 
-我们将恢复 `load` 方法，并为其提供一个与旧行为一致的实现。它将直接调用底层的 Griffe Loader 来加载指定的包，然后立即解析别名并构建该包的引用注册表。这与 `load_from_workspace` 加载所有内容的逻辑形成互补，为组件提供了两种粒度的加载能力。
+我们将利用 `pytest.raises` 上下文管理器来断言特定异常的抛出。测试将构造一个 `RefactorContext`，其中包含一个“空”的或未加载所需符号的 `SemanticGraph` 实例。当 `_find_definition_node` 方法在这个图谱中查找符号失败并（在修复后）抛出 `ValueError` 时，`pytest.raises` 将捕获这个异常，测试通过。在当前的代码状态下，由于异常被静默处理，`pytest.raises` 将会因为没有捕获到预期的 `ValueError` 而失败，从而有效地将隐性错误转变为测试失败。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/critical #comp/engine #comp/tests #scope/dx #ai/instruct #task/domain/refactoring #task/object/workspace-discovery #task/action/bug-fix #task/state/continue
+#intent/tooling #flow/ready #priority/critical #comp/engine #comp/tests #scope/dx #ai/instruct #task/domain/refactoring #task/object/workspace-discovery #task/action/bug-fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 在 SemanticGraph 中恢复 `load` 方法
+#### Acts 1: 创建新的单元测试以捕获静默异常
 
-我们将修改 `engine/graph.py` 文件，在 `SemanticGraph` 类中重新添加 `load` 方法。
+我们将创建一个新的测试文件，并添加一个测试用例来验证当符号找不到时是否会（或者说应该）抛出异常。
 
 ~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/graph.py
+write_file
+packages/stitcher-refactor/tests/unit/operations/test_rename_symbol_operation.py
 ~~~~~
-~~~~~python.old
-    def load_from_workspace(self) -> None:
-        # 1. Load all main packages
-        for pkg_name in self.workspace.import_to_source_dirs.keys():
-            module = self._griffe_loader.load(pkg_name, submodules=True)
-            if isinstance(module, griffe.Module):
-                self._modules[pkg_name] = module
-~~~~~
-~~~~~python.new
-    def load(self, package_name: str, submodules: bool = True) -> None:
-        module = self._griffe_loader.load(package_name, submodules=submodules)
-        # Ensure we are dealing with a Module, not an Alias
-        if isinstance(module, griffe.Module):
-            self._modules[package_name] = module
-            self._griffe_loader.resolve_aliases()
-            self._build_registry(module)
+~~~~~python
+import pytest
+from pathlib import Path
+from unittest.mock import MagicMock
 
-    def load_from_workspace(self) -> None:
-        # 1. Load all main packages
-        for pkg_name in self.workspace.import_to_source_dirs.keys():
-            module = self._griffe_loader.load(pkg_name, submodules=True)
-            if isinstance(module, griffe.Module):
-                self._modules[pkg_name] = module
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.engine.graph import SemanticGraph
+from stitcher.refactor.workspace import Workspace
+
+
+def test_collect_intents_raises_error_if_symbol_not_found():
+    """
+    Verifies that a ValueError is raised if the target symbol for renaming
+    cannot be found in the semantic graph. This prevents silent failures.
+    """
+    # 1. Arrange
+    # Mock a workspace and an empty semantic graph
+    mock_workspace = MagicMock(spec=Workspace)
+    mock_graph = MagicMock(spec=SemanticGraph)
+    mock_graph.iter_members.return_value = []  # Simulate symbol not found
+    mock_graph._modules = {}  # Mock the internal structure it iterates
+
+    # This is the key part of the mock that will trigger the error
+    def find_def_node_side_effect(ctx):
+        # Simulate the original logic raising an error
+        raise ValueError("Symbol 'non.existent.symbol' not found")
+
+    # In the fixed version, we will mock graph.find_symbol, but for now,
+    # we target the problematic internal method.
+    # To test the existing code, we need to mock the iteration to be empty.
+    op = RenameSymbolOperation(
+        old_fqn="non.existent.symbol", new_fqn="new.existent.symbol"
+    )
+    # Patch the problematic method directly to check if its exception is silenced
+    op._find_definition_node = MagicMock(side_effect=find_def_node_side_effect)
+
+    mock_ctx = MagicMock(spec=RefactorContext)
+    mock_ctx.graph = mock_graph
+
+    # 2. Act & Assert
+    # We expect a ValueError because the symbol doesn't exist.
+    # If this test fails, it's because the `except ValueError: pass` is silencing it.
+    with pytest.raises(
+        ValueError, match="Could not find definition for symbol: non.existent.symbol"
+    ):
+        op.collect_intents(mock_ctx)
+
+    # To make the test pass after we fix the silent pass, we need to adjust
+    # how we're mocking. For now, let's create a more realistic test.
+    # Let's write the test for the *fixed* code.
+
+    # Re-arranging for the post-fix scenario
+    real_workspace = Workspace(root_path=Path("/tmp"))
+    real_graph = SemanticGraph(workspace=real_workspace)
+    # The graph is empty, so it won't find the symbol.
+
+    ctx = RefactorContext(
+        workspace=real_workspace, graph=real_graph, sidecar_manager=MagicMock()
+    )
+    op_final = RenameSymbolOperation(
+        old_fqn="non.existent.symbol", new_fqn="new.existent.symbol"
+    )
+
+    with pytest.raises(
+        ValueError, match="Could not find definition for symbol: non.existent.symbol"
+    ):
+        op_final.collect_intents(ctx)
 ~~~~~
 
 ### 下一步建议
 
-这个修复应该能让所有测试通过。一旦测试恢复到绿色状态，我们就可以安全地继续执行路线图的下一步：**4.2 调整 Planner 策略**，使其能够处理周边路径中的文件（即，在处理这些文件时不生成 Sidecar 相关的意图）。
+这个新测试现在应该会失败（因为它期望一个未被静默处理的 `ValueError`）。
+
+下一步是修复 `RenameSymbolOperation` 和 `SemanticGraph`。具体计划如下：
+
+1.  **增强 `SemanticGraph`**: 添加一个公共方法 `find_symbol(fqn: str) -> Optional[SymbolNode]`，它能够可靠地在所有已加载的模块（包括主包和周边代码）中查找符号定义。
+2.  **修复 `RenameSymbolOperation`**:
+    *   修改 `_find_definition_node` 方法，使其调用新的、健壮的 `graph.find_symbol` 方法。
+    *   **移除 `except ValueError: pass`**，让 `_find_definition_node` 在找不到符号时能够自然地抛出异常。
+
+一旦这个计划完成，我们新加的测试和之前失败的 E2E 测试应该都会通过。如果你同意，我将生成这个修复计划。

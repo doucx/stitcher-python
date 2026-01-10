@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 修复因 SemanticGraph API 变更导致的测试失败", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768033082.7236242, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test: 暴露 RenameSymbolOperation 中的静默异常", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768033292.2898269, "duration_ms": 0}}
