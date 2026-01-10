@@ -1,6 +1,6 @@
 import ast
 from pathlib import Path
-from typing import List, cast, Any
+from typing import List, cast, Any, Optional
 
 import griffe
 from stitcher.spec import (
@@ -27,6 +27,9 @@ class _ImportVisitor(ast.NodeVisitor):
 
 
 class GriffePythonParser(LanguageParserProtocol):
+    def __init__(self):
+        self.last_griffe_module: Optional[griffe.Module] = None
+
     def parse(self, source_code: str, file_path: str = "") -> ModuleDef:
         # 1. Parse into AST
         try:
@@ -46,6 +49,7 @@ class GriffePythonParser(LanguageParserProtocol):
         griffe_module = griffe.visit(
             module_name, filepath=cast(Any, path_obj), code=source_code
         )
+        self.last_griffe_module = griffe_module
 
         # 3. Map to Stitcher IR
         module_def = self._map_module(griffe_module, file_path, imports)
