@@ -90,16 +90,12 @@ class WorkspaceScanner:
                 self.store.sync_file(
                     rel_path_str, current_hash, current_mtime, current_size
                 )
-                # If it was dirty (status=0) but hash matches, it means we failed to parse last time
-                # or it was interrupted. If hash matches old hash, we technically don't need to re-parse
-                # IF the old parse was successful. But if status=0, we should retry parse.
                 if record.indexing_status == 1:
                     stats["skipped"] += 1
                     continue
                 # If status=0, fall through to Phase 4 to retry parsing.
 
             # Sync file (Insert or Update)
-            # This updates content_hash, mtime, size and sets status=0 (Dirty)
             file_id, is_new_content = self.store.sync_file(
                 rel_path_str, current_hash, current_mtime, current_size
             )
@@ -120,6 +116,9 @@ class WorkspaceScanner:
         Phase 1: Discovery.
         Returns a set of file paths relative to root_path.
         """
+        paths = set()
+        used_git = False
+
         # Strategy 1: Git
         if (self.root_path / ".git").exists():
             try:
@@ -134,24 +133,23 @@ class WorkspaceScanner:
                 paths = set(
                     line.strip() for line in result.stdout.splitlines() if line.strip()
                 )
-                # Filter out directories (git ls-files shouldn't list dirs usually, but check)
-                return paths
+                used_git = True
             except subprocess.CalledProcessError:
                 log.warning("Git discovery failed, falling back to OS walk.")
         
         # Strategy 2: Fallback OS Walk
-        paths = set()
-        for root, dirs, files in os.walk(self.root_path):
-            # Skip hidden dirs
-            dirs[:] = [d for d in dirs if not d.startswith(".")]
-            
-            for file in files:
-                if file.startswith("."):
-                    continue
-                abs_path = Path(root) / file
-                rel_path = abs_path.relative_to(self.root_path).as_posix()
-                paths.add(rel_path)
-        
+        if not used_git:
+            for root, dirs, files in os.walk(self.root_path):
+                # Skip hidden dirs
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+                
+                for file in files:
+                    if file.startswith("."):
+                        continue
+                    abs_path = Path(root) / file
+                    rel_path = abs_path.relative_to(self.root_path).as_posix()
+                    paths.add(rel_path)
+
         # Global Filter: Exclude .stitcher directory
         final_paths = {
             p for p in paths 
@@ -167,7 +165,6 @@ class WorkspaceScanner:
             text_content = content_bytes.decode("utf-8")
         except UnicodeDecodeError:
             # Binary file or non-utf8. We track the file (Phase 3) but don't index symbols.
-            # We clear existing symbols for this file to be safe (it might have become binary).
             self.store.update_analysis(file_id, [], [])
             return
 
@@ -176,8 +173,7 @@ class WorkspaceScanner:
         adapter = self.adapters.get(ext)
         
         if not adapter:
-            # No adapter for this type (e.g. .txt, .md if not configured).
-            # Mark as indexed (empty symbols) to avoid re-scanning.
+            # No adapter for this type. Mark as indexed.
             self.store.update_analysis(file_id, [], [])
             return
 
@@ -187,11 +183,5 @@ class WorkspaceScanner:
             self.store.update_analysis(file_id, symbols, references)
         except Exception as e:
             log.error(f"Failed to parse {abs_path}: {e}")
-            # We leave it as dirty (status=0 from sync_file) or we record error?
-            # Ideally we record error in 'indexing_errors' table and mark as indexed (or partial?)
-            # For now, let's leave it dirty so it retries next time? 
-            # Or mark as indexed with 0 symbols to prevent infinite retry loops on syntax errors?
-            # Better: Mark as indexed (processed) but log error. A syntax error shouldn't block the pipeline forever.
-            # But the requirement is "Robustness".
-            # Let's clear symbols and mark indexed to stop loop.
+            # Clear symbols and mark indexed to stop loop on persistent errors
             self.store.update_analysis(file_id, [], [])
