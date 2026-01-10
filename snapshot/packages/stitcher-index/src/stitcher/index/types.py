@@ -32,3 +32,4 @@ class ReferenceRecord:
     location_start: int
     location_end: int
     source_file_id: Optional[int] = None  # Optional when inserting
+    id: Optional[int] = None  # Database Row ID
