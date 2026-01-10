@@ -1,6 +1,5 @@
 from pathlib import Path
 from stitcher.adapter.python.index_adapter import PythonAdapter
-from stitcher.index.types import ReferenceRecord
 
 
 def test_extract_references_basic():
@@ -22,10 +21,10 @@ class Processor:
     root = Path("/tmp/proj")
     adapter = PythonAdapter(root)
     file_path = root / "src/main.py"
-    
+
     # 执行解析
     _, references = adapter.parse(file_path, code)
-    
+
     # 辅助断言函数
     def find_refs(target_fragment):
         return [r for r in references if target_fragment in r.target_id]
@@ -40,7 +39,9 @@ class Processor:
     # from mypkg import utils
     # 修正：SURI 可能是 py://mypkg.py#utils，不包含 "mypkg.utils" 连续字符串
     # 我们放宽断言，检查 target_id 中是否包含关键部分
-    utils_refs = [r for r in references if "mypkg" in r.target_id and "utils" in r.target_id]
+    utils_refs = [
+        r for r in references if "mypkg" in r.target_id and "utils" in r.target_id
+    ]
     assert len(utils_refs) >= 1
 
     # 2. 验证调用引用 (Usages)

@@ -96,7 +96,7 @@ class UsageScanVisitor(cst.CSTVisitor):
                 self._register_node(
                     alias.name, absolute_module, ReferenceType.IMPORT_PATH
                 )
-                
+
                 # Update active_symbols
                 # Case 1: import a.b.c as d -> local 'd' maps to 'a.b.c'
                 if alias.asname:
@@ -138,15 +138,15 @@ class UsageScanVisitor(cst.CSTVisitor):
                     if imported_name:
                         full_fqn = f"{absolute_module}.{imported_name}"
                         self._register_node(name_node, full_fqn, ReferenceType.SYMBOL)
-                        
+
                         # Update active_symbols
                         # from x import y as z -> local 'z' maps to 'x.y'
                         local_name = imported_name
                         if alias.asname and isinstance(alias.asname.name, cst.Name):
                             local_name = alias.asname.name.value
-                        
+
                         self.active_symbols[local_name] = full_fqn
-        
+
         # Prevent visiting children to avoid double-counting in visit_Name
         return False
 
