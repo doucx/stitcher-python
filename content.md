@@ -1,69 +1,71 @@
-You've found another excellent catch. My refactoring was incomplete. While I updated the high-level application factory (`make_app`), I failed to update the tests that were directly calling the internal `generate_runner`.
+Of course. With all tests passing, it's time to complete the refactoring by removing the now-redundant files. This final step will leave our codebase clean and consistent with the new architecture.
 
-This `AttributeError` is the direct result of that oversight. My apologies. The test is correctly pointing out that `generate_runner` no longer exists on `StitcherApp`. The test logic needs to be updated to use the new `stubgen_service` public API.
+I will now generate the plan to perform this cleanup.
 
-I will now create a plan to fix this test.
-
-## [WIP] fix(tests): Update integration test to use new StubgenService API
-
-### 错误分析
-
-测试 `test_app_scan_and_generate_single_file` 失败的根本原因是它正在访问一个在重构后已被移除的内部属性 `app.generate_runner`。
-
-在之前的计划中，我将 `GenerateRunner` 的职责封装到了新的 `StubgenService` 中，并将其作为 `StitcherApp` 的一个服务 (`app.stubgen_service`)。然而，这个特定的集成测试为了在隔离环境中验证生成逻辑，绕过了顶层命令 (`app.run_from_config()`)，直接调用了 `app.generate_runner.run_batch()`。
-
-在我移除 `app.generate_runner` 后，这个测试的调用点没有被同步更新，因此在访问该属性时引发了 `AttributeError`。
+## [WIP] refactor(arch): Remove redundant stubgen files after migration
 
 ### 用户需求
 
-修复 `test_end_to_end.py` 中因访问不存在的 `generate_runner` 属性而导致的 `AttributeError`。
+在成功将存根生成逻辑迁移到 `stitcher-stubgen` 包并更新所有调用方之后，需要清理 `stitcher-application` 和 `stitcher-python-adapter` 包中遗留的、现已无用的旧文件。
 
 ### 评论
 
-这是一个很好的例子，说明了为什么我们的测试套件既有端到端测试（调用 `run_from_config`）又有更深入的集成测试（直接调用 runner/service）。这种更深入的测试可以精确地捕获到此类 API 边界的变化。修复这个问题的正确方法不是恢复旧属性，而是将测试更新为使用新的、设计上正确的公共服务接口 (`stubgen_service`)。
+这是保持代码库健康的必要步骤，也是我们架构重构的收官之作。留下“死代码”会增加新开发者的认知负担，并在未来可能引发难以察觉的错误。通过果断地删除这些冗余文件，我们正式完成了这次架构演进，确保了代码的物理结构与逻辑设计完全一致。
 
 ### 目标
 
-1.  定位 `packages/stitcher-application/tests/integration/test_end_to_end.py` 中的 `test_app_scan_and_generate_single_file` 函数。
-2.  修改该函数，将其对 `app.generate_runner.run_batch(...)` 的调用替换为对 `app.stubgen_service.generate(...)` 的调用。
+1.  从 `stitcher-application` 中删除 `GenerateRunner` 和 `StubPackageManager` 的源文件及其关联的文档文件。
+2.  从 `stitcher-python-adapter` 中删除旧的 `PythonStubGenerator` 包装器及其内部实现文件。
 
 ### 基本原理
 
-我们将使用一个精确的 `patch_file` 操作来修正这个测试。`old_str` 将会匹配包含 `app.generate_runner.run_batch` 调用的那一行代码。`new_str` 将会是使用了新的 `app.stubgen_service.generate` 方法的等效调用。这个改动将使测试代码与我们新的、解耦后的应用架构保持一致。
+在之前的步骤中，我们已经成功地将这些文件的功能迁移到了 `stitcher-stubgen` 包中，并且所有依赖这些功能的代码（包括应用代码和测试代码）都已被更新，转而调用新的 `StubgenService`。因此，这些原始文件现在已经完全不被任何代码引用，成为了“死代码”。
+
+我们将使用一系列 `delete_file` 指令来精确地移除这些文件。这是一个安全的、不可逆的操作，它将使我们的项目结构最终达到我们所设计的整洁状态。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/critical #comp/tests #comp/application #scope/dx #task/domain/architecture #task/object/stubgen-package #task/action/integration #task-state/continue
+#intent/refine #flow/ready #priority/medium #comp/application #comp/python-adapter #scope/core #task/domain/architecture #task/object/stubgen-package #task/action/cleanup #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 更新集成测试以使用新服务
+#### Acts 1: 清理 `stitcher-application` 包
 
-我们将修改 `test_end_to_end.py`，使其调用新的 `StubgenService` 接口。
+我们将删除 `application` 包中与存根生成相关的、现已废弃的 `runner` 和 `service` 文件。
 
 ~~~~~act
-patch_file
-packages/stitcher-application/tests/integration/test_end_to_end.py
+delete_file
+packages/stitcher-application/src/stitcher/app/runners/generate.py
 ~~~~~
-~~~~~python
-        # Directly call the runner's batch processing method to test generation logic in isolation.
-        source_file = project_root / "greet.py"
-        module = app.scanner.scan_files([source_file])[0]
-        app.generate_runner.run_batch([module], StitcherConfig(), tm)
-        tm.commit()
+
+~~~~~act
+delete_file
+packages/stitcher-application/src/stitcher/app/services/stub_package_manager.py
 ~~~~~
-~~~~~python
-        # Directly call the service's generate method to test generation logic in isolation.
-        source_file = project_root / "greet.py"
-        module = app.scanner.scan_files([source_file])[0]
-        app.stubgen_service.generate([module], StitcherConfig(), tm)
-        tm.commit()
+
+~~~~~act
+delete_file
+packages/stitcher-application/src/stitcher/app/services/stub_package_manager.stitcher.yaml
+~~~~~
+
+#### Acts 2: 清理 `stitcher-python-adapter` 包
+
+接着，我们删除 `python-adapter` 包中旧的生成器实现。
+
+~~~~~act
+delete_file
+packages/stitcher-python-adapter/src/stitcher/adapter/python/generator.py
+~~~~~
+
+~~~~~act
+delete_file
+packages/stitcher-python-adapter/src/stitcher/adapter/python/internal/stub_generator.py
 ~~~~~
 
 ### 下一步建议
 
-这个修复应该能解决最后的 `AttributeError`，让我们的测试套件完全通过。
+我们已经成功地清理了所有冗余文件，`stitcher-stubgen` 的架构重构任务至此已全部完成。
 
-一旦测试全部变绿，我们就已经为这次重构的收尾工作做好了万全的准备。下一步将是**清理冗余文件**，我会生成一个计划来安全地删除 `stitcher-application` 和 `stitcher-python-adapter` 中所有已被废弃的旧代码，让我们的项目代码库恢复整洁和一致。
+这是一个逻辑上完整的工作单元，我建议你现在创建一个 `[COMMIT]` 计划，将这次重构的所有变更（从创建新包到删除旧文件）作为一个原子提交记录到版本控制中。这会为项目历史留下一条清晰、有意义的记录。
