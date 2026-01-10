@@ -183,6 +183,14 @@ class SemanticGraph:
         self._modules: Dict[str, griffe.Module] = {}
         self.registry = UsageRegistry()
 
+    def load(self, package_name: str, submodules: bool = True) -> None:
+        module = self._griffe_loader.load(package_name, submodules=submodules)
+        # Ensure we are dealing with a Module, not an Alias
+        if isinstance(module, griffe.Module):
+            self._modules[package_name] = module
+            self._griffe_loader.resolve_aliases()
+            self._build_registry(module)
+
     def load_from_workspace(self) -> None:
         # 1. Load all main packages
         for pkg_name in self.workspace.import_to_source_dirs.keys():
