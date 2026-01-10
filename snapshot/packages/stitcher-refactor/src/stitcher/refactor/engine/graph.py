@@ -195,34 +195,37 @@ class SemanticGraph:
             self._build_registry(module)
 
     def load_from_workspace(self) -> None:
-        import sys
-        print(f"DEBUG: Graph loading from workspace. Search paths: {self.search_paths}", file=sys.__stderr__)
         # 1. Load all main packages
         for pkg_name in self.workspace.import_to_source_dirs.keys():
-            print(f"DEBUG: Loading package '{pkg_name}'", file=sys.__stderr__)
             try:
                 module = self._griffe_loader.load(pkg_name, submodules=True)
                 if isinstance(module, griffe.Module):
                     self._modules[pkg_name] = module
-                else:
-                    print(f"DEBUG: '{pkg_name}' loaded as {type(module)}, not Module", file=sys.__stderr__)
             except Exception as e:
-                print(f"DEBUG: Failed to load package '{pkg_name}': {e}", file=sys.__stderr__)
-                raise
+                log.error(f"Failed to load package '{pkg_name}': {e}")
+                # We continue loading other packages even if one fails
+                continue
 
         # 2. Load all peripheral files/directories
         for p_dir in self.workspace.peripheral_source_dirs:
             if p_dir.is_dir():
                 for py_file in p_dir.rglob("*.py"):
-                    self._griffe_loader.load(py_file)
+                    try:
+                        self._griffe_loader.load(py_file)
+                    except Exception as e:
+                        log.warning(f"Failed to load peripheral file {py_file}: {e}")
             elif p_dir.is_file() and p_dir.suffix == ".py":
-                self._griffe_loader.load(p_dir)
+                try:
+                    self._griffe_loader.load(p_dir)
+                except Exception as e:
+                    log.warning(f"Failed to load peripheral file {p_dir}: {e}")
 
         # 3. Resolve all aliases now that everything is loaded
         self._griffe_loader.resolve_aliases()
 
         # 4. Build usage registry for everything
-        for module in self._griffe_loader.modules_collection.values():
+        # Fix: ModulesCollection does not have .values(), we must access .members
+        for module in self._griffe_loader.modules_collection.members.values():
             self._build_registry(module)
 
     def _build_registry(

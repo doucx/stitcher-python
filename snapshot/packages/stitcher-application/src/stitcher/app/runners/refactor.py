@@ -97,16 +97,8 @@ class RefactorRunner:
             return True
 
         except (MigrationError, FileNotFoundError) as e:
-            import sys
-            import traceback
-            print(f"DEBUG: Known Error caught in RefactorRunner: {e}", file=sys.__stderr__)
-            traceback.print_exc(file=sys.__stderr__)
             bus.error(L.error.generic, error=str(e))
             return False
         except Exception as e:
-            import sys
-            import traceback
-            print(f"DEBUG: Unexpected Error caught in RefactorRunner: {e}", file=sys.__stderr__)
-            traceback.print_exc(file=sys.__stderr__)
             bus.error(L.error.generic, error=f"An unexpected error occurred: {e}")
             return False
