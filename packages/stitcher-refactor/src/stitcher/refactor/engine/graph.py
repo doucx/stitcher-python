@@ -6,12 +6,15 @@ from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Optional, DefaultDict, Set, cast
 from collections import defaultdict
+import logging
 import griffe
 from stitcher.refactor.workspace import Workspace
 from libcst.helpers import (
     get_absolute_module_from_package_for_import,
     get_full_name_for_node,
 )
+
+log = logging.getLogger(__name__)
 
 
 class ReferenceType(Enum):
@@ -191,6 +194,40 @@ class SemanticGraph:
             self._griffe_loader.resolve_aliases()
             self._build_registry(module)
 
+    def load_from_workspace(self) -> None:
+        # 1. Load all main packages
+        for pkg_name in self.workspace.import_to_source_dirs.keys():
+            try:
+                module = self._griffe_loader.load(pkg_name, submodules=True)
+                if isinstance(module, griffe.Module):
+                    self._modules[pkg_name] = module
+            except Exception as e:
+                log.error(f"Failed to load package '{pkg_name}': {e}")
+                # We continue loading other packages even if one fails
+                continue
+
+        # 2. Load all peripheral files/directories
+        for p_dir in self.workspace.peripheral_source_dirs:
+            if p_dir.is_dir():
+                for py_file in p_dir.rglob("*.py"):
+                    try:
+                        self._griffe_loader.load(py_file)
+                    except Exception as e:
+                        log.warning(f"Failed to load peripheral file {py_file}: {e}")
+            elif p_dir.is_file() and p_dir.suffix == ".py":
+                try:
+                    self._griffe_loader.load(p_dir)
+                except Exception as e:
+                    log.warning(f"Failed to load peripheral file {p_dir}: {e}")
+
+        # 3. Resolve all aliases now that everything is loaded
+        self._griffe_loader.resolve_aliases()
+
+        # 4. Build usage registry for everything
+        # Fix: ModulesCollection does not have .values(), we must access .members
+        for module in self._griffe_loader.modules_collection.members.values():
+            self._build_registry(module)
+
     def _build_registry(
         self, module: griffe.Module, visited: Optional[Set[str]] = None
     ):
@@ -222,8 +259,10 @@ class SemanticGraph:
                 else:
                     target_fqn = member.path
                 local_symbols[name] = target_fqn
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(
+                    f"Failed to resolve symbol '{name}' in {module.path}: {e}"
+                )
 
         try:
             source = module.filepath.read_text(encoding="utf-8")
@@ -237,8 +276,9 @@ class SemanticGraph:
                 is_init_file=is_init,
             )
             wrapper.visit(visitor)
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"Failed to scan usages in {module.filepath}: {e}")
+            raise  # Re-raise to ensure tests fail if scanning fails
 
     def get_module(self, package_name: str) -> Optional[griffe.Module]:
         if package_name in self._modules:
@@ -257,6 +297,13 @@ class SemanticGraph:
                 return None
 
         return current if isinstance(current, griffe.Module) else None
+
+    def find_symbol(self, fqn: str) -> Optional[SymbolNode]:
+        for pkg_name in self._modules.keys():
+            for member in self.iter_members(pkg_name):
+                if member.fqn == fqn:
+                    return member
+        return None
 
     def iter_members(self, package_name: str) -> List[SymbolNode]:
         module = self.get_module(package_name)
