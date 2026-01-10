@@ -6,12 +6,15 @@ from enum import Enum
 from pathlib import Path
 from typing import List, Dict, Optional, DefaultDict, Set, cast
 from collections import defaultdict
+import logging
 import griffe
 from stitcher.refactor.workspace import Workspace
 from libcst.helpers import (
     get_absolute_module_from_package_for_import,
     get_full_name_for_node,
 )
+
+log = logging.getLogger(__name__)
 
 
 class ReferenceType(Enum):
@@ -244,8 +247,10 @@ class SemanticGraph:
                 else:
                     target_fqn = member.path
                 local_symbols[name] = target_fqn
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning(
+                    f"Failed to resolve symbol '{name}' in {module.path}: {e}"
+                )
 
         try:
             source = module.filepath.read_text(encoding="utf-8")
@@ -259,8 +264,9 @@ class SemanticGraph:
                 is_init_file=is_init,
             )
             wrapper.visit(visitor)
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"Failed to scan usages in {module.filepath}: {e}")
+            raise  # Re-raise to ensure tests fail if scanning fails
 
     def get_module(self, package_name: str) -> Optional[griffe.Module]:
         if package_name in self._modules:
