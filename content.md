@@ -1,68 +1,74 @@
-好的，我将添加中文翻译并为 `index` 命令组及其子命令添加完整的 `help` 文档。
+好的，任务 1.5 及其润色工作已经完成。我们现在将这些更改作为一个完整的逻辑单元提交。
 
-## [WIP] tune(cli): 为 index 命令添加国际化支持
+## [COMMIT] feat(cli): 集成增量索引扫描器并添加 `stitcher index build` 命令
 
 ### 用户需求
-`stitcher index` 命令及其子命令缺少 `help` 文档和中文日志。需要补充这些内容以提升用户体验。
+用户需要能够通过命令行界面启动项目的语义索引构建和更新，并且希望获得多语言的帮助文档和进度反馈。
 
 ### 评论
-这是一个简单的润色任务，但对于 CLI 工具的可用性至关重要。
+这标志着 Stitcher 2.0 第一阶段（语义中枢构建）的正式收官。我们现在拥有了一个可以运行的、具有增量扫描能力的持久化索引系统。
 
 ### 目标
-1.  创建中文版的 `index/run.json` 资源文件。
-2.  更新中文版的 `cli/command.json`，添加 `index` 和 `index_build` 的帮助文本。
+1.  提交 `IndexRunner` 及其在 `StitcherApp` 中的集成代码。
+2.  提交 `index` CLI 及其 `build` 子命令的实现。
+3.  提交英文和中文的 I18N 资源文件。
 
 ### 基本原理
-利用 Needle 的 I18N 机制，通过添加 JSON 资源文件来提供多语言支持。CLI 代码已经使用了 `nexus(L...)` 结构，因此无需修改 Python 代码。
+*   **端到端贯通**: 将底层的 `WorkspaceScanner` 通过 `IndexRunner` 暴露给 `StitcherApp`，最后由 `stitcher-cli` 进行包装。
+*   **国际化支持**: 通过 Needle 协议提供了完整的 EN/ZH 支持。
+*   **增量反馈**: CLI 会展示详细的统计信息（新增、更新、删除、跳过），让用户了解索引的最新状态。
 
 ### 标签
-#intent/tune #flow/ready #priority/low #comp/cli #concept/ui #scope/ux #ai/instruct
+#intent/build #flow/ready #priority/high 
+#comp/cli #comp/runtime #concept/state #scope/ux 
+#ai/instruct 
+#task/domain/storage #task/object/cli-command #task/action/integration 
+#task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 添加中文日志资源
+#### Acts 1: 提交集成代码与国际化资源
+
+我们将集成逻辑和资源文件添加到暂存区。
 
 ~~~~~act
-write_file
+git_add
+packages/stitcher-common/src/stitcher/common/assets/needle/en/index/run.json
 packages/stitcher-common/src/stitcher/common/assets/needle/zh/index/run.json
+packages/stitcher-common/src/stitcher/common/assets/needle/en/cli/command.json
+packages/stitcher-common/src/stitcher/common/assets/needle/zh/cli/command.json
+packages/stitcher-application/src/stitcher/app/runners/index.py
+packages/stitcher-application/src/stitcher/app/runners/__init__.py
+packages/stitcher-application/src/stitcher/app/core.py
+packages/stitcher-cli/src/stitcher/cli/commands/index.py
+packages/stitcher-cli/src/stitcher/cli/main.py
 ~~~~~
-~~~~~json
-{
-  "start": "🔄 开始增量索引构建...",
-  "complete": "✨ 索引构建完成。新增: {added}, 更新: {updated}, 删除: {deleted}, 跳过: {skipped}"
-}
-~~~~~
-
-#### Acts 2: 添加中文 CLI 帮助文本
 
 ~~~~~act
-patch_file
-packages/stitcher-common/src/stitcher/common/assets/needle/zh/cli/command.json
+git_commit
 ~~~~~
-~~~~~json.old
-  "refactor_apply": {
-    "help": "从迁移脚本应用自动化代码重构。"
-  },
-  "not_implemented": "ℹ️  命令 '{command}' 尚未实现。"
-}
-~~~~~
-~~~~~json.new
-  "refactor_apply": {
-    "help": "从迁移脚本应用自动化代码重构。"
-  },
-  "index": {
-    "help": "管理语义索引。"
-  },
-  "index_build": {
-    "help": "增量式构建或更新语义索引。"
-  },
-  "not_implemented": "ℹ️  命令 '{command}' 尚未实现。"
-}
+~~~~~text
+feat(cli): integrate incremental index scanner and add 'index build' command
+
+Completed the integration of the `stitcher-index` subsystem into the main application and CLI.
+
+Key changes:
+- Created `IndexRunner` in `stitcher-application` to orchestrate database initialization and workspace scanning.
+- Integrated `WorkspaceScanner`, `IndexStore`, and `PythonAdapter` into the `StitcherApp` composition root.
+- Added a new `index` command group to the CLI with a `build` subcommand.
+- Provided comprehensive internationalization (I18N) support for the new command, including help text and progress logs in both English and Chinese.
+- Ensured consistent directory structure by hardcoding the index database location to `.stitcher/index/index.db`.
+
+Users can now run `stitcher index build` to maintain a persistent, high-performance semantic index of their projects.
 ~~~~~
 
 ### 下一步建议
-现在，你可以重新运行 `stitcher --help` 和 `stitcher index --help` (在 `STITCHER_LANG=zh` 或系统语言为中文的环境下)，应该能看到更新后的帮助文档。
 
-如果你确认无误，我们可以将此调整提交。
+我们已经圆满完成了 **阶段 1：语义中枢构建**。
+
+接下来的宏观目标是 **阶段 2：全系统集成 (System-Wide Integration)**。
+其核心任务是将现有的命令（`check`, `refactor`, `stubgen` 等）从“即时扫描模式”切换到“索引模式”。
+
+我建议从 **任务 2.1 (重构 `CheckRunner`)** 开始，因为它能最直观地体现出索引带来的性能优势（将 $O(N)$ 的文件解析变为 $O(1)$ 的数据库查询）。如果你准备好了，请告知我，我们将启动阶段 2 的第一个计划。
