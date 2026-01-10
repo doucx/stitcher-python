@@ -281,10 +281,31 @@ class SemanticGraph:
         return current if isinstance(current, griffe.Module) else None
 
     def find_symbol(self, fqn: str) -> Optional[SymbolNode]:
-        for pkg_name in self._modules.keys():
-            for member in self.iter_members(pkg_name):
-                if member.fqn == fqn:
-                    return member
+        def _find_in_members(obj: griffe.Object) -> Optional[SymbolNode]:
+            if obj.path == fqn and not isinstance(obj, griffe.Alias):
+                filepath = obj.filepath
+                path: Path
+                if isinstance(filepath, list):
+                    path = filepath[0] if filepath else Path("")
+                else:
+                    path = filepath or Path("")
+                return SymbolNode(fqn=obj.path, kind=obj.kind, path=path)
+
+            if hasattr(obj, "members"):
+                for member in obj.members.values():
+                    if isinstance(member, griffe.Alias):
+                        continue
+                    # Optimization: if fqn doesn't start with member path, no need to recurse
+                    if fqn.startswith(member.path):
+                        found = _find_in_members(member)
+                        if found:
+                            return found
+            return None
+
+        for module in self._griffe_loader.modules_collection.values():
+            found = _find_in_members(module)
+            if found:
+                return found
         return None
 
     def iter_members(self, package_name: str) -> List[SymbolNode]:

@@ -81,12 +81,11 @@ def test_rename_symbol_analyze_orchestration():
 
     mock_registry.get_usages.return_value = locations
 
-    # Configure the mock graph for the _find_definition_node logic
-    mock_graph._modules = {"mypkg": Mock()}
+    # Configure the mock graph to use the new find_symbol public API
     mock_definition_node = Mock(spec=SymbolNode)
     mock_definition_node.fqn = old_fqn
     mock_definition_node.path = file_a_path  # Assume definition is in file_a
-    mock_graph.iter_members.return_value = [mock_definition_node]
+    mock_graph.find_symbol.return_value = mock_definition_node
 
     # Mock file system reads
     def mock_read_text(path, *args, **kwargs):
