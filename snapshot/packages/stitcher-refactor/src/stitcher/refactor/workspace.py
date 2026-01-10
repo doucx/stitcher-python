@@ -26,7 +26,6 @@ class Workspace:
             self._discover_packages()
 
     def _build_from_config(self) -> None:
-        """Builds workspace view from a StitcherConfig object."""
         if not self.config:
             return
 
@@ -39,7 +38,6 @@ class Workspace:
                     self.import_to_source_dirs[import_name].add(code_dir)
 
     def _discover_packages(self) -> None:
-        """(Default) Builds workspace view by scanning for pyproject.toml files."""
         for pyproject_path in self.root_path.glob("**/pyproject.toml"):
             try:
                 with pyproject_path.open("rb") as f:

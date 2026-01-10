@@ -43,9 +43,9 @@ def test_graph_can_find_symbol_after_workspace_refactor(tmp_path: Path):
         for u in graph.registry.get_usages("mypkg.core.Old")
         if u.file_path.name == "core.py"
     ]
-    assert (
-        len(usages_of_definition) > 0
-    ), "Graph should find the definition of mypkg.core.Old"
+    assert len(usages_of_definition) > 0, (
+        "Graph should find the definition of mypkg.core.Old"
+    )
 
     # Assert that the usage in another file is found
     usages_in_app = [
@@ -53,6 +53,6 @@ def test_graph_can_find_symbol_after_workspace_refactor(tmp_path: Path):
         for u in graph.registry.get_usages("mypkg.core.Old")
         if u.file_path.name == "app.py"
     ]
-    assert (
-        len(usages_in_app) > 0
-    ), "Graph should find the usage of mypkg.core.Old in app.py"
+    assert len(usages_in_app) > 0, (
+        "Graph should find the usage of mypkg.core.Old in app.py"
+    )
