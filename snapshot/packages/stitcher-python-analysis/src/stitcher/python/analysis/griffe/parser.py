@@ -64,14 +64,14 @@ class GriffePythonParser(LanguageParserProtocol):
         attributes = []
 
         for member in gm.members.values():
-            if member.is_alias:
-                continue
             if member.is_function:
                 functions.append(self._map_function(cast(griffe.Function, member)))
             elif member.is_class:
                 classes.append(self._map_class(cast(griffe.Class, member)))
             elif member.is_attribute:
                 attributes.append(self._map_attribute(cast(griffe.Attribute, member)))
+            elif member.is_alias:
+                attributes.append(self._map_alias(cast(griffe.Alias, member)))
 
         docstring = gm.docstring.value if gm.docstring else None
 
@@ -125,6 +125,13 @@ class GriffePythonParser(LanguageParserProtocol):
             annotation=annotation,
             value=value,
             docstring=docstring,
+            location=self._extract_location(ga),
+        )
+
+    def _map_alias(self, ga: griffe.Alias) -> Attribute:
+        return Attribute(
+            name=ga.name,
+            alias_target=ga.target_path,
             location=self._extract_location(ga),
         )
 

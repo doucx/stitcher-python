@@ -38,6 +38,7 @@ class Attribute:
     )
     docstring: Optional[str] = None
     location: Optional[SourceLocation] = None
+    alias_target: Optional[str] = None  # The FQN of the symbol this alias points to
 
 
 @dataclass
