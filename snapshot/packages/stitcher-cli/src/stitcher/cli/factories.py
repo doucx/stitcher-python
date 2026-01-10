@@ -8,7 +8,6 @@ from stitcher.common import stitcher_operator as nexus
 from stitcher.adapter.python import (
     GriffePythonParser,
     PythonTransformer,
-    PythonStubGenerator,
     PythonFingerprintStrategy,
 )
 
