@@ -65,24 +65,17 @@ class PythonAdapter(LanguageAdapter):
             # Attribute locations are passed via entity_for_hash if it's an Attribute obj.
             # But the 'add' signature treats entity_for_hash as Optional[object].
             # We should check if it has a 'location' attribute.
-            loc_start = 0
-            loc_end = 0
-
-            # Use getattr to avoid Pyright errors about accessing attributes on 'object' or 'None'
             loc = getattr(entity_for_hash, "location", None)
-            if loc:
-                # Mapping Strategy: Use lineno for location_start and end_lineno for location_end
-                # This provides line-level precision for jump-to-definition.
-                loc_start = loc.lineno
-                loc_end = loc.end_lineno
 
             symbols.append(
                 SymbolRecord(
                     id=suri,
                     name=name,
                     kind=kind,
-                    location_start=loc_start,
-                    location_end=loc_end,
+                    lineno=loc.lineno if loc else 0,
+                    col_offset=loc.col_offset if loc else 0,
+                    end_lineno=loc.end_lineno if loc else 0,
+                    end_col_offset=loc.end_col_offset if loc else 0,
                     logical_path=fragment,  # This is relative logical path in file
                     signature_hash=sig_hash,
                 )
@@ -176,13 +169,10 @@ class PythonAdapter(LanguageAdapter):
                         ReferenceRecord(
                             target_id=target_suri,
                             kind=loc.ref_type.value,
-                            location_start=loc.lineno,  # Simplification: use lineno as start offset proxy for now?
-                            # Wait, ReferenceRecord expects byte offsets (integers) usually,
-                            # but currently we don't have easy byte offset access from UsageLocation (it has line/col).
-                            # TODO: Fix UsageLocation to carry byte offsets or convert line/col to offset.
-                            # For MVP, we will store LINENO in location_start just to signal "not empty".
-                            # This is Technical Debt but allows progress.
-                            location_end=loc.end_lineno,
+                            lineno=loc.lineno,
+                            col_offset=loc.col_offset,
+                            end_lineno=loc.end_lineno,
+                            end_col_offset=loc.end_col_offset,
                         )
                     )
 

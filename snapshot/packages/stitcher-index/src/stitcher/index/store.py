@@ -79,8 +79,8 @@ class IndexStore:
                     """
                     INSERT INTO symbols (
                         id, file_id, name, logical_path, kind, 
-                        alias_target_id, location_start, location_end, signature_hash
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        alias_target_id, lineno, col_offset, end_lineno, end_col_offset, signature_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         (
@@ -90,8 +90,10 @@ class IndexStore:
                             s.logical_path,
                             s.kind,
                             s.alias_target_id,
-                            s.location_start,
-                            s.location_end,
+                            s.lineno,
+                            s.col_offset,
+                            s.end_lineno,
+                            s.end_col_offset,
                             s.signature_hash,
                         )
                         for s in symbols
@@ -104,16 +106,18 @@ class IndexStore:
                     """
                     INSERT INTO 'references' (
                         source_file_id, target_id, kind, 
-                        location_start, location_end
-                    ) VALUES (?, ?, ?, ?, ?)
+                        lineno, col_offset, end_lineno, end_col_offset
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         (
                             file_id,
                             r.target_id,
                             r.kind,
-                            r.location_start,
-                            r.location_end,
+                            r.lineno,
+                            r.col_offset,
+                            r.end_lineno,
+                            r.end_col_offset,
                         )
                         for r in references
                     ],
