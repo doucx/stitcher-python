@@ -687,6 +687,7 @@ dependencies = [
     { name = "stitcher-python-adapter" },
     { name = "stitcher-refactor" },
     { name = "stitcher-spec" },
+    { name = "stitcher-stubgen" },
 ]
 
 [package.metadata]
@@ -697,6 +698,7 @@ requires-dist = [
     { name = "stitcher-python-adapter", editable = "packages/stitcher-python-adapter" },
     { name = "stitcher-refactor", editable = "packages/stitcher-refactor" },
     { name = "stitcher-spec", editable = "packages/stitcher-spec" },
+    { name = "stitcher-stubgen", editable = "packages/stitcher-stubgen" },
 ]
 
 [[package]]
