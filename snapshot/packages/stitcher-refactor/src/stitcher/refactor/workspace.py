@@ -3,38 +3,28 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Set
 
-try:
-    import tomllib
-except ImportError:
-    import tomli as tomllib  # type: ignore
+from stitcher.config import StitcherConfig
 
 log = logging.getLogger(__name__)
 
 
 class Workspace:
-    def __init__(self, root_path: Path):
+    def __init__(self, root_path: Path, config: StitcherConfig):
         self.root_path = root_path
+        self.config = config
         # 'cascade' -> {'/path/to/cascade-application/src', '/path/to/cascade-engine/src'}
         self.import_to_source_dirs: Dict[str, Set[Path]] = defaultdict(set)
-        self._discover_packages()
+        self._build_from_config()
 
-    def _discover_packages(self) -> None:
-        for pyproject_path in self.root_path.glob("**/pyproject.toml"):
-            try:
-                with pyproject_path.open("rb") as f:
-                    tomllib.load(f)
-
-                pkg_root = pyproject_path.parent
-                code_dirs = self._find_code_dirs(pkg_root)
-
-                for code_dir in code_dirs:
-                    import_names = self._get_top_level_importables(code_dir)
-                    for import_name in import_names:
-                        # The directory to add to the search path is the code_dir itself
-                        self.import_to_source_dirs[import_name].add(code_dir)
-
-            except Exception as e:
-                log.warning(f"Could not process {pyproject_path}: {e}")
+    def _build_from_config(self) -> None:
+        all_paths_str = self.config.scan_paths + self.config.peripheral_paths
+        for path_str in all_paths_str:
+            code_dir = self.root_path / path_str
+            if code_dir.is_dir():
+                import_names = self._get_top_level_importables(code_dir)
+                for import_name in import_names:
+                    # The directory to add to the search path is the code_dir itself
+                    self.import_to_source_dirs[import_name].add(code_dir)
 
     def _get_top_level_importables(self, src_path: Path) -> List[str]:
         names: Set[str] = set()
@@ -58,29 +48,6 @@ class Workspace:
             ):
                 names.add(item.stem)
         return list(names)
-
-    def _find_code_dirs(self, pkg_root: Path) -> List[Path]:
-        dirs: Set[Path] = set()
-
-        src_dir = pkg_root / "src"
-        if src_dir.is_dir():
-            dirs.add(src_dir)
-
-        tests_dir = pkg_root / "tests"
-        if tests_dir.is_dir():
-            dirs.add(tests_dir)
-
-        # Check for importable items directly under pkg_root to detect flat layouts
-        is_flat_layout = any(
-            (item.is_dir() and (item / "__init__.py").exists())
-            or (item.is_file() and item.name.endswith(".py"))
-            for item in pkg_root.iterdir()
-            if item.name not in {".venv", "src", "tests"}
-        )
-        if is_flat_layout or not dirs:
-            dirs.add(pkg_root)
-
-        return list(dirs)
 
     def get_search_paths(self) -> List[Path]:
         all_paths: Set[Path] = set()

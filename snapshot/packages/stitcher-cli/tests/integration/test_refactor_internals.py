@@ -2,7 +2,8 @@ from pathlib import Path
 
 from stitcher.test_utils import WorkspaceFactory
 from stitcher.config import load_config_from_path
-from stitcher.refactor.engine import Workspace, SemanticGraph
+from stitcher.refactor.workspace import Workspace
+from stitcher.refactor.engine import SemanticGraph
 
 
 def test_graph_can_find_symbol_after_workspace_refactor(tmp_path: Path):
