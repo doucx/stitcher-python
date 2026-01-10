@@ -1,6 +1,6 @@
 import ast
 from pathlib import Path
-from typing import List, cast, Any
+from typing import List, cast, Any, Optional
 
 import griffe
 from stitcher.spec import (

@@ -4,6 +4,6 @@
 
 ### 📝 变更文件摘要:
 ```
-scripts/check_cycles.py | 81 +++++++++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 81 insertions(+)
+.../src/stitcher/python/analysis/griffe/parser.py                       | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 ```
