@@ -1,5 +1,6 @@
 from pathlib import Path
 from stitcher.adapter.python.index_adapter import PythonAdapter
+from stitcher.refactor.workspace import Workspace
 
 
 def test_extract_references_basic():
@@ -19,7 +20,8 @@ class Processor:
         pass
 """
     root = Path("/tmp/proj")
-    adapter = PythonAdapter(root)
+    workspace = Workspace(root)
+    adapter = PythonAdapter(workspace)
     file_path = root / "src/main.py"
 
     # 执行解析

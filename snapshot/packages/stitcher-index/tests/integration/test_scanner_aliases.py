@@ -1,6 +1,7 @@
 from textwrap import dedent
 from stitcher.index.scanner import WorkspaceScanner
 from stitcher.adapter.python.index_adapter import PythonAdapter
+from stitcher.refactor.workspace import Workspace
 from stitcher.test_utils.workspace import WorkspaceFactory
 
 import pytest
@@ -47,8 +48,9 @@ def test_scanner_resolves_aliases_and_references(tmp_path, store):
     project_root = wf.build()
 
     # 2. Execution: Run the full scanner pipeline
+    workspace = Workspace(project_root)
     scanner = WorkspaceScanner(project_root, store)
-    adapter = PythonAdapter(project_root)
+    adapter = PythonAdapter(workspace)
     scanner.register_adapter(".py", adapter)
     scanner.scan()
 

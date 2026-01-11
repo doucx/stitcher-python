@@ -1,9 +1,11 @@
 from stitcher.adapter.python.index_adapter import PythonAdapter
+from stitcher.refactor.workspace import Workspace
 
 
 def test_python_adapter_symbol_extraction(tmp_path):
     root = tmp_path
-    adapter = PythonAdapter(root)
+    workspace = Workspace(root)
+    adapter = PythonAdapter(workspace)
 
     code = """
 class MyClass:

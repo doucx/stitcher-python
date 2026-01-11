@@ -1,198 +1,200 @@
-好的，我们离成功仅一步之遥。只有一个测试失败，并且失败的方式非常“好”——它失败是因为断言本身是错误的。
+你完全正确。
 
-我来分析一下这个失败的测试。
+我的上一个修复引入了一个典型的、影响深远的**API 契约破坏 (API Contract Breakage)**。我将 `PythonAdapter` 的构造函数从接受一个简单的 `Path` 对象重构为接受一个 `Workspace` 对象，但未能追踪并更新所有调用点，尤其是在测试套件中。
 
-## [WIP] fix: 修正重构测试中的反向断言
+这是一个严重的疏忽，由此引发的大量回归性失败是不可接受的。
+
+## [WIP] fix: 修正因 PythonAdapter API 变更引起的广泛性测试回归
 
 ### 错误分析
 
-`test_rename_fails_to_update_definition_leading_to_import_error` 这个测试用例是在**修复Bug之前**编写的，其目的是为了**复现和断言Bug的存在**。
+根本原因在于 `PythonAdapter` 的构造函数签名已从 `__init__(self, root_path: Path)` 变更为 `__init__(self, workspace: Workspace)`。然而，分布在多个包（`stitcher-index`, `stitcher-python-adapter`, `stitcher-cli`）中的集成测试仍然在使用旧的方式 `PythonAdapter(root_path)` 进行实例化。
 
-它的核心断言是：
-```python
-assert "class MessageBus: pass" in definition_code, (
-    "The class definition was not renamed!"
-)
-```
-这个断言的意图是“我期望重命名会失败，所以旧的类名`MessageBus`应该仍然存在于文件中”。
+当 `PythonAdapter` 内部执行 `self.root_path = workspace.root_path` 时，由于 `workspace` 变量实际上是一个 `PosixPath` 对象而非 `Workspace` 对象，因此引发了 `AttributeError: 'PosixPath' object has no attribute 'root_path'`，导致了连锁性的测试失败。
 
-然而，在我们实施了正确的FQN生成逻辑之后，重构引擎现在已经能够**成功地**将`class MessageBus`重命名为`class FeedbackBus`。因此，`definition_code`现在的内容是`class FeedbackBus: pass`。
-
-当旧的断言`assert 'class MessageBus: pass' in 'class FeedbackBus: pass'`执行时，它自然会失败，因为字符串`'MessageBus'`不再存在。这恰恰证明了我们的修复是**有效的**。
-
-这个测试用例现在已经从一个“Bug复现测试”变成了一个“过时的回归测试”。
+其他如 `AttributeError: 'SemanticGraph' object has no attribute 'registry'` 和 `AssertionError: CLI command failed` 等错误，都是这个初始 `AttributeError` 导致的下游效应——当索引器无法正确初始化时，依赖它的所有组件（扫描器、图谱、CLI命令）都会以各种方式失败。
 
 ### 用户需求
 
-修正 `test_rename_fails_to_update_definition_leading_to_import_error` 测试用例，使其断言重命名操作**成功**，而不是**失败**。
+修复所有因 `PythonAdapter` 构造函数变更而导致的回归性测试失败。
 
 ### 评论
 
-这是一个非常积极的信号。修复一个Bug后，专门用于验证该Bug存在的测试随之失败，这是符合逻辑且值得庆贺的。现在我们需要将这个测试用例的角色转变，让它成为保护我们新修复功能的“哨兵”。
+这次回归暴露了在进行核心组件重构时，依赖追踪和全范围影响评估的重要性。修复此问题是恢复测试套件健康度、确保后续开发建立在稳定基础之上的最高优先级任务。我们必须系统性地纠正所有不符合新API契约的调用点。
 
 ### 目标
 
-1.  重命名测试文件 `test_rename_symbol_definition.py` 中的测试函数 `test_rename_fails_to_update_definition_leading_to_import_error` 为 `test_rename_operation_succeeds_in_renaming_symbol_definition`，以准确反映其新的意图。
-2.  反转该测试函数中的断言逻辑，使其验证 `class FeedbackBus` **存在**于文件中，而 `class MessageBus` **不存在**。
+1.  定位所有直接实例化 `PythonAdapter(Path(...))` 的测试文件。
+2.  将这些实例化调用修改为正确的 `PythonAdapter(Workspace(Path(...)))` 形式。
+3.  确保所有相关的测试文件都导入了 `Workspace` 类。
+4.  恢复整个测试套件的通过状态。
 
 ### 基本原理
 
-我们将简单地编辑测试文件，使其断言正确的、重构后的状态，从而完成整个修复任务的最后一步。这个测试用例将与其他成功的重命名测试一起，共同构成一个健壮的回归测试套件。
+我们将遵循“调用者适配”原则。`PythonAdapter` 的新构造函数签名是正确的、更具表达力的架构决策。因此，我们不去修改`PythonAdapter`以兼容旧的调用方式（这将是引入技术债的“战术修复”），而是严格地更新所有调用方，使其遵守新的、正确的API契约。
+
+通过逐一修复已知失败的测试用例中的实例化逻辑，我们将消除`AttributeError`的根源。一旦索引器能够被正确创建，依赖它的所有上层功能（如图谱构建、CLI命令执行）都应恢复正常，从而解决这一系列的连锁失败。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/medium #comp/tests #concept/testing #scope/dx #ai/instruct #task/domain/refactor #task/object/definition-renaming #task/action/refactor #task/state/continue
+#intent/fix #flow/ready #priority/critical #comp/tests #comp/python-adapter #comp/index #scope/core #ai/instruct #task/domain/refactor #task/object/definition-renaming #task/action/bug-fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修正过时的测试用例
+#### Acts 1: 修复 stitcher-index 测试中的适配器实例化
 
-我们将修改 `test_rename_symbol_definition.py` 文件，更新测试函数名称和断言逻辑。
+`test_scanner_aliases.py` 直接创建了 `PythonAdapter`，我们需要修正它。
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/tests/integration/test_rename_symbol_definition.py
+packages/stitcher-index/tests/integration/test_scanner_aliases.py
 ~~~~~
 ~~~~~python.old
-def test_rename_fails_to_update_definition_leading_to_import_error(tmp_path):
-    """
-    This test reproduces a critical bug where RenameSymbolOperation renames
-    an import usage of a symbol but fails to rename the class definition itself,
-    leading to a broken state and subsequent ImportErrors.
-    """
-    # 1. ARRANGE: Create a project structure mirroring the bug scenario.
-    # common/
-    #   __init__.py -> from .messaging.bus import MessageBus
-    #   messaging/
-    #     bus.py    -> class MessageBus: pass
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_pyproject(".")
-        .with_source("common/__init__.py", "from .messaging.bus import MessageBus")
-        .with_source("common/messaging/bus.py", "class MessageBus: pass")
-    ).build()
+from textwrap import dedent
+from stitcher.index.scanner import WorkspaceScanner
+from stitcher.adapter.python.index_adapter import PythonAdapter
+from stitcher.test_utils.workspace import WorkspaceFactory
 
-    definition_file = project_root / "common/messaging/bus.py"
-    usage_file = project_root / "common/__init__.py"
+import pytest
 
-    # 2. ACT: Run the refactoring operation.
-    index_store = create_populated_index(project_root)
-    workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace, index_store=index_store)
-    graph.load("common")
-    sidecar_manager = SidecarManager(root_path=project_root)
-    ctx = RefactorContext(
-        workspace=workspace,
-        graph=graph,
-        sidecar_manager=sidecar_manager,
-        index_store=index_store,
-    )
 
-    from stitcher.refactor.migration import MigrationSpec
-    from stitcher.refactor.engine.planner import Planner
-
-    op = RenameSymbolOperation(
-        "common.messaging.bus.MessageBus", "common.messaging.bus.FeedbackBus"
-    )
-    spec = MigrationSpec().add(op)
-    planner = Planner()
-    file_ops = planner.plan(spec, ctx)
-
-    tm = TransactionManager(project_root)
-    for fop in file_ops:
-        if isinstance(fop, MoveFileOp):
-            tm.add_move(fop.path, fop.dest)
-        elif isinstance(fop, WriteFileOp):
-            tm.add_write(fop.path, fop.content)
-    tm.commit()
-
-    # 3. ASSERT: Verify the incomplete refactoring.
-    # The usage in __init__.py should be updated.
-    updated_usage_code = usage_file.read_text()
-    assert "from .messaging.bus import FeedbackBus" in updated_usage_code
-    assert "from .messaging.bus import MessageBus" not in updated_usage_code
-
-    # CRITICAL: The definition in bus.py should ALSO have been updated,
-    # but the bug causes it to be missed. We assert this failure case.
-    definition_code = definition_file.read_text()
-    assert "class MessageBus: pass" in definition_code, (
-        "The class definition was not renamed!"
-    )
-    assert "class FeedbackBus: pass" not in definition_code
+def test_scanner_resolves_aliases_and_references(tmp_path, store):
 ~~~~~
 ~~~~~python.new
-def test_rename_operation_succeeds_in_renaming_symbol_definition_simple(tmp_path):
-    """
-    This test verifies that RenameSymbolOperation successfully renames both
-    the definition and a simple import usage of a symbol.
-    """
-    # 1. ARRANGE: Create a project structure mirroring the scenario.
-    # common/
-    #   __init__.py -> from .messaging.bus import MessageBus
-    #   messaging/
-    #     bus.py    -> class MessageBus: pass
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_pyproject(".")
-        .with_source("common/__init__.py", "from .messaging.bus import MessageBus")
-        .with_source("common/messaging/bus.py", "class MessageBus: pass")
-    ).build()
+from textwrap import dedent
+from stitcher.index.scanner import WorkspaceScanner
+from stitcher.adapter.python.index_adapter import PythonAdapter
+from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils.workspace import WorkspaceFactory
 
-    definition_file = project_root / "common/messaging/bus.py"
-    usage_file = project_root / "common/__init__.py"
+import pytest
 
-    # 2. ACT: Run the refactoring operation.
-    index_store = create_populated_index(project_root)
-    workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace, index_store=index_store)
-    graph.load("common")
-    sidecar_manager = SidecarManager(root_path=project_root)
-    ctx = RefactorContext(
-        workspace=workspace,
-        graph=graph,
-        sidecar_manager=sidecar_manager,
-        index_store=index_store,
-    )
 
-    from stitcher.refactor.migration import MigrationSpec
-    from stitcher.refactor.engine.planner import Planner
+def test_scanner_resolves_aliases_and_references(tmp_path, store):
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-index/tests/integration/test_scanner_aliases.py
+~~~~~
+~~~~~python.old
+    # 2. Execution: Run the full scanner pipeline
+    scanner = WorkspaceScanner(project_root, store)
+    adapter = PythonAdapter(project_root)
+    scanner.register_adapter(".py", adapter)
+    scanner.scan()
+~~~~~
+~~~~~python.new
+    # 2. Execution: Run the full scanner pipeline
+    workspace = Workspace(project_root)
+    scanner = WorkspaceScanner(project_root, store)
+    adapter = PythonAdapter(workspace)
+    scanner.register_adapter(".py", adapter)
+    scanner.scan()
+~~~~~
 
-    op = RenameSymbolOperation(
-        "common.messaging.bus.MessageBus", "common.messaging.bus.FeedbackBus"
-    )
-    spec = MigrationSpec().add(op)
-    planner = Planner()
-    file_ops = planner.plan(spec, ctx)
+#### Acts 2: 修复 stitcher-python-adapter 测试中的适配器实例化
 
-    tm = TransactionManager(project_root)
-    for fop in file_ops:
-        if isinstance(fop, MoveFileOp):
-            tm.add_move(fop.path, fop.dest)
-        elif isinstance(fop, WriteFileOp):
-            tm.add_write(fop.path, fop.content)
-    tm.commit()
+`test_index_adapter.py` 和 `test_index_adapter_references.py` 也存在同样的问题。
 
-    # 3. ASSERT: Verify the complete refactoring.
-    # The usage in __init__.py should be updated.
-    updated_usage_code = usage_file.read_text()
-    assert "from .messaging.bus import FeedbackBus" in updated_usage_code
-    assert "from .messaging.bus import MessageBus" not in updated_usage_code
+~~~~~act
+patch_file
+packages/stitcher-python-adapter/tests/integration/test_index_adapter.py
+~~~~~
+~~~~~python.old
+from stitcher.adapter.python.index_adapter import PythonAdapter
 
-    # CRITICAL: The definition in bus.py should now be correctly updated.
-    definition_code = definition_file.read_text()
-    assert "class FeedbackBus: pass" in definition_code, (
-        "The class definition was not renamed!"
-    )
-    assert "class MessageBus: pass" not in definition_code
+
+def test_python_adapter_symbol_extraction(tmp_path):
+    root = tmp_path
+    adapter = PythonAdapter(root)
+
+    code = """
+class MyClass:
+~~~~~
+~~~~~python.new
+from stitcher.adapter.python.index_adapter import PythonAdapter
+from stitcher.refactor.workspace import Workspace
+
+
+def test_python_adapter_symbol_extraction(tmp_path):
+    root = tmp_path
+    workspace = Workspace(root)
+    adapter = PythonAdapter(workspace)
+
+    code = """
+class MyClass:
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-python-adapter/tests/integration/test_index_adapter_references.py
+~~~~~
+~~~~~python.old
+from pathlib import Path
+from stitcher.adapter.python.index_adapter import PythonAdapter
+
+
+def test_extract_references_basic():
+    """测试基本的引用提取：包括导入和本地符号使用。"""
+    code = """
+import os
+from mypkg import utils
+from . import core
+
+class Processor:
+    def process(self):
+        utils.do_work()
+        print(os.path.join("a", "b"))
+        self._internal()
+
+    def _internal(self):
+        pass
+"""
+    root = Path("/tmp/proj")
+    adapter = PythonAdapter(root)
+    file_path = root / "src/main.py"
+
+    # 执行解析
+    _, references = adapter.parse(file_path, code)
+~~~~~
+~~~~~python.new
+from pathlib import Path
+from stitcher.adapter.python.index_adapter import PythonAdapter
+from stitcher.refactor.workspace import Workspace
+
+
+def test_extract_references_basic():
+    """测试基本的引用提取：包括导入和本地符号使用。"""
+    code = """
+import os
+from mypkg import utils
+from . import core
+
+class Processor:
+    def process(self):
+        utils.do_work()
+        print(os.path.join("a", "b"))
+        self._internal()
+
+    def _internal(self):
+        pass
+"""
+    root = Path("/tmp/proj")
+    workspace = Workspace(root)
+    adapter = PythonAdapter(workspace)
+    file_path = root / "src/main.py"
+
+    # 执行解析
+    _, references = adapter.parse(file_path, code)
 ~~~~~
 
 ### 下一步建议
 
-我们已经修正了最后一个失败的测试用例。现在，整个重构任务的核心工作已经完成。
+我们已经修复了所有直接导致 `AttributeError: 'PosixPath' object has no attribute 'root_path'` 的已知测试点。这些修复很可能会连锁解决其他下游的失败。
 
-请再次运行完整的测试套件。如果所有测试都通过，我将生成一个`[COMMIT]`计划，将我们在这几次迭代中所做的所有修复（FQN生成、测试用例修正）合并为一个原子提交，正式关闭这个宏大的Bug修复任务。
+请重新运行**完整的测试套件**，以验证我们的修复是否全面，并暴露任何可能仍然存在的、被掩盖的问题。
 
 ```bash
 pytest
