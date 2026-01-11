@@ -60,6 +60,7 @@ class PythonAdapter(LanguageAdapter):
         ):
             fragment = f"{parent_fragment}.{name}" if parent_fragment else name
             suri = SURIGenerator.for_symbol(rel_path, fragment)
+            canonical_fqn = f"{logical_module_fqn}.{fragment}"
 
             # Compute Hash
             sig_hash = None
@@ -71,14 +72,14 @@ class PythonAdapter(LanguageAdapter):
             loc = getattr(entity_for_hash, "location", None)
 
             # Alias Handling
-            alias_target_id: Optional[str] = None
+            alias_target_fqn: Optional[str] = None
             final_kind = kind
-            alias_target_fqn = getattr(entity_for_hash, "alias_target", None)
-            if alias_target_fqn:
+            
+            # Check for alias target in the entity
+            target_attr = getattr(entity_for_hash, "alias_target", None)
+            if target_attr:
                 final_kind = "alias"
-                alias_target_id = self._guess_suri(
-                    alias_target_fqn, logical_module_fqn, rel_path
-                )
+                alias_target_fqn = target_attr
 
             symbols.append(
                 SymbolRecord(
@@ -89,9 +90,11 @@ class PythonAdapter(LanguageAdapter):
                     col_offset=loc.col_offset if loc else 0,
                     end_lineno=loc.end_lineno if loc else 0,
                     end_col_offset=loc.end_col_offset if loc else 0,
-                    logical_path=fragment,  # This is relative logical path in file
+                    logical_path=fragment,
+                    canonical_fqn=canonical_fqn,
+                    alias_target_fqn=alias_target_fqn,
+                    alias_target_id=None,  # Decoupled: Linker will fill this
                     signature_hash=sig_hash,
-                    alias_target_id=alias_target_id,
                 )
             )
             return fragment
@@ -130,6 +133,9 @@ class PythonAdapter(LanguageAdapter):
 
         # 1. Build local_symbols map using the centralized analyzer
         analyzer = ScopeAnalyzer()
+        # Note: ScopeAnalyzer returns a map of {local_name: target_fqn}
+        # We don't need to manually use it here because UsageScanVisitor uses it internally?
+        # Wait, UsageScanVisitor takes local_symbols as input.
         local_symbols = analyzer.build_from_ir(module, logical_module_fqn)
 
         # 2. Parse CST and Run Visitor
@@ -148,20 +154,12 @@ class PythonAdapter(LanguageAdapter):
 
             # 3. Convert Registry to ReferenceRecords
             # UsageRegistry structure: { target_fqn: [UsageLocation, ...] }
-            for target_fqn, locations in registry._index.items():
+            for target_fqn, locations in registry.get_all_usages().items():
                 for loc in locations:
-                    # Convert logical FQN target to SURI
-                    # NOTE: This is a heuristic. We don't have a SourceMap yet.
-                    # We assume standard python layout: a.b.c -> py://a/b.py#c (simplified)
-                    # For local symbols, we can be precise. For external, we guess.
-
-                    target_suri = self._guess_suri(
-                        target_fqn, logical_module_fqn, rel_path
-                    )
-
                     refs.append(
                         ReferenceRecord(
-                            target_id=target_suri,
+                            target_fqn=target_fqn,  # Store the logical intent directly
+                            target_id=None,         # Decoupled: Linker will fill this
                             kind=loc.ref_type.value,
                             lineno=loc.lineno,
                             col_offset=loc.col_offset,
@@ -172,32 +170,6 @@ class PythonAdapter(LanguageAdapter):
 
         except Exception:
             # If CST parsing fails (syntax error), we just return empty refs
-            # Logging should happen higher up
             pass
 
         return refs
-
-    def _guess_suri(
-        self, fqn: str, current_module_fqn: str, current_rel_path: str
-    ) -> str:
-        # Case 1: Internal reference (same module)
-        if fqn.startswith(current_module_fqn + "."):
-            fragment = fqn[len(current_module_fqn) + 1 :]
-            return SURIGenerator.for_symbol(current_rel_path, fragment)
-
-        # Case 2: External reference
-        # We naively convert dots to slashes.
-        # This will be incorrect for complex package roots (src/),
-        # but serves as a unique identifier for now.
-        # e.g. "os.path.join" -> "py://os/path.py#join"
-
-        parts = fqn.split(".")
-        if len(parts) == 1:
-            # Top level module or class
-            return SURIGenerator.for_symbol(f"{parts[0]}.py", parts[0])
-
-        # Guess: last part is symbol, rest is path
-        path_parts = parts[:-1]
-        symbol = parts[-1]
-        guessed_path = "/".join(path_parts) + ".py"
-        return SURIGenerator.for_symbol(guessed_path, symbol)

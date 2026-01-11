@@ -23,6 +23,9 @@ class UsageRegistry:
 
     def get_usages(self, target_fqn: str) -> List[UsageLocation]:
         return self._index.get(target_fqn, [])
+    
+    def get_all_usages(self) -> Dict[str, List[UsageLocation]]:
+        return self._index
 
 
 class UsageScanVisitor(cst.CSTVisitor):
