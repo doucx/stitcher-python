@@ -53,11 +53,17 @@ class CheckRunner:
 
         # 1. Load all state from persisted sources
         actual_symbols_list = self.index_store.get_symbols_by_file_path(file_path)
-        actual_symbols = {
-            s.logical_path: s for s in actual_symbols_list if s.logical_path
-        }
         doc_irs = self.doc_manager.load_docs_for_path(file_path)
         baseline_fps = self.sig_manager.load_composite_hashes(file_path)
+
+        # Map module symbol to '__doc__' for consistent FQN handling
+        actual_symbols = {}
+        module_symbol = next((s for s in actual_symbols_list if s.kind == "module"), None)
+        if module_symbol:
+            actual_symbols["__doc__"] = module_symbol
+        for s in actual_symbols_list:
+            if s.logical_path:
+                actual_symbols[s.logical_path] = s
 
         all_fqns = set(actual_symbols.keys()) | set(doc_irs.keys())
 
@@ -67,7 +73,6 @@ class CheckRunner:
             doc_ir = doc_irs.get(fqn)
             baseline_fp = baseline_fps.get(fqn)
 
-            # States
             has_code = actual is not None
             has_doc = doc_ir is not None
             is_tracked = baseline_fp is not None
@@ -81,67 +86,71 @@ class CheckRunner:
             if not has_code:
                 continue
 
-            # From here, we know `actual` exists.
+            # From here, we know `actual` (code symbol) exists.
             actual_code_hash = actual.signature_hash
             actual_doc_hash = actual.docstring_hash
             actual_sig_text = actual.signature_text
             actual_doc_content = actual.docstring_content or ""
-            is_public = not any(p.startswith("_") for p in fqn.split("."))
+            is_public = not any(p.startswith("_") and p != "__doc__" for p in fqn.split("."))
 
+            if is_tracked:
+                baseline_code_hash = baseline_fp.get("baseline_code_structure_hash")
+                baseline_yaml_hash = baseline_fp.get("baseline_yaml_content_hash")
+                baseline_sig_text = baseline_fp.get("baseline_code_signature_text")
+                yaml_hash = (
+                    self.doc_manager.compute_yaml_content_hash(
+                        self.doc_manager._serialize_ir(doc_ir)
+                    )
+                    if doc_ir
+                    else None
+                )
+
+                code_changed = actual_code_hash != baseline_code_hash
+                doc_changed = yaml_hash != baseline_yaml_hash
+
+                if not code_changed and doc_changed:
+                    result.infos["doc_improvement"].append(fqn)
+                elif code_changed:
+                    sig_diff = self.differ.generate_text_diff(
+                        baseline_sig_text or "", actual_sig_text or "", "baseline", "current"
+                    )
+                    conflict_type = (
+                        ConflictType.CO_EVOLUTION
+                        if doc_changed
+                        else ConflictType.SIGNATURE_DRIFT
+                    )
+                    unresolved_conflicts.append(
+                        InteractionContext(
+                            file_path, fqn, conflict_type, signature_diff=sig_diff
+                        )
+                    )
+                # If code and docs match baseline, it's a clean state. Check for redundancy below.
+
+            else:  # Not tracked
+                if has_doc:
+                    yaml_summary = doc_ir.summary or ""
+                    if yaml_summary.strip() != actual_doc_content.strip():
+                        doc_diff = self.differ.generate_text_diff(
+                            yaml_summary, actual_doc_content, "yaml", "code"
+                        )
+                        unresolved_conflicts.append(
+                            InteractionContext(
+                                file_path, fqn, ConflictType.DOC_CONTENT_CONFLICT, doc_diff
+                            )
+                        )
+                else:  # No YAML doc
+                    if actual_doc_hash:
+                        result.errors["pending"].append(fqn)
+                    elif is_public:
+                        result.warnings["missing"].append(fqn)
+
+            # Redundancy check applies to both tracked and untracked symbols
             if has_doc and actual_doc_hash:
                 yaml_summary = doc_ir.summary or ""
                 if yaml_summary.strip() == actual_doc_content.strip():
                     result.warnings["redundant"].append(fqn)
-                else:
-                    doc_diff = self.differ.generate_text_diff(
-                        yaml_summary, actual_doc_content, "yaml", "code"
-                    )
-                    unresolved_conflicts.append(
-                        InteractionContext(
-                            file_path, fqn, ConflictType.DOC_CONTENT_CONFLICT, doc_diff
-                        )
-                    )
 
-            if not is_tracked:
-                if actual_doc_hash and not has_doc:
-                    result.errors["pending"].append(fqn)
-                elif not actual_doc_hash and not has_doc and is_public:
-                    result.warnings["missing"].append(fqn)
-                continue
-
-            # From here, we know the symbol is tracked.
-            baseline_code_hash = baseline_fp.get("baseline_code_structure_hash")
-            baseline_yaml_hash = baseline_fp.get("baseline_yaml_content_hash")
-            baseline_sig_text = baseline_fp.get("baseline_code_signature_text")
-            yaml_hash = (
-                self.doc_manager.compute_yaml_content_hash(
-                    self.doc_manager._serialize_ir(doc_ir)
-                )
-                if doc_ir
-                else None
-            )
-
-            code_changed = actual_code_hash != baseline_code_hash
-            doc_changed = yaml_hash != baseline_yaml_hash
-
-            if not code_changed and doc_changed:
-                result.infos["doc_improvement"].append(fqn)
-            elif code_changed:
-                sig_diff = self.differ.generate_text_diff(
-                    baseline_sig_text or "", actual_sig_text or "", "baseline", "current"
-                )
-                conflict_type = (
-                    ConflictType.CO_EVOLUTION
-                    if doc_changed
-                    else ConflictType.SIGNATURE_DRIFT
-                )
-                unresolved_conflicts.append(
-                    InteractionContext(
-                        file_path, fqn, conflict_type, signature_diff=sig_diff
-                    )
-                )
-
-        # 3. Handle Untracked files (JIT Parse)
+        # 3. Handle Untracked files (JIT Parse for detailed report)
         doc_path = (self.root_path / file_path).with_suffix(".stitcher.yaml")
         if not doc_path.exists():
             try:
@@ -189,9 +198,8 @@ class CheckRunner:
 
             # JIT load current state from index for resolution
             actual_symbols = {
-                s.logical_path: s
+                s.logical_path or "__doc__": s
                 for s in self.index_store.get_symbols_by_file_path(file_path)
-                if s.logical_path
             }
             doc_irs = self.doc_manager.load_docs_for_path(file_path)
 
@@ -279,91 +287,49 @@ class CheckRunner:
         if not conflicts:
             return True
 
-        if self.interaction_handler:
-            chosen_actions = self.interaction_handler.process_interactive_session(
-                conflicts
-            )
-            resolutions_by_file = defaultdict(list)
-            reconciled_results = defaultdict(lambda: defaultdict(list))
+        # Non-interactive mode with flags is now handled by a dedicated handler
+        handler = self.interaction_handler or NoOpInteractionHandler(
+            force_relink=force_relink, reconcile=reconcile
+        )
 
-            for i, context in enumerate(conflicts):
-                action = chosen_actions[i]
+        chosen_actions = handler.process_interactive_session(conflicts)
+        resolutions_by_file = defaultdict(list)
+        reconciled_results = defaultdict(lambda: defaultdict(list))
+
+        for i, context in enumerate(conflicts):
+            action = chosen_actions[i]
+            if action == ResolutionAction.ABORT:
+                bus.warning(L.strip.run.aborted) # Reusing abort message
+                return False
+
+            if action == ResolutionAction.SKIP:
+                for res in results:
+                    if res.path == context.file_path:
+                        error_key = {
+                            ConflictType.SIGNATURE_DRIFT: "signature_drift",
+                            ConflictType.CO_EVOLUTION: "co_evolution",
+                            ConflictType.DANGLING_DOC: "extra",
+                            ConflictType.DOC_CONTENT_CONFLICT: "conflict",
+                        }.get(context.conflict_type, "unknown")
+                        res.errors[error_key].append(context.fqn)
+                        break
+            else:
+                resolutions_by_file[context.file_path].append((context.fqn, action))
+                # Map action back to a reconciled category for reporting
                 if action == ResolutionAction.RELINK:
-                    resolutions_by_file[context.file_path].append((context.fqn, action))
-                    reconciled_results[context.file_path]["force_relink"].append(
-                        context.fqn
-                    )
+                    reconciled_results[context.file_path]["force_relink"].append(context.fqn)
                 elif action == ResolutionAction.RECONCILE:
-                    resolutions_by_file[context.file_path].append((context.fqn, action))
-                    reconciled_results[context.file_path]["reconcile"].append(
-                        context.fqn
-                    )
+                    reconciled_results[context.file_path]["reconcile"].append(context.fqn)
                 elif action == ResolutionAction.PURGE_DOC:
-                    resolutions_by_file[context.file_path].append((context.fqn, action))
                     reconciled_results[context.file_path]["purged"].append(context.fqn)
-                elif action == ResolutionAction.SKIP:
-                    for res in results:
-                        if res.path == context.file_path:
-                            error_key = {
-                                ConflictType.SIGNATURE_DRIFT: "signature_drift",
-                                ConflictType.CO_EVOLUTION: "co_evolution",
-                                ConflictType.DANGLING_DOC: "extra",
-                                ConflictType.DOC_CONTENT_CONFLICT: "conflict",
-                            }.get(context.conflict_type, "unknown")
-                            res.errors[error_key].append(context.fqn)
-                            break
-                elif action == ResolutionAction.ABORT:
-                    bus.warning(L.strip.run.aborted)
-                    return False
+                # HYDRATE actions are handled in pump, not check resolution.
 
-            self._apply_resolutions(dict(resolutions_by_file))
+        self._apply_resolutions(dict(resolutions_by_file))
 
-            for res in results:
-                if res.path in reconciled_results:
-                    res.reconciled["force_relink"] = reconciled_results[res.path][
-                        "force_relink"
-                    ]
-                    res.reconciled["reconcile"] = reconciled_results[res.path][
-                        "reconcile"
-                    ]
-                    res.reconciled["purged"] = reconciled_results[res.path].get(
-                        "purged", []
-                    )
-        else:
-            handler = NoOpInteractionHandler(force_relink, reconcile)
-            chosen_actions = handler.process_interactive_session(conflicts)
-            resolutions_by_file = defaultdict(list)
-            reconciled_results = defaultdict(lambda: defaultdict(list))
-            for i, context in enumerate(conflicts):
-                action = chosen_actions[i]
-                if action != ResolutionAction.SKIP:
-                    key = (
-                        "force_relink"
-                        if action == ResolutionAction.RELINK
-                        else "reconcile"
-                    )
-                    resolutions_by_file[context.file_path].append((context.fqn, action))
-                    reconciled_results[context.file_path][key].append(context.fqn)
-                else:
-                    for res in results:
-                        if res.path == context.file_path:
-                            error_key = {
-                                ConflictType.SIGNATURE_DRIFT: "signature_drift",
-                                ConflictType.CO_EVOLUTION: "co_evolution",
-                                ConflictType.DANGLING_DOC: "extra",
-                                ConflictType.DOC_CONTENT_CONFLICT: "conflict",
-                            }.get(context.conflict_type, "unknown")
-                            res.errors[error_key].append(context.fqn)
-
-            self._apply_resolutions(dict(resolutions_by_file))
-            for res in results:
-                if res.path in reconciled_results:
-                    res.reconciled["force_relink"] = reconciled_results[res.path][
-                        "force_relink"
-                    ]
-                    res.reconciled["reconcile"] = reconciled_results[res.path][
-                        "reconcile"
-                    ]
+        for res in results:
+            if res.path in reconciled_results:
+                for key, fqns in reconciled_results[res.path].items():
+                    res.reconciled[key].extend(fqns)
         return True
 
     def reformat_all(self, modules: List[ModuleDef]):

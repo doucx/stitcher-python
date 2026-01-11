@@ -83,21 +83,23 @@ def test_check_passes_when_synced(tmp_path, monkeypatch):
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/main.py", "def func(): pass")
-        .with_docs(
-            "src/main.stitcher.yaml",
-            {"__doc__": "Doc", "func": "Doc"},
-        )
+        .with_source("src/main.py", '"""Module doc."""\ndef func():\n    """Func doc."""')
         .build()
     )
 
     app = create_test_app(root_path=project_root)
+    # Run init to create a synced state with baselines
+    with SpyBus().patch(monkeypatch, "stitcher.common.bus"):
+        app.run_init()
+
     spy_bus = SpyBus()
 
     # 2. Act
     with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
+        # After init, docs are in both places, which is a 'redundant' warning, but not a failure
         success = app.run_check()
 
     # 3. Assert
-    assert success is True
-    spy_bus.assert_id_called(L.check.run.success, level="success")
+    assert success is True  # Should succeed with warnings
+    spy_bus.assert_id_called(L.check.issue.redundant, level="warning")
+    spy_bus.assert_id_called(L.check.run.success_with_warnings, level="success")

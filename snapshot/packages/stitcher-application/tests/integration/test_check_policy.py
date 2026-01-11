@@ -106,7 +106,7 @@ def test_public_missing_triggers_warning_only(tmp_path, monkeypatch):
         factory.with_config({"scan_paths": ["src"]})
         .with_source("src/lib.py", "def public_api(): pass")
         # Create an empty doc file to ensure the file is tracked
-        .with_docs("src/lib.stitcher.yaml", {"__doc__": "Module doc"})
+        .with_docs("src/lib.stitcher.yaml", {})
         .build()
     )
 

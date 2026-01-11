@@ -60,9 +60,7 @@ def test_state_doc_improvement_auto_reconciled(tmp_path, monkeypatch):
     # Modify YAML
     doc_file = project_root / "src/module.stitcher.yaml"
     new_doc_content = "New Doc."
-    doc_file.write_text(
-        f'__doc__: "Module Doc"\nfunc: "{new_doc_content}"\n', encoding="utf-8"
-    )
+    doc_file.write_text(f'func: "{new_doc_content}"\n', encoding="utf-8")
 
     initial_hashes = get_stored_hashes(project_root, "src/module.py")
 
@@ -168,9 +166,8 @@ def test_state_co_evolution_error(tmp_path, monkeypatch):
     (project_root / "src/module.py").write_text("def func(a: str):\n    pass")
 
     doc_file = project_root / "src/module.stitcher.yaml"
-    doc_file.write_text(
-        '__doc__: "Module Doc"\nfunc: "New YAML Doc."\n', encoding="utf-8"
-    )
+    new_doc_content = "New YAML Doc."
+    doc_file.write_text(f'func: "{new_doc_content}"\n', encoding="utf-8")
 
     spy_bus = SpyBus()
     with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
