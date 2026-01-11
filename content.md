@@ -1,102 +1,67 @@
-Excellent find. This is not a regression; it is a profound and positive validation of our new architecture. The database is now correctly enforcing the very decoupling we set out to achieve.
+好的，我们已经完成了“从启发式猜测到确定性链接”路线图的前几个关键阶段，包括工具集中化、作用域分析抽象以及数据模型的初步解耦。现在是时候将这些基础性的重构作为一个完整的逻辑单元提交了。
 
-Your analysis is spot on. The test is failing because it's still operating under the old, flawed assumption that the scanner can and should know the physical SURI of an external symbol. Our new design correctly states this is impossible.
-
-I will generate a plan to align the test with our new architectural reality.
-
-## [WIP] fix: Align IndexStore test with decoupled data model reality
-
-### 错误分析
-
-**`sqlite3.IntegrityError: FOREIGN KEY constraint failed`**
-
-1.  **根本原因**: 我们的新 `schema.sql` 包含一个外键约束：`FOREIGN KEY (target_id) REFERENCES symbols(id)`。
-2.  **触发条件**: 在 `test_analysis_update` 测试中，我们试图插入一个 `ReferenceRecord`，其 `target_id` 指向 `"py://src/other.py#func"`。然而，在该次数据库事务中，`symbols` 表里**并没**有 `id` 为 `"py://src/other.py#func"` 的记录。
-3.  **架构验证**: 数据库正确地拒绝了创建一个指向不存在符号的“悬空引用”。这证明了我们的 Schema 正在按预期工作，强制执行数据完整性。
-4.  **测试的缺陷**: 测试用例本身是有问题的。它模拟了一个不可能在“扫描”阶段发生的场景。在扫描 `src/lib.py` 时，`PythonAdapter` **不应该**知道 `src.other.func` 的 SURI。根据我们的新设计，它应该将 `target_id` 设置为 `None`。
+## [COMMIT] refactor(index): 实现扫描-链接架构的第一阶段，解耦 SURI 猜测
 
 ### 用户需求
-
-修复 `test_analysis_update` 测试，使其正确模拟“扫描”阶段的行为，并验证 `IndexStore` 能够正确处理包含未解析引用（`target_id=None`）的数据。
+将目前完成的一系列架构改进（Phase A, B 和 Phase 1）提交到版本控制系统。
 
 ### 评论
-
-这个 `IntegrityError` 是一个里程碑。它标志着我们已经成功地在数据库层面阻止了“启发式猜测”产生的脏数据。现在，我们必须升级我们的测试，让它从“验证一个被猜测的结果”演变为“验证一个诚实的、未解析的中间状态”。这是向确定性系统迈出的坚实一步。
+这次提交标志着 Stitcher 架构的一个重大转型。我们成功地从“试图在扫描时解决一切”的单相模型，转变为“先诚实记录，后延迟链接”的二相模型。这为解决跨文件引用歧义、支持复杂项目布局提供了根本性的技术支持。代码库现在更加整洁，职责划分也更加清晰。
 
 ### 目标
-
-1.  修改 `packages/stitcher-index/tests/unit/test_store.py` 中的 `test_analysis_update` 测试用例。
-2.  将测试数据中 `ReferenceRecord` 的 `target_id` 字段从一个硬编码的 SURI 字符串更改为 `None`。
-3.  确保测试能够成功将此记录写入数据库，证明 `IndexStore` 和 Schema 正确支持了我们解耦后的模型。
+1.  将所有新增和修改的文件添加到 Git 暂存区。
+2.  创建一个符合 Conventional Commits 规范的、详尽的提交记录。
 
 ### 基本原理
-
-测试的核心是验证一个单元（`IndexStore`）是否履行了它的职责。`IndexStore.update_analysis` 的职责是持久化“扫描”阶段的产物。在我们的新架构中，“扫描”阶段的产物对于外部引用，其特征就是 `target_fqn` 已知，但 `target_id` 为 `None`。因此，修复后的测试将能更准确地验证 `IndexStore` 的核心职责。
+遵循 `d3-quipu-plan-script-rules`，我们将提交操作放在一个独立的 `[COMMIT]` 计划中，以确保文件系统变更已稳定。这次提交记录了我们在消除“启发式猜测”方面的初步胜利。
 
 ### 标签
-
-#intent/fix #flow/ready #priority/critical #comp/tests #comp/index #scope/dx #ai/instruct #task/domain/architecture #task/object/schema-decoupling #task/action/bug-fix #task/state/continue
+#intent/refine #flow/ready #priority/high #comp/index #comp/refactor #comp/python-analysis #scope/core #ai/instruct #task/domain/architecture #task/object/commit-milestone #task/action/git-commit #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 修复 `test_store.py`
+#### Acts 1: 提交架构重构
 
-我们将修改测试数据，将 `target_id` 设置为 `None`，以精确模拟扫描阶段的输出。
+我们将所有涉及 FQN 统一、作用域抽象和 Schema 解耦的文件添加到暂存区并提交。
 
 ~~~~~act
-patch_file
+git_add
+packages/stitcher-python-analysis/src/stitcher/python/analysis/utils.py
+packages/stitcher-python-analysis/tests/unit/test_utils.py
+packages/stitcher-refactor/src/stitcher/refactor/operations/base.py
+packages/stitcher-python-analysis/src/stitcher/python/analysis/scope.py
+packages/stitcher-python-analysis/tests/unit/test_scope.py
+packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py
+packages/stitcher-index/src/stitcher/index/schema.sql
+packages/stitcher-index/src/stitcher/index/types.py
+packages/stitcher-index/src/stitcher/index/store.py
+packages/stitcher-python-analysis/src/stitcher/python/analysis/cst/usage_visitor.py
 packages/stitcher-index/tests/unit/test_store.py
+packages/stitcher-python-adapter/tests/integration/test_index_adapter_references.py
+packages/stitcher-python-adapter/src/stitcher/adapter/python/griffe_parser.py
 ~~~~~
-~~~~~python.old
-    references = [
-        ReferenceRecord(
-            target_fqn="src.other.func",
-            target_id="py://src/other.py#func",
-            kind="import",
-            lineno=6,
-            col_offset=0,
-            end_lineno=6,
-            end_col_offset=15,
-        )
-    ]
-~~~~~
-~~~~~python.new
-    references = [
-        ReferenceRecord(
-            target_fqn="src.other.func",
-            target_id=None,  # This is the key change: Scan phase produces unresolved IDs.
-            kind="import",
-            lineno=6,
-            col_offset=0,
-            end_lineno=6,
-            end_col_offset=15,
-        )
-    ]
-~~~~~
+
 ~~~~~act
-patch_file
-packages/stitcher-index/tests/unit/test_store.py
+git_commit
 ~~~~~
-~~~~~python.old
-    # Verify references
-    saved_refs = store.get_references_by_file(fid)
-    assert len(saved_refs) == 1
-    assert saved_refs[0].target_id == "py://src/other.py#func"
-~~~~~
-~~~~~python.new
-    # Verify references
-    saved_refs = store.get_references_by_file(fid)
-    assert len(saved_refs) == 1
-    assert saved_refs[0].target_fqn == "src.other.func"
-    assert saved_refs[0].target_id is None  # Verify that the unresolved state was saved
+~~~~~text
+refactor(index): implement Scan-Link phase 1 and decouple SURI guessing
+
+This commit marks the first major milestone in the "Deterministic Linking" roadmap, shifting from a single-pass scan with heuristic guessing to a robust two-phase architecture.
+
+Key changes:
+- Centralized FQN calculation logic in a new `stitcher-python-analysis.utils` module, providing a single source of truth for path-to-package mapping.
+- Abstracted scope analysis into `ScopeAnalyzer`, unifying how the refactor and index engines resolve local symbol tables for the CST visitor.
+- Redesigned database schema for `symbols` and `references` to separate logical intent (FQN) from physical links (SURI).
+- Updated `PythonAdapter` and `IndexStore` to record raw FQN targets during the scan phase while leaving SURI IDs null for later resolution.
+- Enforced data integrity via SQLite foreign key constraints, preventing dangling references.
+- Updated and strengthened the test suite to align with the new decoupled architecture.
+
+This infrastructure is the prerequisite for the upcoming 'Linker' component, which will resolve cross-file references with absolute certainty.
 ~~~~~
 
 ### 下一步建议
-
-我们已经成功地使测试与我们的新架构保持一致，并且验证了数据持久化层能够正确处理未链接的引用。至此，为“扫描”阶段所做的所有准备工作都已完成。
-
-现在，我们万事俱备，可以开始构建那个将把所有这些珍珠串起来的线了。
-
-我建议立即开始实施 **Phase 3: 实现链接器 (The Stitcher Linker)**。这将是一个全新的、令人兴奋的组件，它将赋予我们的系统真正的“理解力”。
+- **立即执行**: 请务必手动删除 `.stitcher/index/index.db` 文件。因为我们修改了 Schema，旧的数据库文件会导致 SQL 错误。
+- **展望 Phase 3**: 我们的下一步任务是编写 `Linker` 组件。它将通过执行 SQL 联表查询或内存匹配，将 `references` 表中空的 `target_id` 与 `symbols` 表中正确的 `id` (SURI) 缝合在一起。
