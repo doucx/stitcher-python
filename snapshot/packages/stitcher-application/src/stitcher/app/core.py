@@ -85,6 +85,7 @@ class StitcherApp:
             self.differ,
             interaction_handler,
             fingerprint_strategy=self.fingerprint_strategy,
+            index_store=self.index_store,
         )
         self.pump_runner = PumpRunner(
             root_path,

@@ -1,187 +1,219 @@
-好的，我将开始实施 Zero-IO Check 路线图的第一阶段。
+好的，我们立即开始实施第二阶段。
 
-此阶段的核心是创建一个新的 `IndexCheckSubjectAdapter`，它将作为 `CheckAnalyzer` 的数据源，但其数据完全来自预先构建的 SQLite 索引，而不是通过实时解析 Python 文件的 AST。这将为后续阶段消除 I/O 瓶颈奠定基础。
+此阶段的目标是重构 `CheckRunner`，使其能够直接处理文件路径列表，而不是强制依赖于内存中的 `ModuleDef` AST 对象。这将是实现 Zero-IO Check 的核心驱动逻辑变更。
 
-我将修改 `packages/stitcher-application/src/stitcher/app/runners/check/subject.py` 文件，在现有的 `ASTCheckSubjectAdapter` 旁边添加新的 `IndexCheckSubjectAdapter` 实现。
+我将修改 `CheckRunner` 以接受 `IndexStore` 作为新的依赖，并添加一个 `analyze_paths` 方法。同时，我也会更新 `StitcherApp` 来注入这个新的依赖。
 
-## [WIP] feat: 实现基于索引的 IndexCheckSubjectAdapter
+## [WIP] feat: 重构 CheckRunner 以支持基于路径的 Zero-IO 分析
 
 ### 用户需求
 
-根据 Zero-IO Check 路线图的第一阶段，需要创建一个名为 `IndexCheckSubjectAdapter` 的新类，该类实现 `CheckSubject` 协议，但其数据完全来源于 SQLite 索引 (`IndexStore`)，而不是通过解析 AST。
+根据 Zero-IO Check 路线图的第二阶段，需要重构 `CheckRunner`，为其添加一个新的、基于文件路径列表 (`List[str]`) 的分析入口点 `analyze_paths`。这个新方法应使用在第一阶段创建的 `IndexCheckSubjectAdapter` 来执行分析，从而摆脱对 `ModuleDef` 对象的依赖。
 
 ### 评论
 
-这是实现 Zero-IO Check 的关键一步。通过创建一个与 `ASTCheckSubjectAdapter` 接口兼容但数据源不同的适配器，我们可以无缝地将 `CheckRunner` 的底层数据提供者切换到数据库，而无需修改核心的检查逻辑 (`CheckAnalyzer`)。这体现了良好的分层设计和依赖倒置原则。
+这是将 Zero-IO 潜力转化为现实的关键一步。通过为 `CheckRunner` 提供一个直接处理路径的“快速通道”，我们正在解耦检查流程与重量级的 AST 解析步骤。这使得上游调用者（`StitcherApp`）可以将“扫描文件”和“分析文件”两个阶段彻底分开，为第三阶段实现端到端的 Zero-IO 流程铺平了道路。
 
 ### 目标
 
-1.  在 `stitcher.app.runners.check.subject` 模块中创建 `IndexCheckSubjectAdapter` 类。
-2.  实现该类，使其通过 `IndexStore`, `DocumentManager`, 和 `SignatureManager` 获取所有必要的数据。
-3.  确保 `get_all_symbol_states` 方法能正确地将 `SymbolRecord` 映射为 `SymbolState`，并正确处理模块文档 (`__doc__`) 和符号可见性。
-4.  实现 `is_documentable` 方法，使其行为与 AST 版本保持一致。
+1.  向 `CheckRunner` 的构造函数 `__init__` 中添加 `index_store: IndexStore` 作为新的依赖项。
+2.  更新 `StitcherApp` 的构造逻辑，将 `self.index_store` 实例注入到 `CheckRunner` 中。
+3.  在 `CheckRunner` 中实现一个新的公共方法 `analyze_paths`，它接收一个文件路径列表。
+4.  确保 `analyze_paths` 方法为每个路径实例化 `IndexCheckSubjectAdapter`，并调用 `self.analyzer` 来执行检查。
 
 ### 基本原理
 
-新的 `IndexCheckSubjectAdapter` 将遵循 `CheckSubject` 协议，使其可以被 `CheckAnalyzer` 透明地使用。
+为了让 `CheckRunner` 能够使用 `IndexCheckSubjectAdapter`，它必须能够访问 `IndexStore`。因此，第一步是进行依赖注入，将 `IndexStore` 从 `StitcherApp` 传递给 `CheckRunner`。
 
--   **数据源**：它将从三个地方聚合信息：
-    1.  `IndexStore`：获取所有符号的定义、签名哈希、文档内容等代码侧信息。
-    2.  `DocumentManager`：加载 `.stitcher.yaml` 文件以获取文档侧信息。
-    3.  `SignatureManager`：加载 `.stitcher/signatures/` 文件以获取基线哈希。
--   **核心逻辑**：`get_all_symbol_states` 方法是核心。它会整合来自上述三个数据源的所有 FQN，然后为每个 FQN 构建一个完整的 `SymbolState` 快照，描述其在代码、YAML 和基线中的完整状态。
--   **性能**：此适配器执行的所有操作（DB 查询、YAML 读取、JSON 读取）都比解析 Python AST 快几个数量级，从而为后续的性能提升奠定了基础。
+一旦依赖关系建立，我们就可以创建一个新的 `analyze_paths` 方法。这个方法将成为未来 `check` 命令的主要工作流。它遍历文件路径，为每个路径创建一个轻量级的 `IndexCheckSubjectAdapter`，然后将其传递给现有的、未被修改的 `CheckAnalyzer`。由于 `CheckAnalyzer` 是面向协议 (`CheckSubject`) 编程的，它根本不知道数据是来自 AST 还是数据库，从而实现了完美的逻辑复用和关注点分离。
+
+现有的 `analyze_batch(modules: List[ModuleDef])` 方法将被保留，以处理那些无法或不适合使用持久化索引的场景（例如，对动态生成的插件进行检查）。
 
 ### 标签
 
-#intent/build #flow/ready #priority/high
+#intent/refine #flow/ready #priority/high
 #comp/engine #concept/state #scope/core
 #ai/instruct
-#task/domain/testing #task/object/zero-io-check #task/action/implementation #task/state/begin
+#task/domain/testing #task/object/zero-io-check #task/action/implementation #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 实现 IndexCheckSubjectAdapter
+#### Acts 1: 更新 `CheckRunner` 以接受 `IndexStore`
 
-我将向 `subject.py` 文件中添加新的 `IndexCheckSubjectAdapter` 类及其完整实现。
+首先，我将修改 `CheckRunner` 的 `__init__` 方法，添加 `index_store` 依赖。
 
 ~~~~~act
 patch_file
-packages/stitcher-application/src/stitcher/app/runners/check/subject.py
+packages/stitcher-application/src/stitcher/app/runners/check/runner.py
 ~~~~~
 ~~~~~python.old
-from typing import Dict
 from stitcher.spec import (
     ModuleDef,
-    Fingerprint,
+    LanguageParserProtocol,
     FingerprintStrategyProtocol,
 )
-from stitcher.app.services import DocumentManager, SignatureManager
-from .protocols import SymbolState, CheckSubject
-
-
-class ASTCheckSubjectAdapter(CheckSubject):
-~~~~~
-~~~~~python.new
-from typing import Dict, Optional
-from stitcher.spec import (
-    ModuleDef,
-    Fingerprint,
-    FingerprintStrategyProtocol,
+from stitcher.app.services import (
+    DocumentManager,
+    SignatureManager,
+    Differ,
 )
-from stitcher.app.services import DocumentManager, SignatureManager
-from stitcher.index.store import IndexStore
-from stitcher.index.types import SymbolRecord
-from .protocols import SymbolState, CheckSubject
+from stitcher.app.protocols import InteractionHandler, InteractionContext
+from stitcher.app.types import FileCheckResult
+
+from .analyzer import CheckAnalyzer
+from .resolver import CheckResolver
+from .reporter import CheckReporter
 
 
-class IndexCheckSubjectAdapter(CheckSubject):
+from .subject import ASTCheckSubjectAdapter
+
+
+class CheckRunner:
     def __init__(
         self,
-        file_path: str,
-        index_store: IndexStore,
+        root_path: Path,
+        parser: LanguageParserProtocol,
         doc_manager: DocumentManager,
         sig_manager: SignatureManager,
+        differ: Differ,
+        interaction_handler: InteractionHandler | None,
+        fingerprint_strategy: FingerprintStrategyProtocol,
     ):
-        self._file_path = file_path
-        self._index_store = index_store
-        self._doc_manager = doc_manager
-        self._sig_manager = sig_manager
+        # Keep services needed by both adapter and resolver
+        self.root_path = root_path
+        self.parser = parser
+        self.doc_manager = doc_manager
+        self.sig_manager = sig_manager
+        self.fingerprint_strategy = fingerprint_strategy
 
-    @property
-    def file_path(self) -> str:
-        return self._file_path
+        # Inject dependencies into sub-components
+~~~~~
+~~~~~python.new
+from pathlib import Path
+from typing import List, Tuple
 
-    def _is_public(self, fqn: str) -> bool:
-        # Replicate public visibility logic from AST-based approach
-        parts = fqn.split(".")
-        return not any(p.startswith("_") and p != "__doc__" for p in parts)
+from stitcher.spec import (
+    ModuleDef,
+    LanguageParserProtocol,
+    FingerprintStrategyProtocol,
+)
+from stitcher.app.services import (
+    DocumentManager,
+    SignatureManager,
+    Differ,
+)
+from stitcher.app.protocols import InteractionHandler, InteractionContext
+from stitcher.app.types import FileCheckResult
+from stitcher.index.store import IndexStore
 
-    def is_documentable(self) -> bool:
-        symbols = self._index_store.get_symbols_by_file_path(self.file_path)
-        if not symbols:
-            return False
+from .analyzer import CheckAnalyzer
+from .resolver import CheckResolver
+from .reporter import CheckReporter
 
-        for sym in symbols:
-            if sym.kind == "module" and sym.docstring_content:
-                return True
-            if sym.logical_path and self._is_public(sym.logical_path):
-                return True
-        return False
 
-    def get_all_symbol_states(self) -> Dict[str, SymbolState]:
-        # 1. Load data from all sources
-        symbols_from_db = self._index_store.get_symbols_by_file_path(self.file_path)
-        yaml_docs = self._doc_manager.load_docs_for_path(self.file_path)
-        stored_hashes = self._sig_manager.load_composite_hashes(self.file_path)
+from .subject import ASTCheckSubjectAdapter, IndexCheckSubjectAdapter
 
-        yaml_content_hashes = {
-            fqn: self._doc_manager.compute_yaml_content_hash(
-                self._doc_manager._serialize_ir(ir)
-            )
-            for fqn, ir in yaml_docs.items()
-        }
 
-        # 2. Map symbols for easy lookup
-        symbol_map: Dict[str, SymbolRecord] = {}
-        module_symbol: Optional[SymbolRecord] = None
-        for sym in symbols_from_db:
-            if sym.kind == "module":
-                module_symbol = sym
-            elif sym.logical_path:
-                symbol_map[sym.logical_path] = sym
+class CheckRunner:
+    def __init__(
+        self,
+        root_path: Path,
+        parser: LanguageParserProtocol,
+        doc_manager: DocumentManager,
+        sig_manager: SignatureManager,
+        differ: Differ,
+        interaction_handler: InteractionHandler | None,
+        fingerprint_strategy: FingerprintStrategyProtocol,
+        index_store: IndexStore,
+    ):
+        # Keep services needed by both adapter and resolver
+        self.root_path = root_path
+        self.parser = parser
+        self.doc_manager = doc_manager
+        self.sig_manager = sig_manager
+        self.fingerprint_strategy = fingerprint_strategy
+        self.index_store = index_store
 
-        # 3. Aggregate all unique FQNs
-        all_fqns = (
-            set(symbol_map.keys())
-            | set(yaml_docs.keys())
-            | set(stored_hashes.keys())
+        # Inject dependencies into sub-components
+~~~~~
+
+#### Acts 2: 在 `StitcherApp` 中注入 `IndexStore`
+
+现在，我将更新 `StitcherApp`，将 `index_store` 传递给 `CheckRunner` 的构造函数。
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/core.py
+~~~~~
+~~~~~python.old
+        self.check_runner = CheckRunner(
+            root_path,
+            parser,
+            self.doc_manager,
+            self.sig_manager,
+            self.differ,
+            interaction_handler,
+            fingerprint_strategy=self.fingerprint_strategy,
         )
-        if module_symbol:
-            all_fqns.add("__doc__")
+~~~~~
+~~~~~python.new
+        self.check_runner = CheckRunner(
+            root_path,
+            parser,
+            self.doc_manager,
+            self.sig_manager,
+            self.differ,
+            interaction_handler,
+            fingerprint_strategy=self.fingerprint_strategy,
+            index_store=self.index_store,
+        )
+~~~~~
 
-        states: Dict[str, SymbolState] = {}
+#### Acts 3: 在 `CheckRunner` 中实现 `analyze_paths` 方法
 
-        # 4. Build state for each FQN
-        for fqn in all_fqns:
-            symbol_rec: Optional[SymbolRecord] = None
-            if fqn == "__doc__":
-                symbol_rec = module_symbol
-            else:
-                symbol_rec = symbol_map.get(fqn)
+最后，我将在 `CheckRunner` 中添加新的 `analyze_paths` 方法。
 
-            stored_fp = stored_hashes.get(fqn, Fingerprint())
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/runner.py
+~~~~~
+~~~~~python.old
+        self.reporter = CheckReporter()
 
-            states[fqn] = SymbolState(
-                fqn=fqn,
-                is_public=self._is_public(fqn),
-                # Source Code State (from Index)
-                exists_in_code=(symbol_rec is not None),
-                source_doc_content=symbol_rec.docstring_content if symbol_rec else None,
-                signature_hash=symbol_rec.signature_hash if symbol_rec else None,
-                signature_text=symbol_rec.signature_text if symbol_rec else None,
-                # YAML State
-                exists_in_yaml=(fqn in yaml_docs),
-                yaml_doc_ir=yaml_docs.get(fqn),
-                yaml_content_hash=yaml_content_hashes.get(fqn),
-                # Baseline State
-                baseline_signature_hash=stored_fp.get("baseline_code_structure_hash"),
-                baseline_signature_text=stored_fp.get("baseline_code_signature_text"),
-                baseline_yaml_content_hash=stored_fp.get("baseline_yaml_content_hash"),
+    def analyze_batch(
+        self, modules: List[ModuleDef]
+    ) -> Tuple[List[FileCheckResult], List[InteractionContext]]:
+~~~~~
+~~~~~python.new
+        self.reporter = CheckReporter()
+
+    def analyze_paths(
+        self, file_paths: List[str]
+    ) -> Tuple[List[FileCheckResult], List[InteractionContext]]:
+        all_results: List[FileCheckResult] = []
+        all_conflicts: List[InteractionContext] = []
+
+        for file_path in file_paths:
+            subject = IndexCheckSubjectAdapter(
+                file_path, self.index_store, self.doc_manager, self.sig_manager
             )
+            result, conflicts = self.analyzer.analyze_subject(subject)
+            all_results.append(result)
+            all_conflicts.extend(conflicts)
 
-        return states
+        return all_results, all_conflicts
 
-
-class ASTCheckSubjectAdapter(CheckSubject):
+    def analyze_batch(
+        self, modules: List[ModuleDef]
+    ) -> Tuple[List[FileCheckResult], List[InteractionContext]]:
 ~~~~~
 
 ### 下一步建议
 
-我们已经成功实现了第一阶段。`IndexCheckSubjectAdapter` 现在已经可用，它为 `CheckAnalyzer` 提供了一个完全基于数据库的数据视图。
+第二阶段已成功完成。`CheckRunner` 现在拥有了处理文件路径列表的能力，并能利用 `IndexCheckSubjectAdapter` 从数据库获取信息。
 
-下一步是实施路线图的**第二阶段：重构 `CheckRunner` 的驱动模式**。我将修改 `CheckRunner`，为其增加一个新的 `analyze_paths` 方法，该方法接收文件路径列表并使用我们刚刚创建的 `IndexCheckSubjectAdapter` 来执行分析，从而摆脱对 `ModuleDef` 对象的直接依赖。
+接下来的工作是路线图的**第三阶段：升级顶层编排逻辑 (`StitcherApp`)**。我将修改 `StitcherApp.run_check` 方法，使其调用我们刚刚创建的 `check_runner.analyze_paths`。这将是实现 Zero-IO 流程的临门一脚，因为它将彻底改变 `check` 命令的工作流，从“解析所有文件”变为“直接从索引分析”。
 
-如果你同意，我将立即开始制定第二阶段的计划。
+如果你同意，我将开始制定第三阶段的计划。
