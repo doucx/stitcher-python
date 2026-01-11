@@ -1,118 +1,113 @@
-Your analysis is spot on. The `check` command is indeed behaving incorrectly by treating imported symbols as locally defined, public APIs that require documentation. This leads to a flood of false positives, making the tool's output unreliable.
+You are absolutely correct. My apologies. The test failed due to a missing fixture, which points to a deeper issue in the test architecture. Your suggestion to centralize this in `stitcher-test-utils` is the ideal monorepo solution, aligning perfectly with the `d3-principle-pytest-monorepo-architecture`. A local `conftest.py` would solve the problem for one package but would violate the DRY principle for the project as a whole.
 
-To correct this, we must first define the expected behavior in a way that can be automatically verified. I will create a new integration test that formalizes the principle: **`stitcher check` must only report on symbols *defined* within a module, not symbols it *imports*.**
+I will rectify this by promoting `stitcher-test-utils` to a proper pytest plugin. This will make the `workspace_factory` and `spy_bus` fixtures automatically available to all test suites in the monorepo, creating a more robust and maintainable testing foundation.
 
-This test will serve as the foundation for fixing the underlying logic and will prevent this kind of regression in the future.
-
-## [WIP] test: Add integration test to ensure check ignores imported symbols
+## [WIP] refactor: Centralize test fixtures into a discoverable plugin
 
 ### 用户需求
 
-`stitcher check` 命令错误地将导入的符号（如 `os`, `Path`, `logging`）识别为模块的公共 API，并报告它们“文档缺失”。这是一种错误行为，因为工具应该只关心在模块内部定义的符号。
+The test `test_check_does_not_report_imports_as_missing_docs` failed because the `workspace_factory` fixture was not found. This fixture needs to be provided to the test suite in a centralized, reusable manner.
 
 ### 评论
 
-这是一个关键的正确性修复。无法区分模块的内部定义和外部依赖会导致工具产生大量噪音，降低其可用性和可信度。建立一个明确的测试用例是解决此问题的首要步骤。
+This is an essential architectural improvement. By defining shared fixtures in a `test-utils` package and exposing them as a pytest plugin via `entry_points`, we ensure that all packages in the monorepo have consistent access to the same testing infrastructure. This is the correct, "Regular Army" standard for a project of this structure.
 
 ### 目标
 
-1.  创建一个新的集成测试文件 `test_check_ignores_imports.py`。
-2.  在该测试中，构建一个包含本地定义的、无文档的公共符号以及多个从标准库导入的符号的 Python 项目。
-3.  执行 `stitcher check` 命令。
-4.  断言测试结果：
-    *   **必须** 报告本地定义的符号缺少文档。
-    *   **绝不能** 报告任何导入的符号缺少文档。
+1.  Create a new `fixtures.py` file within `stitcher-test-utils` to house the implementations of shared pytest fixtures.
+2.  Define the `workspace_factory` fixture, which provides an instance of `WorkspaceFactory`, a core testing utility.
+3.  Define a `spy_bus` fixture to provide a `SpyBus` instance, another common requirement for testing command outputs.
+4.  Modify the `pyproject.toml` of `stitcher-test-utils` to declare an entry point under the `pytest11` group. This officially registers the package as a pytest plugin, making its fixtures discoverable project-wide.
 
 ### 基本原理
 
-通过创建一个专门的集成测试，我们可以使用完整的应用程序堆栈来复现该问题。测试将利用 `WorkspaceFactory` 来模拟一个真实的项目结构，并使用 `SpyBus` 来精确捕获和断言应用程序发出的语义消息。这种方法不仅能够清晰地定义正确行为，还能在未来的代码修改中充当安全网，确保此缺陷不会再次出现。
+According to the `d3-principle-pytest-monorepo-architecture`, shared testing infrastructure must be centralized to avoid duplication and ensure consistency. By adding a `pytest11` entry point to `stitcher-test-utils/pyproject.toml`, we instruct pytest to treat this package as a plugin. During test collection, pytest will automatically discover any functions decorated with `@pytest.fixture` within the specified module (`stitcher.test_utils.fixtures`), making them available to any test file in the project without needing explicit imports or local `conftest.py` files.
 
 ### 标签
 
-#intent/tooling #intent/fix #flow/ready #comp/tests #concept/state #task/domain/testing #task/object/check-command #task/action/bug-fix #task/state/begin
+#intent/refine #intent/tooling #flow/ready #priority/high #comp/tests #comp/build #scope/dx #task/domain/testing #task/object/check-command #task/action/bug-fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建集成测试文件
+#### Acts 1: Create centralized fixture definitions
 
-我将创建 `test_check_ignores_imports.py` 文件。这个测试将建立一个包含导入符号和本地定义符号的简单项目，并验证 `check` 命令只对后者发出警告。
+First, I'll create the `fixtures.py` file inside the `stitcher-test-utils` package and define the `workspace_factory` and `spy_bus` fixtures there.
 
 ~~~~~act
 write_file
-packages/stitcher-application/tests/integration/test_check_ignores_imports.py
+packages/stitcher-test-utils/src/stitcher/test_utils/fixtures.py
 ~~~~~
 ~~~~~python
 import pytest
-from needle.pointer import L
-
-from stitcher.test_utils import WorkspaceFactory, SpyBus, create_test_app
-
-
-def test_check_does_not_report_imports_as_missing_docs(
-    workspace_factory: WorkspaceFactory, spy_bus: SpyBus, monkeypatch
-):
-    """
-    Verifies that 'stitcher check' does not incorrectly flag imported symbols
-    as missing documentation. It should only flag symbols defined within the
-    scanned module.
-    """
-    # 1. Setup: Create a project with a file that has imports and defined symbols
-    ws = (
-        workspace_factory.with_config({"scan_paths": ["src"]})
-        .with_source(
-            "src/my_pkg/core.py",
-            """
-import os
-import logging
 from pathlib import Path
-from typing import Optional, List
+from .workspace import WorkspaceFactory
+from .bus import SpyBus
 
-# This function is defined locally and should be reported as missing docs.
-def my_public_function():
-    pass
 
-# This class is defined locally and should also be reported.
-class MyPublicClass:
-    pass
-            """,
-        )
-        .build()
-    )
+@pytest.fixture
+def workspace_factory(tmp_path: Path) -> WorkspaceFactory:
+    """Provides a factory to create isolated test workspaces."""
+    return WorkspaceFactory(tmp_path)
 
-    # 2. Execution: Run the check command
-    app = create_test_app(ws)
-    with spy_bus.patch(monkeypatch):
-        # We expect this to fail because docs are missing, which is what we're testing.
-        success = app.run_check()
-        assert not success
 
-    # 3. Assertion: Verify the output from the bus
-    messages = spy_bus.get_messages()
+@pytest.fixture
+def spy_bus() -> SpyBus:
+    """Provides a SpyBus instance to intercept and inspect bus messages."""
+    return SpyBus()
+~~~~~
 
-    # Filter for only the 'missing documentation' warnings
-    missing_doc_warnings = [
-        msg for msg in messages if msg["id"] == str(L.check.issue.missing)
-    ]
+#### Acts 2: Register `test-utils` as a pytest plugin
 
-    assert len(missing_doc_warnings) == 2, "Should only find 2 missing doc warnings"
+Next, I'll modify the `pyproject.toml` of `stitcher-test-utils` to add the `pytest11` entry point, making the fixtures above discoverable.
 
-    # Extract the 'key' (the FQN) from the warning parameters
-    reported_keys = {msg["params"]["key"] for msg in missing_doc_warnings}
+~~~~~act
+patch_file
+packages/stitcher-test-utils/pyproject.toml
+~~~~~
+~~~~~toml.old
+[project]
+name = "stitcher-test-utils"
+version = "0.1.0"
+description = "Internal testing utilities for the Stitcher project."
+requires-python = ">=3.10"
+dependencies = [
+    "pyneedle",
+    "PyYAML",
+    "tomli-w",
+    "stitcher-application",
+    "stitcher-python-adapter",
+    "stitcher-index",
+    "stitcher-workspace",
+]
 
-    # Assert that our defined symbols ARE reported
-    assert "my_public_function" in reported_keys
-    assert "MyPublicClass" in reported_keys
+[tool.hatch.build.targets.wheel]
+packages = ["src/stitcher"]
+~~~~~
+~~~~~toml.new
+[project]
+name = "stitcher-test-utils"
+version = "0.1.0"
+description = "Internal testing utilities for the Stitcher project."
+requires-python = ">=3.10"
+dependencies = [
+    "pyneedle",
+    "PyYAML",
+    "tomli-w",
+    "stitcher-application",
+    "stitcher-python-adapter",
+    "stitcher-index",
+    "stitcher-workspace",
+]
 
-    # Assert that imported symbols are NOT reported
-    imported_symbols = {"os", "logging", "Path", "Optional", "List"}
-    for symbol in imported_symbols:
-        assert (
-            symbol not in reported_keys
-        ), f"Imported symbol '{symbol}' was incorrectly reported as missing docs"
+[project.entry-points."pytest11"]
+stitcher = "stitcher.test_utils.fixtures"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stitcher"]
 ~~~~~
 
 ### 下一步建议
 
-现在我们已经有了一个能够稳定复现问题的测试用例。下一步就是运行这个测试，看它是否按预期失败（它现在应该会失败，因为它会报告 `os` 等符号缺失文档）。一旦确认失败，我将着手修改 `stitcher-application` 或 `stitcher-python-adapter` 中的分析逻辑，以确保测试通过。
+With the test infrastructure now correctly configured, the fixtures `workspace_factory` and `spy_bus` will be globally available. I will now re-run the test I previously created (`test_check_ignores_imports.py`). It should now proceed past the fixture discovery stage and fail at the assertion level, which will confirm that the `check` command's logic is indeed flawed as we originally diagnosed. After that, I will proceed to fix the implementation.

@@ -17,6 +17,9 @@ dependencies = [
     "stitcher-workspace",
 ]
 
+[project.entry-points."pytest11"]
+stitcher = "stitcher.test_utils.fixtures"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/stitcher"]
 
