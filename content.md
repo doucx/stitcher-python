@@ -1,69 +1,89 @@
-非常抱歉。这是一个测试设置错误。
+好的，你完全正确。单元测试通过证明了我的核心假设是错误的——`Planner` 的合并逻辑本身没有问题。这意味着，尽管 `Planner` 能够正确地*计划*出合并后的文件操作，但在从 `runner.invoke` 到 `Planner` 执行之间的某个环节，依然存在一个导致命令崩溃的未捕获异常。
 
-我在创建 `test_planner_merging.py` 时，没有在 `mock_context` 中正确配置 `sidecar_manager`。`Planner` 在收集意图时会尝试检查 Sidecar 文件是否存在，从而导致了 `AttributeError`。
+我们必须遵循标准的调试流程：当一个假设被证伪后，我们需要收集更多的信息。你提出的增加可观测性的建议是完全正确的下一步。通过启用详细日志，我们可以追踪 `refactor` 命令的内部执行流程，看看它究竟在哪一步崩溃了。
 
-这掩盖了我们真正想要暴露的逻辑缺陷（断言失败）。
+我将生成一个计划来修改测试，以启用详细输出。
 
-我将修复这个测试文件的设置代码，使其能够运行并（预期地）因逻辑问题而失败。
-
-## [WIP] test: 修复测试设置以正确运行 Planner 单元测试
+## [WIP] test: 提高 refactor 命令集成测试的可观测性
 
 ### 错误分析
 
-测试代码崩溃是因为 `RefactorContext` 的 Mock 对象缺少 `sidecar_manager` 属性。当 `RenameSymbolOperation` 和 `MoveFileOperation` 执行 `collect_intents` 时，它们会访问 `ctx.sidecar_manager` 来检查关联的文档文件，导致测试因 `AttributeError` 而中断。
+`test_refactor_command.py` 中的两个测试用例均以 `exit code 1` 失败，这表明 `typer` 应用在执行过程中遇到了一个未被处理的异常并提前退出。我们新加的单元测试已经证明 `Planner` 本身能够正确地合并针对同一文件的多个重命名操作，因此问题不在于计划生成的逻辑，而在于 `refactor` 命令执行此计划的*过程*中。
+
+当前的集成测试就像一个黑盒，我们只知道输入（`refactor apply ...`）和输出（`exit code 1`），却看不到内部发生了什么。为了定位这个隐藏的异常，我们必须打开这个黑盒。
 
 ### 用户需求
 
-修复测试环境，使新创建的单元测试能够运行。
+修改 `test_refactor_command.py`，使其在运行失败的测试时能够提供更详细的诊断信息，帮助定位问题的根本原因。
+
+### 评论
+
+这是一个关键的调试步骤。在没有明确错误信息的情况下盲目修复是低效的。通过增加日志输出，我们可以获得一个执行“轨迹”，这对于定位在复杂调用栈中发生的瞬时错误至关重要。
 
 ### 目标
 
-修改 `packages/stitcher-refactor/tests/unit/engine/test_planner_merging.py` 中的 `mock_context` fixture，为 `sidecar_manager` 添加一个 Mock 对象。我们将配置该 Mock 返回不存在的路径，以便测试可以跳过无关的 Sidecar 逻辑，专注于我们关心的代码修改逻辑。
+修改 `test_refactor_apply_e2e` 和 `test_refactor_apply_dry_run` 这两个测试函数，在调用 `runner.invoke` 时，加入 `--verbose`（或 `-v`）全局选项。
 
 ### 基本原理
 
-这是为了让测试基础设施正常工作。只有消除了基础设施错误，测试才能真正起到“红灯”的作用，通过断言失败来证明 `Planner` 逻辑的缺陷。
+`stitcher` 的 CLI 应用在根命令上定义了一个 `--verbose` 回调。当这个标志被设置时，它会配置 `FeedbackBus` 使用一个能打印 `debug` 级别消息的 `CliRenderer`。在重构引擎的各个关键阶段（如加载工作区、构建语义图、规划操作等），都埋有详细的 `bus.debug(...)` 日志点。
+
+通过在测试中激活这个标志，当 `runner.invoke` 执行时，所有这些调试信息都将被捕获到 `result.stdout` 中。这将为我们提供一个详细的执行日志，让我们能够精确地看到程序在抛出未处理异常并退出之前，最后执行到了哪一步。
 
 ### 标签
 
-#intent/tooling #flow/ready #priority/high #comp/tests #scope/dx #ai/refine #task/domain/testing #task/object/unit-tests #task/action/fix #task/state/continue
+#intent/tooling #flow/ready #priority/high #comp/tests #scope/dx #ai/instruct #task/domain/testing #task/object/integration-tests #task/action/debug #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修复 Mock Context 配置
+#### Acts 1: 为失败的 refactor 测试启用详细日志输出
+
+我将修改 `test_refactor_command.py` 文件，为两个失败的测试用例添加 `--verbose` 标志。
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/tests/unit/engine/test_planner_merging.py
+packages/stitcher-cli/tests/integration/test_refactor_command.py
 ~~~~~
 ~~~~~python.old
-    ctx = Mock(spec=RefactorContext)
-    ctx.graph = mock_graph
-    ctx.index_store = mock_index
-    return ctx
+    with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
+        result = runner.invoke(
+            app,
+            ["refactor", "apply", str(migration_script), "--yes"],
+            catch_exceptions=False,
+        )
 ~~~~~
 ~~~~~python.new
-    ctx = Mock(spec=RefactorContext)
-    ctx.graph = mock_graph
-    ctx.index_store = mock_index
+    with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
+        result = runner.invoke(
+            app,
+            ["--verbose", "refactor", "apply", str(migration_script), "--yes"],
+            catch_exceptions=False,
+        )
+~~~~~
 
-    # Mock SidecarManager to avoid AttributeError
-    mock_sidecar = Mock()
-    # Return non-existent paths so the operations skip sidecar logic
-    # and we focus purely on the code modification merging logic.
-    mock_sidecar.get_doc_path.return_value = tmp_path / "nonexistent.yaml"
-    mock_sidecar.get_signature_path.return_value = tmp_path / "nonexistent.json"
-    ctx.sidecar_manager = mock_sidecar
-
-    return ctx
+~~~~~act
+patch_file
+packages/stitcher-cli/tests/integration/test_refactor_command.py
+~~~~~
+~~~~~python.old
+    with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
+        result = runner.invoke(
+            app,
+            ["refactor", "apply", str(migration_script), "--dry-run"],
+            catch_exceptions=False,
+        )
+~~~~~
+~~~~~python.new
+    with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
+        result = runner.invoke(
+            app,
+            ["--verbose", "refactor", "apply", str(migration_script), "--dry-run"],
+            catch_exceptions=False,
+        )
 ~~~~~
 
 ### 下一步建议
 
-现在测试环境已经修复，请再次运行这些单元测试。
-
-**预期结果**：测试将不再崩溃，而是抛出 **AssertionError**。
-*   `test_planner_merges_rename_operations_for_same_file` 可能会失败，指出 `len(file_ops)` 是 2 而不是 1，或者文件内容只包含其中一个重命名结果。
-*   这将确凿地证明 `Planner` 缺乏对同一文件操作的合并逻辑，从而为我们修复生产代码提供依据。
+请应用此计划并重新运行失败的测试。这次，测试仍然会失败，但 `pytest` 将捕获并显示详细的 `stdout` 输出。请将完整的失败日志（包括 `CAPTURE` 部分的 `stdout`）提供给我，这将是解开谜团的关键。
