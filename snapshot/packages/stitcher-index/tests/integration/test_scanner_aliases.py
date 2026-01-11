@@ -90,5 +90,5 @@ def test_scanner_resolves_aliases_and_references(tmp_path, store):
     # pkg.defs.my_func() -> Should resolve 'pkg' to the package and link to the function
     assert "py://pkg/defs.py#my_func" in ref_targets
 
-    # func_alias() -> Should reference the func_alias alias
-    assert "py://pkg/main.py#func_alias" in ref_targets
+    # func_alias() -> Should resolve 'func_alias' to its original definition
+    assert "py://pkg/defs.py#my_func" in ref_targets
