@@ -1,9 +1,7 @@
 from contextlib import contextmanager
 from typing import List, Dict, Any, Optional, Union
 
-# Import the actual singleton to patch it in-place
-import stitcher.common
-from stitcher.common.messaging.protocols import Renderer
+# No top-level imports of stitcher packages to avoid coverage warnings
 from needle.pointer import SemanticPointer
 
 
@@ -25,6 +23,9 @@ class SpyBus:
 
     @contextmanager
     def patch(self, monkeypatch: Any, target: str = "stitcher.common.bus"):
+        # Lazy import to avoid early pollution of sys.modules
+        import stitcher.common
+        
         # The singleton instance we need to mutate
         real_bus = stitcher.common.bus
 
