@@ -84,11 +84,11 @@ def test_scanner_resolves_aliases_and_references(tmp_path, store):
     references = store.get_references_by_file(main_py_record.id)
     ref_targets = {ref.target_id for ref in references}
 
-    # instance = MyClass() -> Should reference the MyClass alias in this file
-    assert "py://pkg/main.py#MyClass" in ref_targets
+    # instance = MyClass() -> Should link directly to the definition in defs.py
+    assert "py://pkg/defs.py#MyClass" in ref_targets
 
-    # pkg.defs.my_func() -> Should reference the pkg alias
-    assert "py://pkg/main.py#pkg" in ref_targets
+    # pkg.defs.my_func() -> Should resolve 'pkg' to the package and link to the function
+    assert "py://pkg/defs.py#my_func" in ref_targets
 
     # func_alias() -> Should reference the func_alias alias
     assert "py://pkg/main.py#func_alias" in ref_targets
