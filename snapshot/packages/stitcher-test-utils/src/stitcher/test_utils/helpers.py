@@ -8,7 +8,7 @@ from stitcher.adapter.python import (
     PythonTransformer,
     PythonFingerprintStrategy,
 )
-from stitcher.refactor.workspace import Workspace
+from stitcher.workspace import Workspace
 
 from stitcher.adapter.python.griffe_parser import GriffePythonParser
 from stitcher.index.db import DatabaseManager

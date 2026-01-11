@@ -1,5 +1,5 @@
 from stitcher.refactor.engine.graph import SemanticGraph
-from stitcher.refactor.workspace import Workspace
+from stitcher.workspace import Workspace
 from stitcher.test_utils import create_populated_index
 
 def test_usage_query_via_index(tmp_path):

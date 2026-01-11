@@ -11,7 +11,7 @@ from stitcher.common.transaction import (
 )
 from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
-from stitcher.refactor.workspace import Workspace
+from stitcher.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory, create_populated_index
 
 

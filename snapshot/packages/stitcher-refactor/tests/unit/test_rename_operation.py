@@ -10,7 +10,7 @@ from stitcher.python.analysis.models import UsageLocation, ReferenceType
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.common.transaction import WriteFileOp
 from stitcher.refactor.sidecar.manager import SidecarManager
-from stitcher.refactor.workspace import Workspace
+from stitcher.workspace import Workspace
 
 
 def test_rename_symbol_analyze_orchestration():

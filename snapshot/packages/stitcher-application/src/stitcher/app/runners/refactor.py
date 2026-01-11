@@ -13,7 +13,7 @@ from stitcher.refactor.engine import (
     TransactionManager,
 )
 from stitcher.refactor.migration import MigrationLoader, MigrationError
-from stitcher.refactor.workspace import Workspace
+from stitcher.workspace import Workspace
 from stitcher.refactor.sidecar.manager import SidecarManager
 
 

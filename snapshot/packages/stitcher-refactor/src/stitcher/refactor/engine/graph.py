@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Set
 import logging
 import griffe
-from stitcher.refactor.workspace import Workspace
+from stitcher.workspace import Workspace
 from stitcher.index.store import IndexStore
 from stitcher.python.analysis.models import UsageLocation, ReferenceType
 

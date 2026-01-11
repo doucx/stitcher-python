@@ -35,7 +35,7 @@ from stitcher.index.db import DatabaseManager
 from stitcher.index.store import IndexStore
 from stitcher.index.scanner import WorkspaceScanner
 from stitcher.adapter.python import PythonAdapter
-from stitcher.refactor.workspace import Workspace
+from stitcher.workspace import Workspace
 from stitcher.adapter.python.docstring import (
     get_docstring_codec,
     get_docstring_serializer,
