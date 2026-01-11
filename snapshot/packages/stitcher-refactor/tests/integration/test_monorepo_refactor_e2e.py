@@ -10,7 +10,7 @@ from stitcher.common.transaction import (
 from stitcher.refactor.operations.move_file import MoveFileOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
-from stitcher.test_utils import WorkspaceFactory
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
 
 
 def test_move_file_in_monorepo_updates_cross_package_imports(tmp_path):

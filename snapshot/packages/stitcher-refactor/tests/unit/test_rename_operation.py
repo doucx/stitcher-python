@@ -5,7 +5,7 @@ from stitcher.refactor.engine.graph import (
     SemanticGraph,
     SymbolNode,
 )
-from stitcher.python.analysis.cst.usage_visitor import UsageRegistry
+from stitcher.index.store import IndexStore
 from stitcher.python.analysis.models import UsageLocation, ReferenceType
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.common.transaction import WriteFileOp
@@ -15,9 +15,9 @@ from stitcher.refactor.workspace import Workspace
 
 def test_rename_symbol_analyze_orchestration():
     # 1. Setup Mocks
-    mock_registry = Mock(spec=UsageRegistry)
+    mock_index = Mock(spec=IndexStore)
     mock_graph = Mock(spec=SemanticGraph)
-    mock_graph.registry = mock_registry
+    # mock_graph.registry is gone, the renamer now calls graph.find_usages
 
     tmp_path = Path("/tmp/fake_project")  # conceptual
     mock_graph.root_path = tmp_path

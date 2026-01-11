@@ -3,6 +3,9 @@ from stitcher.refactor.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory
 
 
+from unittest.mock import MagicMock
+from stitcher.index.store import IndexStore
+
 def test_semantic_graph_get_module_nested_lookup(tmp_path):
     """
     Verifies that get_module can navigate the module tree to find submodules.
@@ -19,7 +22,8 @@ def test_semantic_graph_get_module_nested_lookup(tmp_path):
 
     # 2. ACT
     workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
+    mock_index = MagicMock(spec=IndexStore)
+    graph = SemanticGraph(workspace=workspace, index_store=mock_index)
     graph.load("mypkg")
 
     # 3. ASSERT

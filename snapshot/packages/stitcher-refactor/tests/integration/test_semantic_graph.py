@@ -1,5 +1,6 @@
 from stitcher.refactor.engine.graph import SemanticGraph
 from stitcher.refactor.workspace import Workspace
+from stitcher.test_utils import create_populated_index
 
 
 def test_semantic_graph_load_package(tmp_path):

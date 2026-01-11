@@ -11,7 +11,7 @@ from stitcher.common.transaction import (
 from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
-from stitcher.test_utils import WorkspaceFactory
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
 
 
 def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_path):

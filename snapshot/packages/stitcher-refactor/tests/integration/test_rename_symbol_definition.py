@@ -8,7 +8,7 @@ from stitcher.common.transaction import (
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
-from stitcher.test_utils import WorkspaceFactory
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
 
 
 def test_rename_fails_to_update_definition_leading_to_import_error(tmp_path):
