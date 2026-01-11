@@ -36,7 +36,10 @@ class CheckAnalyzer:
                 if state.source_doc_content:
                     result.errors["pending"].append(fqn)
                 else:
-                    result.warnings["missing"].append(fqn)
+                    # Legacy Behavior: __doc__ is optional.
+                    # If it's missing in both source and YAML, don't report it as missing.
+                    if fqn != "__doc__":
+                        result.warnings["missing"].append(fqn)
 
             elif not state.exists_in_code and state.exists_in_yaml:
                 unresolved_conflicts.append(
@@ -82,7 +85,10 @@ class CheckAnalyzer:
             undocumented = [
                 s.fqn
                 for s in subject.get_all_symbol_states().values()
-                if s.is_public and not s.source_doc_content and not s.exists_in_yaml
+                if s.is_public
+                and s.fqn != "__doc__"
+                and not s.source_doc_content
+                and not s.exists_in_yaml
             ]
             if undocumented:
                 result.warnings["untracked_detailed"].extend(undocumented)
