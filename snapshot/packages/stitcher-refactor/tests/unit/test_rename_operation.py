@@ -3,9 +3,9 @@ from pathlib import Path
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.refactor.engine.graph import (
     SemanticGraph,
-    UsageRegistry,
     SymbolNode,
 )
+from stitcher.python.analysis.cst.usage_visitor import UsageRegistry
 from stitcher.python.analysis.models import UsageLocation, ReferenceType
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.common.transaction import WriteFileOp
