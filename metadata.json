@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat: 扩展 stitcher-index Schema 以支持签名文本和文档哈希", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768124258.6490512, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat: 升级 PythonAdapter 以支持文档哈希与签名文本提取", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768124320.4453242, "duration_ms": 0}}
