@@ -68,11 +68,11 @@ class StitcherApp:
         self.check_runner = CheckRunner(
             root_path,
             parser,
+            self.index_store,
             self.doc_manager,
             self.sig_manager,
             self.differ,
             interaction_handler,
-            fingerprint_strategy=self.fingerprint_strategy,
         )
         self.pump_runner = PumpRunner(
             root_path,

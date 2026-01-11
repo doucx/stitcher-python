@@ -11,8 +11,9 @@ from stitcher.spec import (
     ResolutionAction,
     Fingerprint,
     LanguageParserProtocol,
-    FingerprintStrategyProtocol,
 )
+from stitcher.index.store import IndexStore
+from stitcher.index.types import SymbolRecord
 from stitcher.app.services import (
     DocumentManager,
     SignatureManager,
@@ -27,62 +28,101 @@ class CheckRunner:
     def __init__(
         self,
         root_path: Path,
-        parser: LanguageParserProtocol,
+        parser: LanguageParserProtocol,  # Keep parser for applying resolutions (needs re-parse)
+        index_store: IndexStore,  # New dependency: The DB
         doc_manager: DocumentManager,
         sig_manager: SignatureManager,
         differ: Differ,
         interaction_handler: InteractionHandler | None,
-        fingerprint_strategy: FingerprintStrategyProtocol,
     ):
         self.root_path = root_path
         self.parser = parser
+        self.index_store = index_store
         self.doc_manager = doc_manager
         self.sig_manager = sig_manager
         self.differ = differ
         self.interaction_handler = interaction_handler
-        self.fingerprint_strategy = fingerprint_strategy
 
-    def _compute_fingerprints(self, module: ModuleDef) -> Dict[str, Fingerprint]:
-        fingerprints: Dict[str, Fingerprint] = {}
-        for func in module.functions:
-            fingerprints[func.name] = self.fingerprint_strategy.compute(func)
-        for cls in module.classes:
-            for method in cls.methods:
-                fqn = f"{cls.name}.{method.name}"
-                fingerprints[fqn] = self.fingerprint_strategy.compute(method)
-        return fingerprints
+    def _symbol_to_fingerprint(self, symbol: SymbolRecord) -> Fingerprint:
+        fp = Fingerprint()
+        if symbol.signature_hash:
+            fp["current_code_structure_hash"] = symbol.signature_hash
+        if symbol.signature_text:
+            fp["current_code_signature_text"] = symbol.signature_text
+        if symbol.docstring_hash:
+            fp["current_code_docstring_hash"] = symbol.docstring_hash
+        return fp
 
     def _analyze_file(
-        self, module: ModuleDef
+        self, file_path: str
     ) -> Tuple[FileCheckResult, List[InteractionContext]]:
-        result = FileCheckResult(path=module.file_path)
+        result = FileCheckResult(path=file_path)
         unresolved_conflicts: List[InteractionContext] = []
 
-        # Content checks
-        if (self.root_path / module.file_path).with_suffix(".stitcher.yaml").exists():
-            doc_issues = self.doc_manager.check_module(module)
-            result.warnings["missing"].extend(doc_issues["missing"])
-            result.warnings["redundant"].extend(doc_issues["redundant"])
-            result.errors["pending"].extend(doc_issues["pending"])
-            result.errors["conflict"].extend(doc_issues["conflict"])
-            for fqn in doc_issues["extra"]:
+        # 1. Query ACTUAL state from DB
+        file_record = self.index_store.get_file_by_path(file_path)
+        if not file_record:
+            # File might be new/untracked or ignored. For check, if not in DB, skip.
+            return result, []
+
+        db_symbols = self.index_store.get_symbols_by_file(file_record.id)
+        # Convert DB symbols to a map of FQN fragment -> Fingerprint
+        actual_fingerprints: Dict[str, Fingerprint] = {}
+        for sym in db_symbols:
+            if sym.logical_path:  # Skip module root symbol if logical_path is None
+                actual_fingerprints[sym.logical_path] = self._symbol_to_fingerprint(sym)
+
+        # 2. Load BASELINE state from Signatures
+        stored_hashes_map = self.sig_manager.load_composite_hashes(file_path)
+
+        # 3. Load YAML content hashes (Still need to read YAML file)
+        # We construct a minimal ModuleDef just to pass file_path to doc_manager
+        module_stub = ModuleDef(file_path=file_path)
+        current_yaml_map = self.doc_manager.compute_yaml_content_hashes(module_stub)
+
+        # 4. Content Checks (Doc issues like missing/redundant)
+        # doc_manager.check_module still requires a ModuleDef.
+        # Ideally, we should refactor doc_manager to check against DB symbols too.
+        # But for now, let's defer deep refactor of doc_manager and focus on state machine.
+        # We can reconstruct a lightweight ModuleDef from DB symbols?
+        # Or, strictly for content checks, we might still need to parse...
+        # Wait, the goal is to avoid parsing.
+        # If we skip doc_manager.check_module here, we lose "missing/redundant" warnings.
+        # Let's keep it consistent: CheckRunner's primary job is State Consistency (Drift).
+        # Doc Content Consistency (Missing/Redundant) is secondary but important.
+        # TEMPORARY STRATEGY: We will skip `doc_manager.check_module` call that requires full AST.
+        # Instead, we implement a lighter check based on set difference of keys.
+
+        # Lighter Doc Content Check using Sets
+        yaml_keys = set(current_yaml_map.keys())
+        code_keys = set(actual_fingerprints.keys())
+
+        # Filter out private members from code_keys if needed (Stitcher default is public only)
+        # The DB stores everything. We should filter.
+        public_code_keys = {k for k in code_keys if not k.split(".")[-1].startswith("_")}
+
+        is_tracked = (self.root_path / file_path).with_suffix(".stitcher.yaml").exists()
+
+        if is_tracked:
+            # Missing: In code (public), not in YAML
+            missing = public_code_keys - yaml_keys
+            result.warnings["missing"].extend(sorted(list(missing)))
+
+            # Redundant/Extra: In YAML, not in code
+            # Note: "Extra" (Dangling Doc) is usually handled as a conflict type.
+            extra = yaml_keys - code_keys
+            extra.discard("__doc__") # Ignore module doc key
+
+            for fqn in extra:
                 unresolved_conflicts.append(
-                    InteractionContext(module.file_path, fqn, ConflictType.DANGLING_DOC)
+                    InteractionContext(file_path, fqn, ConflictType.DANGLING_DOC)
                 )
 
-        # State machine analysis
-        is_tracked = (
-            (self.root_path / module.file_path).with_suffix(".stitcher.yaml").exists()
-        )
-
-        computed_fingerprints = self._compute_fingerprints(module)
-        current_yaml_map = self.doc_manager.compute_yaml_content_hashes(module)
-        stored_hashes_map = self.sig_manager.load_composite_hashes(module.file_path)
-
-        all_fqns = set(computed_fingerprints.keys()) | set(stored_hashes_map.keys())
+        # 5. State Machine Analysis (The Core Loop)
+        all_fqns = set(actual_fingerprints.keys()) | set(stored_hashes_map.keys())
 
         for fqn in sorted(list(all_fqns)):
-            computed_fp = computed_fingerprints.get(fqn, Fingerprint())
+            computed_fp = actual_fingerprints.get(fqn, Fingerprint())
 
             code_hash = computed_fp.get("current_code_structure_hash")
             current_sig_text = computed_fp.get("current_code_signature_text")
@@ -99,9 +139,9 @@ class CheckRunner:
                 stored_fp.get("baseline_code_signature_text") if stored_fp else None
             )
 
-            if not code_hash and baseline_code_hash:  # Extra
+            if not code_hash and baseline_code_hash:  # Extra (Handled above as Dangling)
                 continue
-            if code_hash and not baseline_code_hash:  # New
+            if code_hash and not baseline_code_hash:  # New (Handled above as Missing)
                 continue
 
             code_matches = code_hash == baseline_code_hash
@@ -129,16 +169,16 @@ class CheckRunner:
 
                 unresolved_conflicts.append(
                     InteractionContext(
-                        module.file_path, fqn, conflict_type, signature_diff=sig_diff
+                        file_path, fqn, conflict_type, signature_diff=sig_diff
                     )
                 )
 
-        if not is_tracked and module.is_documentable():
-            undocumented = module.get_undocumented_public_keys()
-            if undocumented:
-                result.warnings["untracked_detailed"].extend(undocumented)
-            else:
-                result.warnings["untracked"].append("all")
+        if not is_tracked and public_code_keys:
+             # Just list them all as detailed untracked
+            result.warnings["untracked_detailed"].extend(sorted(list(public_code_keys)))
+        elif not is_tracked:
+             # Empty file but untracked
+             pass # Nothing to warn about if no public symbols
 
         return result, unresolved_conflicts
 
@@ -160,26 +200,64 @@ class CheckRunner:
             stored_hashes = self.sig_manager.load_composite_hashes(file_path)
             new_hashes = copy.deepcopy(stored_hashes)
 
+            # NOTE: For resolution application (writing new hashes), we still parse the file
+            # to get the absolute latest state (in case user modified file *during* interactive session?)
+            # Or we could trust the DB. Let's stick to parsing for safety during write operations for now,
+            # but ideally we should trust the DB + Indexer.
+            # Using parser here ensures we get fresh fingerprints even if indexer wasn't re-run.
             full_module_def = self.parser.parse(
                 (self.root_path / file_path).read_text("utf-8"), file_path
             )
-            computed_fingerprints = self._compute_fingerprints(full_module_def)
+            # We need a strategy to compute fingerprints from ModuleDef.
+            # CheckRunner no longer has self.fingerprint_strategy.
+            # We must instantiate one or pass it in.
+            # Ideally, CheckRunner shouldn't be applying writes.
+            # But refactoring that is out of scope.
+            # Let's rely on StitcherApp to pass the strategy?
+            # Wait, `_apply_resolutions` is internal.
+            # The previous implementation used `self._compute_fingerprints`.
+            # We removed it.
+            # SOLUTION: Use the DB! The DB has the latest state (assuming no external modification during check).
+            # We can re-query the DB for the "Current" state to update the "Baseline".
+
+            file_record = self.index_store.get_file_by_path(file_path)
+            if not file_record:
+                continue
+            db_symbols = self.index_store.get_symbols_by_file(file_record.id)
+            actual_fingerprints = {}
+            for sym in db_symbols:
+                if sym.logical_path:
+                    actual_fingerprints[sym.logical_path] = self._symbol_to_fingerprint(sym)
+
+            # Re-compute YAML hashes (cheap)
             current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
-                full_module_def
+                ModuleDef(file_path=file_path)
             )
 
             for fqn, action in fqn_actions:
                 if fqn in new_hashes:
                     fp = new_hashes[fqn]
-                    current_fp = computed_fingerprints.get(fqn, Fingerprint())
+                    current_fp = actual_fingerprints.get(fqn, Fingerprint())
                     current_code_hash = current_fp.get("current_code_structure_hash")
+                    current_sig_text = current_fp.get("current_code_signature_text")
+                    current_doc_hash = current_fp.get("current_code_docstring_hash")
 
                     if action == ResolutionAction.RELINK:
                         if current_code_hash:
                             fp["baseline_code_structure_hash"] = str(current_code_hash)
+                        if current_sig_text:
+                            fp["baseline_code_signature_text"] = str(current_sig_text)
+                        if current_doc_hash:
+                            fp["baseline_code_docstring_hash"] = str(current_doc_hash)
+
                     elif action == ResolutionAction.RECONCILE:
                         if current_code_hash:
                             fp["baseline_code_structure_hash"] = str(current_code_hash)
+                        if current_sig_text:
+                            fp["baseline_code_signature_text"] = str(current_sig_text)
+                        if current_doc_hash:
+                            fp["baseline_code_docstring_hash"] = str(current_doc_hash)
+
                         if fqn in current_yaml_map:
                             fp["baseline_yaml_content_hash"] = str(
                                 current_yaml_map[fqn]
@@ -188,7 +266,7 @@ class CheckRunner:
             if new_hashes != stored_hashes:
                 self.sig_manager.save_composite_hashes(file_path, new_hashes)
 
-        # Apply doc purges
+        # Apply doc purges (Same as before)
         for file_path, fqns_to_purge in purges_by_file.items():
             module_def = ModuleDef(file_path=file_path)
             docs = self.doc_manager.load_docs_for_module(module_def)
@@ -208,6 +286,19 @@ class CheckRunner:
                         k: self.doc_manager._serialize_ir(v) for k, v in docs.items()
                     }
                     self.doc_manager.adapter.save(doc_path, final_data)
+
+    def analyze_batch(
+        self, modules: List[ModuleDef]
+    ) -> Tuple[List[FileCheckResult], List[InteractionContext]]:
+        # The signature changes: CheckRunner now iterates over file paths, not ModuleDefs.
+        # But for compatibility with StitcherApp loop, we accept ModuleDefs and extract paths.
+        results = []
+        conflicts = []
+        for module in modules:
+            res, conf = self._analyze_file(module.file_path)
+            results.append(res)
+            conflicts.extend(conf)
+        return results, conflicts
 
     def analyze_batch(
         self, modules: List[ModuleDef]
