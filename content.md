@@ -7,36 +7,28 @@ style: ruff and stitcher
 
 ### 📝 变更文件摘要:
 ```
-.../src/needle/pointer/__init__.json               |  4 +-
- .../pyneedle-pointer/src/needle/pointer/core.json  | 25 ++----
- .../pyneedle-pointer/src/needle/pointer/set.json   | 13 +--
- .../src/needle/operators/dict_operator.json        | 10 +--
- .../src/needle/operators/fs_operator.json          | 10 +--
- .../src/needle/operators/i18n_factory.json         | 10 +--
- .../src/needle/operators/overlay_operator.json     | 10 +--
- .../pyneedle-runtime/src/needle/runtime.json       |  4 +-
- .../pyneedle-spec/src/needle/spec/protocols.json   | 55 ++++--------
- .../src/stitcher/app/core.json                     | 98 ++--------------------
- .../src/stitcher/app/handlers/noop_handler.json    |  7 +-
- .../src/stitcher/app/protocols.json                | 31 ++-----
- .../src/stitcher/app/runners/check.json            | 28 +++----
- .../src/stitcher/app/runners/coverage.json         |  9 --
- .../src/stitcher/app/runners/index.json            |  2 -
- .../src/stitcher/app/runners/init.json             |  5 --
- .../src/stitcher/app/runners/pump.json             | 10 ---
- .../src/stitcher/app/runners/transform.json        |  5 --
- .../src/stitcher/app/services/differ.json          |  7 +-
- .../src/stitcher/app/services/doc_manager.json     | 57 ++++---------
- .../src/stitcher/app/services/merger.json          |  7 +-
- .../stitcher/app/services/signature_manager.json   | 35 ++------
- .../src/stitcher/cli/commands/basics.json          | 12 +--
- .../src/stitcher/cli/commands/check.json           |  3 +-
- .../src/stitcher/cli/commands/pump.json            |  3 +-
- .../src/stitcher/cli/commands/refactor.json        |  3 +-
- .../stitcher-cli/src/stitcher/cli/factories.json   |  9 +-
- .../stitcher-cli/src/stitcher/cli/handlers.json    | 11 +--
- .../stitcher-cli/src/stitcher/cli/interactive.json | 37 +++-----
- .../stitcher-cli/src/stitcher/cli/main.json        |  7 +-
- ...
- 85 files changed, 363 insertions(+), 1193 deletions(-)
+.../pyneedle-nexus/src/needle/nexus/base.json      |  28 ---
+ .../pyneedle-nexus/src/needle/nexus/loaders.json   |  19 --
+ .../pyneedle-nexus/src/needle/nexus/nexus.json     |  44 -----
+ .../pyneedle-nexus/src/needle/nexus/operators.json |  15 --
+ .../src/needle/loaders/fs_loader.json              |  50 ------
+ .../src/needle/loaders/json_handler.json           |  27 ---
+ .../src/needle/loaders/protocols.json              |  19 --
+ .../packages/pyneedle/src/needle/__init__.json     |   4 -
+ .../src/stitcher/app/runners/check.json            |  19 +-
+ .../src/stitcher/app/runners/generate.json         |  38 ----
+ .../app/services/stub_package_manager.json         |  15 --
+ .../stitcher-index/src/stitcher/index/scanner.json |  41 -----
+ .../src/stitcher/io/adapters/yaml_adapter.json     |  15 --
+ .../stitcher-io/src/stitcher/io/interfaces.json    |  15 --
+ .../src/stitcher/io/stub_generator.json            |  34 ----
+ .../stitcher/python/analysis/griffe/parser.json    |  70 --------
+ .../src/stitcher/refactor/workspace.json           |  50 ------
+ .../src/stitcher/scanner/inspector.json            |  20 ---
+ .../src/stitcher/scanner/parser.json               |  72 --------
+ .../src/stitcher/scanner/transformer.json          |  87 ---------
+ .../src/stitcher/test_utils/nexus.json             |  19 --
+ .../stitcher-application/src/stitcher/app/core.py  |  16 +-
+ .../src/stitcher/app/runners/check.py              | 197 +++++++++------------
+ 23 files changed, 96 insertions(+), 818 deletions(-)
 ```
