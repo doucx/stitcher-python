@@ -1,6 +1,6 @@
 import ast
 from pathlib import Path
-from typing import List, cast, Any, Optional
+from typing import List, cast, Any, Optional, Union
 import logging
 
 import griffe
@@ -86,7 +86,9 @@ class GriffePythonParser(LanguageParserProtocol):
             imports=imports,
         )
 
-    def _extract_location(self, obj: griffe.Object) -> Optional[SourceLocation]:
+    def _extract_location(
+        self, obj: Union[griffe.Object, griffe.Alias]
+    ) -> Optional[SourceLocation]:
         try:
             # Accessing lineno on an Alias triggers target resolution.
             # If the target is external/unresolvable, this raises AliasResolutionError (or KeyError).

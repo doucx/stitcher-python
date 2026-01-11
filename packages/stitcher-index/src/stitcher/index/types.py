@@ -21,19 +21,22 @@ class SymbolRecord:
     col_offset: int
     end_lineno: int
     end_col_offset: int
-    file_id: Optional[int] = None  # Optional when inserting if handled by store context
+    file_id: Optional[int] = None
     logical_path: Optional[str] = None
+    canonical_fqn: Optional[str] = None
+    alias_target_fqn: Optional[str] = None
     alias_target_id: Optional[str] = None
     signature_hash: Optional[str] = None
 
 
 @dataclass
 class ReferenceRecord:
-    target_id: str
+    target_fqn: str
     kind: str
     lineno: int
     col_offset: int
     end_lineno: int
     end_col_offset: int
-    source_file_id: Optional[int] = None  # Optional when inserting
-    id: Optional[int] = None  # Database Row ID
+    target_id: Optional[str] = None
+    source_file_id: Optional[int] = None
+    id: Optional[int] = None

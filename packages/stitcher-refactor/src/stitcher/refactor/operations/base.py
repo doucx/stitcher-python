@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
+from stitcher.python.analysis.utils import path_to_logical_fqn
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.refactor.engine.intent import RefactorIntent
 
@@ -21,20 +22,7 @@ class SidecarUpdateMixin:
             return None
 
         rel_path = path.relative_to(base_path)
-        parts = list(rel_path.parts)
-
-        if parts[-1].endswith(".py"):
-            parts[-1] = parts[-1][:-3]
-        elif parts[-1].endswith(".pyi"):
-            parts[-1] = parts[-1][:-4]
-
-        if parts[-1] == "__init__":
-            parts = parts[:-1]
-
-        if not parts:
-            return ""
-
-        return ".".join(parts)
+        return path_to_logical_fqn(rel_path.as_posix())
 
     def _update_sidecar_data(
         self,
