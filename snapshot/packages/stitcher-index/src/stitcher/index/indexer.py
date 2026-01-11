@@ -22,7 +22,7 @@ class FileIndexer:
         self.adapters[extension] = adapter
 
     def index_files(self, discovered_paths: Set[str]) -> Dict[str, int]:
-        stats = {"added": 0, "updated": 0, "deleted": 0, "skipped": 0}
+        stats = {"added": 0, "updated": 0, "deleted": 0, "skipped": 0, "errors": 0}
 
         # Load DB state
         known_files: Dict[str, FileRecord] = {
@@ -78,28 +78,33 @@ class FileIndexer:
             if is_new_content:
                 stats["updated" if record else "added"] += 1
 
-            self._process_file_content(file_id, abs_path, content_bytes)
+            if not self._process_file_content(file_id, abs_path, content_bytes):
+                stats["errors"] += 1
 
         # --- Linking ---
         self.linker.link()
         return stats
 
-    def _process_file_content(self, file_id: int, abs_path: Path, content_bytes: bytes):
+    def _process_file_content(
+        self, file_id: int, abs_path: Path, content_bytes: bytes
+    ) -> bool:
         try:
             text_content = content_bytes.decode("utf-8")
         except UnicodeDecodeError:
             self.store.update_analysis(file_id, [], [])
-            return
+            return True  # Not a parser error, just binary file
 
         ext = abs_path.suffix
         adapter = self.adapters.get(ext)
         if not adapter:
             self.store.update_analysis(file_id, [], [])
-            return
+            return True
 
         try:
             symbols, references = adapter.parse(abs_path, text_content)
             self.store.update_analysis(file_id, symbols, references)
+            return True
         except Exception as e:
             log.error(f"Failed to parse {abs_path}: {e}")
             self.store.update_analysis(file_id, [], [])
+            return False

@@ -27,4 +27,9 @@ class IndexRunner:
             deleted=stats["deleted"],
             skipped=stats["skipped"],
         )
+
+        if stats.get("errors", 0) > 0:
+            bus.error(L.error.generic, error=f"Failed to index {stats['errors']} file(s). Check logs for details.")
+            return False
+
         return True
