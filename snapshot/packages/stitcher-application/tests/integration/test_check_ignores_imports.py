@@ -1,7 +1,10 @@
 import pytest
 from needle.pointer import L
 
-from stitcher.test_utils import WorkspaceFactory, SpyBus, create_test_app
+# Explicitly import from submodules to respect the lazy-loading architecture
+from stitcher.test_utils.workspace import WorkspaceFactory
+from stitcher.test_utils.bus import SpyBus
+from stitcher.test_utils.helpers import create_test_app
 
 
 def test_check_does_not_report_imports_as_missing_docs(

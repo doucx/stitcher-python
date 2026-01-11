@@ -4,8 +4,7 @@ from typing import List, Dict, Any, Optional, Union
 # No top-level imports of stitcher packages to avoid coverage warnings
 from needle.pointer import SemanticPointer
 
-
-class SpyRenderer(Renderer):
+class SpyRenderer:
     def __init__(self):
         self.messages: List[Dict[str, Any]] = []
 
@@ -23,7 +22,7 @@ class SpyBus:
 
     @contextmanager
     def patch(self, monkeypatch: Any, target: str = "stitcher.common.bus"):
-        # Lazy import to avoid early pollution of sys.modules
+        # Lazy import inside the context manager
         import stitcher.common
         
         # The singleton instance we need to mutate
@@ -33,20 +32,11 @@ class SpyBus:
         def intercept_render(
             level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any
         ) -> None:
-            # 1. Capture the semantic pointer
             if isinstance(msg_id, SemanticPointer):
                 self._spy_renderer.record(level, msg_id, kwargs)
 
-            # 2. We deliberately DO NOT call the original _render logic here
-            # because we don't want tests spamming stdout, and we don't
-            # want to rely on the real renderer (CLI) being configured.
-
-        # Apply In-Place Patches using monkeypatch (handles restoration automatically)
-        # 1. Swap the _render method to intercept calls
+        # Apply In-Place Patches
         monkeypatch.setattr(real_bus, "_render", intercept_render)
-
-        # 2. Swap the _renderer to our spy (though intercept_render mostly handles logic,
-        # setting this ensures internal checks for valid renderer pass if needed)
         monkeypatch.setattr(real_bus, "_renderer", self._spy_renderer)
 
         yield self
@@ -65,7 +55,6 @@ class SpyBus:
                 break
 
         if not found:
-            # Enhanced error message for debugging
             ids_seen = [m["id"] for m in captured]
             raise AssertionError(
                 f"Message with ID '{key}' was not sent.\nCaptured IDs: {ids_seen}"
