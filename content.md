@@ -1,207 +1,66 @@
-好的，我来修复这些测试失败。
+好的，我们已经完成了代码修改并验证了测试。现在，我将生成一个 `[COMMIT]` 计划，将这些针对基准存档与 SURI 对齐的改进正式提交。
 
-## [WIP] fix(tests): 更新测试套件以适配 SURI 格式的签名文件
-
-### 错误分析
-测试失败的根本原因在于上一步的重构。我将 `SignatureManager` 保存的 `.json` 签名文件中的字典键从简单的 FQN 片段（如 `func`）更改为了全局唯一的 SURI 字符串（如 `py://src/app.py#func`）。
-
-然而，大量的集成测试依赖于一个名为 `get_stored_hashes` 的测试辅助函数来读取这些签名文件，而这个函数并未同步更新。它仍然只是简单地加载 JSON，导致测试代码在尝试用旧的、简单的键（`func`）访问字典时，因找不到键而抛出 `KeyError`。
-
-此外，`SignatureManager` 自己的单元测试也存在一个问题：它直接检查了写入磁盘的 JSON 文件的内容，但其断言部分没有更新为使用新的 SURI 键，因此也失败了。
+## [COMMIT] refactor(application): 将签名存档标识符对齐为 SURI
 
 ### 用户需求
-修复所有因 `KeyError` 导致的测试失败，使测试套件能够正确理解和处理 SURI 格式的签名文件。
+根据阶段 2 的实施计划，将 `.stitcher/signatures/*.json` 中的基准数据标识符从局部的 FQN 片段升级为全局唯一的 SURI，并扩展对新增基准哈希字段的支持。
 
 ### 评论
-这是一个典型的“实现与测试脱节”的例子。修复这个问题的关键是让测试基础设施（辅助函数）与被测试的组件（`SignatureManager`）遵循相同的协议。通过将 SURI 解析逻辑集中到 `SignatureManager` 并让测试工具调用它，我们不仅修复了当前的 Bug，还提高了代码的健壮性和可维护性。
+通过此次重构，我们成功地将基准存档（Baseline）与索引现状（Current State）在标识符层面上进行了统一。这不仅消除了跨文件符号识别的歧义，还为下一步实现完全不依赖源码读取的 `check` 逻辑奠定了坚实的数据基础。
 
 ### 目标
-1.  **修复核心测试辅助函数**: 修改 `stitcher-test-utils` 包中的 `get_stored_hashes` 函数，使其通过 `SignatureManager` 加载签名，而不是直接读取 JSON。
-2.  **修复单元测试**: 更新 `test_signature_manager.py` 中直接检查文件内容的断言，使其能够识别并使用 SURI 键。
+1.  将 `SignatureManager` 的 JSON 存储格式切换为 SURI Key。
+2.  确保 `Fingerprint` 能够正确加载和存储新增的 `signature_text` 和 `docstring_hash` 基准字段。
+3.  同步更新测试基础设施 (`get_stored_hashes`) 以维持开发体验。
 
 ### 基本原理
-我们将把解析 SURI 的责任完全交给 `SignatureManager`。测试辅助函数 `get_stored_hashes` 将不再关心 JSON 的内部格式，而是委托 `SignatureManager.load_composite_hashes` 来加载和解析签名。由于 `load_composite_hashes` 的返回值（`Dict[str, Fingerprint]`）的键已经是 FQN 片段，因此所有依赖 `get_stored_hashes` 的上层测试代码无需任何改动即可恢复正常工作。对于单元测试，我们将直接在断言中使用 SURI 字符串来验证文件的写入是否正确。
+我们利用 `SURIGenerator` 作为权威的身份编码器，在写入 JSON 时将文件路径与 FQN 缝合为 SURI，在读取时将其解构回 FQN 片段。这种“全局键，局部值”的模式既保证了存储层面的绝对唯一性，又保持了应用层逻辑的兼容性。
 
 ### 标签
-#intent/fix #flow/ready #priority/critical #comp/tests #concept/state #scope/dx #ai/instruct #task/domain/storage #task/object/stitcher-index #task/action/upgrade-schema #task/state/continue
+#intent/refine #flow/ready #priority/high #comp/application #comp/engine #comp/tests #concept/state #scope/core #ai/instruct #task/domain/storage #task/object/signature-archive #task/action/alignment #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 修复核心测试辅助函数 `get_stored_hashes`
+#### Acts 1: 提交变更
 
-我们将修改 `stitcher-test-utils` 中的 `helpers.py`，让 `get_stored_hashes` 使用 `SignatureManager` 来加载数据，从而正确处理 SURI 键。
+我们将把涉及 `stitcher-index`, `stitcher-python-adapter`, `stitcher-application` 以及 `stitcher-test-utils` 的所有改动一并提交，因为它们构成了一个完整的架构升级单元。
 
 ~~~~~act
-patch_file
+git_add
+packages/stitcher-index/src/stitcher/index/schema.sql
+packages/stitcher-index/src/stitcher/index/types.py
+packages/stitcher-index/src/stitcher/index/store.py
+packages/stitcher-python-adapter/src/stitcher/adapter/python/fingerprint.py
+packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py
+packages/stitcher-application/src/stitcher/app/services/signature_manager.py
+packages/stitcher-application/tests/unit/test_signature_manager.py
 packages/stitcher-test-utils/src/stitcher/test_utils/helpers.py
 ~~~~~
-~~~~~python.old
-import json
-from pathlib import Path
-from typing import Optional
-
-from stitcher.app import StitcherApp
-from stitcher.app.protocols import InteractionHandler
-from stitcher.adapter.python import (
-    PythonTransformer,
-    PythonFingerprintStrategy,
-)
-from stitcher.workspace import Workspace
-
-from stitcher.adapter.python.griffe_parser import GriffePythonParser
-from stitcher.index.db import DatabaseManager
-from stitcher.index.store import IndexStore
-from stitcher.index.indexer import FileIndexer
-from stitcher.adapter.python.index_adapter import PythonAdapter
-
-
-def create_populated_index(root_path: Path) -> IndexStore:
-    db_path = root_path / ".stitcher" / "index" / "index.db"
-
-    db_manager = DatabaseManager(db_path)
-    db_manager.initialize()
-    store = IndexStore(db_manager)
-
-    # The indexer needs a workspace-aware adapter.
-    workspace = Workspace(root_path)
-    search_paths = workspace.get_search_paths()
-
-    # Discover files first, then index them.
-    files_to_index = workspace.discover_files()
-
-    indexer = FileIndexer(root_path, store)
-    indexer.register_adapter(".py", PythonAdapter(root_path, search_paths))
-    indexer.index_files(files_to_index)
-
-    return store
-
-
-def create_test_app(
-    root_path: Path, interaction_handler: Optional[InteractionHandler] = None
-) -> StitcherApp:
-    parser = GriffePythonParser()
-    transformer = PythonTransformer()
-    strategy = PythonFingerprintStrategy()
-    return StitcherApp(
-        root_path=root_path,
-        parser=parser,
-        transformer=transformer,
-        fingerprint_strategy=strategy,
-        interaction_handler=interaction_handler,
-    )
-
-
-def get_stored_hashes(project_root: Path, file_path: str) -> dict:
-    sig_file = (
-        project_root / ".stitcher/signatures" / Path(file_path).with_suffix(".json")
-    )
-    if not sig_file.exists():
-        return {}
-    with sig_file.open("r") as f:
-        return json.load(f)
-~~~~~
-~~~~~python.new
-import json
-from pathlib import Path
-from typing import Optional
-
-from stitcher.app import StitcherApp
-from stitcher.app.protocols import InteractionHandler
-from stitcher.adapter.python import (
-    PythonTransformer,
-    PythonFingerprintStrategy,
-)
-from stitcher.workspace import Workspace
-
-from stitcher.adapter.python.griffe_parser import GriffePythonParser
-from stitcher.index.db import DatabaseManager
-from stitcher.index.store import IndexStore
-from stitcher.index.indexer import FileIndexer
-from stitcher.adapter.python.index_adapter import PythonAdapter
-from stitcher.app.services import SignatureManager
-
-
-def create_populated_index(root_path: Path) -> IndexStore:
-    db_path = root_path / ".stitcher" / "index" / "index.db"
-
-    db_manager = DatabaseManager(db_path)
-    db_manager.initialize()
-    store = IndexStore(db_manager)
-
-    # The indexer needs a workspace-aware adapter.
-    workspace = Workspace(root_path)
-    search_paths = workspace.get_search_paths()
-
-    # Discover files first, then index them.
-    files_to_index = workspace.discover_files()
-
-    indexer = FileIndexer(root_path, store)
-    indexer.register_adapter(".py", PythonAdapter(root_path, search_paths))
-    indexer.index_files(files_to_index)
-
-    return store
-
-
-def create_test_app(
-    root_path: Path, interaction_handler: Optional[InteractionHandler] = None
-) -> StitcherApp:
-    parser = GriffePythonParser()
-    transformer = PythonTransformer()
-    strategy = PythonFingerprintStrategy()
-    return StitcherApp(
-        root_path=root_path,
-        parser=parser,
-        transformer=transformer,
-        fingerprint_strategy=strategy,
-        interaction_handler=interaction_handler,
-    )
-
-
-def get_stored_hashes(project_root: Path, file_path: str) -> dict:
-    manager = SignatureManager(root_path=project_root)
-    fingerprints = manager.load_composite_hashes(file_path)
-    return {fqn: fp.to_dict() for fqn, fp in fingerprints.items()}
-~~~~~
-
-#### Acts 2: 修复 `SignatureManager` 的单元测试
-
-现在修复 `test_signature_manager.py`，使其在直接检查文件内容时使用正确的 SURI 键进行断言。
 
 ~~~~~act
-patch_file
-packages/stitcher-application/tests/unit/test_signature_manager.py
+git_commit
 ~~~~~
-~~~~~python.old
-    with sig_path.open("r") as f:
-        data = json.load(f)
-        assert data["foo"]["baseline_code_structure_hash"] == "abc"
-        assert data["foo"]["baseline_yaml_content_hash"] == "def"
-        assert data["bar"]["baseline_code_structure_hash"] == "123"
-        # Since it was None, the key should be absent in the serialized JSON
-        assert "baseline_yaml_content_hash" not in data["bar"]
+~~~~~text
+refactor: align signature storage with SURI identifiers
 
-    # Act: Load
-    loaded = manager.load_composite_hashes(module.file_path)
-~~~~~
-~~~~~python.new
-    with sig_path.open("r") as f:
-        data = json.load(f)
-        suri_foo = "py://src/main.py#foo"
-        suri_bar = "py://src/main.py#bar"
-        assert data[suri_foo]["baseline_code_structure_hash"] == "abc"
-        assert data[suri_foo]["baseline_yaml_content_hash"] == "def"
-        assert data[suri_bar]["baseline_code_structure_hash"] == "123"
-        # Since it was None, the key should be absent in the serialized JSON
-        assert "baseline_yaml_content_hash" not in data[suri_bar]
+This commit implements Phase 1 and Phase 2 of the Stitcher 2.0 roadmap, focusing on semantic infrastructure and baseline identifier alignment.
 
-    # Act: Load
-    loaded = manager.load_composite_hashes(module.file_path)
+Core Changes:
+1.  Stitcher Index Schema Upgrade: Added 'signature_text' and 'docstring_hash' fields to the 'symbols' table in index.db to allow query-first logic.
+2.  PythonAdapter Enhancement: Implemented 'DocstringHasher' and updated the extraction pipeline to populate the new semantic fields during indexing.
+3.  SURI Identifier Alignment: Refactored 'SignatureManager' to use SURI (Stitcher Uniform Resource Identifier) as the unique key in JSON baseline files (e.g., 'py://src/app.py#func').
+4.  Fingerprint Expansion: Enabled storage of signature text and docstring hashes in baseline fingerprints.
+5.  Test Infrastructure Update: Synchronized 'get_stored_hashes' helper in test-utils to support SURI resolution, ensuring test suite stability.
+
+These changes decouple the 'Actual' and 'Baseline' states from raw source code reading, enabling the upcoming 'Query-First' refactoring of the Check and Pump runners.
 ~~~~~
 
 ### 下一步建议
 
-测试套件现在应该可以全部通过了。我们已经完成了阶段 2 的核心任务。
+阶段 2 已圆满结束。现在系统的“地基”已经完全对齐。下一步，我们将进入 **阶段 3：逻辑驱动重构 (Query-First Runners)**。
 
-现在，我们可以满怀信心地进入**阶段 3：逻辑驱动重构**。我将准备一个计划来重构 `CheckRunner`，使其完全切换到高性能的 "Query-First" 模式，这将是新架构价值的首次兑现。
+我建议首先重构 `CheckRunner`。目标是让它在执行 `analyze_batch` 时，不再对每一个文件调用 `self.parser.parse()`，而是直接通过 `index_store` 查询数据库，将得到的 `Actual` 结果与 `SignatureManager` 加载的 `Baseline` 结果在内存中进行比对。这将使 `check` 操作变得极快。
+
+如果你准备好了，请指示我开始重构 `CheckRunner`。
