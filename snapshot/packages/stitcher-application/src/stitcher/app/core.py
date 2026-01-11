@@ -209,55 +209,55 @@ class StitcherApp:
         # We wrap the entire multi-target check process in a single DB session
         with self.db_manager.session():
             for config in configs:
-            if config.name != "default":
-                bus.info(L.generate.target.processing, name=config.name)
+                if config.name != "default":
+                    bus.info(L.generate.target.processing, name=config.name)
 
-            # 1. Config Strategy
-            parser, renderer = get_docstring_codec(config.docstring_style)
-            serializer = get_docstring_serializer(config.docstring_style)
-            self.doc_manager.set_strategy(parser, serializer)
+                # 1. Config Strategy
+                parser, renderer = get_docstring_codec(config.docstring_style)
+                serializer = get_docstring_serializer(config.docstring_style)
+                self.doc_manager.set_strategy(parser, serializer)
 
-            # 2. Get Files (Physical) - Zero-IO Path
-            files = self.scanner.get_files_from_config(config)
-            rel_paths = [f.relative_to(self.root_path).as_posix() for f in files]
+                # 2. Get Files (Physical) - Zero-IO Path
+                files = self.scanner.get_files_from_config(config)
+                rel_paths = [f.relative_to(self.root_path).as_posix() for f in files]
 
-            # 3. Get Plugins (Virtual) - AST Path
-            plugin_modules = self.scanner.process_plugins(config.plugins)
+                # 3. Get Plugins (Virtual) - AST Path
+                plugin_modules = self.scanner.process_plugins(config.plugins)
 
-            if not rel_paths and not plugin_modules:
-                continue
+                if not rel_paths and not plugin_modules:
+                    continue
 
-            # 4. Analyze
-            batch_results: List[FileCheckResult] = []
-            batch_conflicts: List[InteractionContext] = []
+                # 4. Analyze
+                batch_results: List[FileCheckResult] = []
+                batch_conflicts: List[InteractionContext] = []
 
-            if rel_paths:
-                f_res, f_conflicts = self.check_runner.analyze_paths(rel_paths)
-                batch_results.extend(f_res)
-                batch_conflicts.extend(f_conflicts)
+                if rel_paths:
+                    f_res, f_conflicts = self.check_runner.analyze_paths(rel_paths)
+                    batch_results.extend(f_res)
+                    batch_conflicts.extend(f_conflicts)
 
-            if plugin_modules:
-                p_res, p_conflicts = self.check_runner.analyze_batch(plugin_modules)
-                batch_results.extend(p_res)
-                batch_conflicts.extend(p_conflicts)
+                if plugin_modules:
+                    p_res, p_conflicts = self.check_runner.analyze_batch(plugin_modules)
+                    batch_results.extend(p_res)
+                    batch_conflicts.extend(p_conflicts)
 
-            all_results.extend(batch_results)
+                all_results.extend(batch_results)
 
-            # 5. Prepare lightweight ModuleDefs for post-processing
-            file_module_stubs = [ModuleDef(file_path=p) for p in rel_paths]
-            batch_modules = file_module_stubs + plugin_modules
+                # 5. Prepare lightweight ModuleDefs for post-processing
+                file_module_stubs = [ModuleDef(file_path=p) for p in rel_paths]
+                batch_modules = file_module_stubs + plugin_modules
 
-            # 6. Reformat FIRST to stabilize file hashes before reconciliation.
-            self.check_runner.reformat_all(batch_modules)
+                # 6. Reformat FIRST to stabilize file hashes before reconciliation.
+                self.check_runner.reformat_all(batch_modules)
 
-            # 7. Auto-Reconcile Docs (now reads stable hashes)
-            self.check_runner.auto_reconcile_docs(batch_results, batch_modules)
+                # 7. Auto-Reconcile Docs (now reads stable hashes)
+                self.check_runner.auto_reconcile_docs(batch_results, batch_modules)
 
-            # 8. Resolve interactive/manual conflicts
-            if not self.check_runner.resolve_conflicts(
-                batch_results, batch_conflicts, force_relink, reconcile
-            ):
-                return False
+                # 8. Resolve interactive/manual conflicts
+                if not self.check_runner.resolve_conflicts(
+                    batch_results, batch_conflicts, force_relink, reconcile
+                ):
+                    return False
 
         # 9. Final Report
         report_success = self.check_runner.report(all_results)
@@ -281,16 +281,16 @@ class StitcherApp:
 
         with self.db_manager.session():
             for config in configs:
-            modules = self._configure_and_scan(config)
-            if not modules:
-                continue
+                modules = self._configure_and_scan(config)
+                if not modules:
+                    continue
 
-            result = self.pump_runner.run_batch(
-                modules, config, tm, strip, force, reconcile
-            )
-            if not result.success:
-                global_success = False
-            all_redundant.extend(result.redundant_files)
+                result = self.pump_runner.run_batch(
+                    modules, config, tm, strip, force, reconcile
+                )
+                if not result.success:
+                    global_success = False
+                all_redundant.extend(result.redundant_files)
 
         if self.scanner.had_errors:
             global_success = False
