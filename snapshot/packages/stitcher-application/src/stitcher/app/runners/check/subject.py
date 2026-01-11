@@ -40,23 +40,28 @@ class ASTCheckSubjectAdapter(CheckSubject):
                 fingerprints[fqn] = self._fingerprint_strategy.compute(method)
         return fingerprints
 
+    def is_documentable(self) -> bool:
+        return self._module.is_documentable()
+
     def get_all_symbol_states(self) -> Dict[str, SymbolState]:
         # 1. Load all necessary data from various sources (the old way)
         source_docs = self._doc_manager.flatten_module_docs(self._module)
         yaml_docs = self._doc_manager.load_docs_for_module(self._module)
         public_fqns = self._module.get_public_documentable_fqns()
-        
+
         fingerprints = self._compute_fingerprints()
         yaml_hashes = self._doc_manager.compute_yaml_content_hashes(self._module)
-        
-        all_fqns = set(source_docs.keys()) | set(yaml_docs.keys())
+        stored_hashes = self._sig_manager.load_composite_hashes(self.file_path)
+
+        all_fqns = set(source_docs.keys()) | set(yaml_docs.keys()) | set(stored_hashes.keys())
         states: Dict[str, SymbolState] = {}
 
         # 2. Iterate and build the state object for each symbol
         for fqn in all_fqns:
             fp = fingerprints.get(fqn, Fingerprint())
             source_ir = source_docs.get(fqn)
-            
+            stored_fp = stored_hashes.get(fqn, Fingerprint())
+
             states[fqn] = SymbolState(
                 fqn=fqn,
                 is_public=(fqn in public_fqns),
@@ -67,6 +72,9 @@ class ASTCheckSubjectAdapter(CheckSubject):
                 exists_in_yaml=(fqn in yaml_docs),
                 yaml_doc_ir=yaml_docs.get(fqn),
                 yaml_content_hash=yaml_hashes.get(fqn),
+                baseline_signature_hash=stored_fp.get("baseline_code_structure_hash"),
+                baseline_signature_text=stored_fp.get("baseline_code_signature_text"),
+                baseline_yaml_content_hash=stored_fp.get("baseline_yaml_content_hash"),
             )
-            
+
         return states
