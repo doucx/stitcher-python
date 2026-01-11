@@ -17,11 +17,13 @@ class IndexCheckSubjectAdapter(CheckSubject):
         index_store: IndexStore,
         doc_manager: DocumentManager,
         sig_manager: SignatureManager,
+        preloaded_symbols: Optional[List[SymbolRecord]] = None,
     ):
         self._file_path = file_path
         self._index_store = index_store
         self._doc_manager = doc_manager
         self._sig_manager = sig_manager
+        self._preloaded_symbols = preloaded_symbols
 
     @property
     def file_path(self) -> str:
@@ -46,7 +48,11 @@ class IndexCheckSubjectAdapter(CheckSubject):
 
     def get_all_symbol_states(self) -> Dict[str, SymbolState]:
         # 1. Load data from all sources
-        symbols_from_db = self._index_store.get_symbols_by_file_path(self.file_path)
+        if self._preloaded_symbols is not None:
+            symbols_from_db = self._preloaded_symbols
+        else:
+            symbols_from_db = self._index_store.get_symbols_by_file_path(self.file_path)
+
         yaml_docs = self._doc_manager.load_docs_for_path(self.file_path)
         stored_hashes = self._sig_manager.load_composite_hashes(self.file_path)
 

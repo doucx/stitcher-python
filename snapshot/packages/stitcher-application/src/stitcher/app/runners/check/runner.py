@@ -62,9 +62,17 @@ class CheckRunner:
         all_results: List[FileCheckResult] = []
         all_conflicts: List[InteractionContext] = []
 
+        # Optimization: Pre-load all symbols for all files in a single batch query
+        all_symbols_map = self.index_store.get_symbols_for_files(file_paths)
+
         for file_path in file_paths:
+            preloaded = all_symbols_map.get(file_path, [])
             subject = IndexCheckSubjectAdapter(
-                file_path, self.index_store, self.doc_manager, self.sig_manager
+                file_path,
+                self.index_store,
+                self.doc_manager,
+                self.sig_manager,
+                preloaded_symbols=preloaded,
             )
             result, conflicts = self.analyzer.analyze_subject(subject)
             all_results.append(result)

@@ -156,6 +156,30 @@ class IndexStore:
             ).fetchall()
             return [SymbolRecord(**dict(row)) for row in rows]
 
+    def get_symbols_for_files(self, file_paths: List[str]) -> Dict[str, List[SymbolRecord]]:
+        if not file_paths:
+            return {}
+
+        results = defaultdict(list)
+        # SQLite handles large IN clauses well, but we use a join for robustness
+        # We use a temporary table or parameter binding if the list is extremely large
+        # For ~440 files, simple parameter binding is sufficient.
+        placeholders = ",".join(["?"] * len(file_paths))
+        query = f"""
+            SELECT s.*, f.path as file_path
+            FROM symbols s
+            JOIN files f ON s.file_id = f.id
+            WHERE f.path IN ({placeholders})
+        """
+
+        with self.db.get_connection() as conn:
+            rows = conn.execute(query, file_paths).fetchall()
+            for row in rows:
+                data = dict(row)
+                path = data.pop("file_path")
+                results[path].append(SymbolRecord(**data))
+        return results
+
     def get_references_by_file(self, file_id: int) -> List[ReferenceRecord]:
         with self.db.get_connection() as conn:
             rows = conn.execute(
