@@ -25,6 +25,7 @@ members = [
     "stitcher-spec",
     "stitcher-stubgen",
     "stitcher-test-utils",
+    "stitcher-workspace",
 ]
 
 [[package]]
@@ -785,6 +786,7 @@ dev = [
     { name = "stitcher-refactor" },
     { name = "stitcher-stubgen" },
     { name = "stitcher-test-utils" },
+    { name = "stitcher-workspace" },
 ]
 
 [package.metadata]
@@ -804,6 +806,7 @@ requires-dist = [
     { name = "stitcher-refactor", marker = "extra == 'dev'", editable = "packages/stitcher-refactor" },
     { name = "stitcher-stubgen", marker = "extra == 'dev'", editable = "packages/stitcher-stubgen" },
     { name = "stitcher-test-utils", marker = "extra == 'dev'", editable = "packages/stitcher-test-utils" },
+    { name = "stitcher-workspace", marker = "extra == 'dev'", editable = "packages/stitcher-workspace" },
 ]
 provides-extras = ["dev"]
 
@@ -917,6 +920,21 @@ requires-dist = [
     { name = "stitcher-index", editable = "packages/stitcher-index" },
     { name = "stitcher-python-adapter", editable = "packages/stitcher-python-adapter" },
     { name = "tomli-w" },
+]
+
+[[package]]
+name = "stitcher-workspace"
+version = "0.1.0"
+source = { editable = "packages/stitcher-workspace" }
+dependencies = [
+    { name = "stitcher-config" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "stitcher-config", editable = "packages/stitcher-config" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.1" },
 ]
 
 [[package]]
