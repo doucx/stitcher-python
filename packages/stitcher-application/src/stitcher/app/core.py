@@ -53,9 +53,10 @@ class StitcherApp:
     ):
         self.root_path = root_path
         self.workspace = Workspace(root_path)
+        self.fingerprint_strategy = fingerprint_strategy
         # 1. Core Services
         self.doc_manager = DocumentManager(root_path)
-        self.sig_manager = SignatureManager(root_path, fingerprint_strategy)
+        self.sig_manager = SignatureManager(root_path)
         self.scanner = ScannerService(root_path, parser)
         self.differ = Differ()
         self.merger = DocstringMerger()
@@ -71,6 +72,7 @@ class StitcherApp:
             self.sig_manager,
             self.differ,
             interaction_handler,
+            fingerprint_strategy=self.fingerprint_strategy,
         )
         self.pump_runner = PumpRunner(
             root_path,
@@ -80,8 +82,14 @@ class StitcherApp:
             self.differ,
             self.merger,
             interaction_handler,
+            fingerprint_strategy=self.fingerprint_strategy,
         )
-        self.init_runner = InitRunner(root_path, self.doc_manager, self.sig_manager)
+        self.init_runner = InitRunner(
+            root_path,
+            self.doc_manager,
+            self.sig_manager,
+            fingerprint_strategy=self.fingerprint_strategy,
+        )
         self.transform_runner = TransformRunner(
             root_path, self.doc_manager, transformer
         )
@@ -109,6 +117,9 @@ class StitcherApp:
     def _load_configs(self) -> Tuple[List[StitcherConfig], Optional[str]]:
         return load_config_from_path(self.root_path)
 
+    def ensure_index_fresh(self) -> None:
+        self.index_runner.run_build(self.workspace)
+
     def _configure_and_scan(self, config: StitcherConfig) -> List[ModuleDef]:
         if config.name != "default":
             bus.info(L.generate.target.processing, name=config.name)
@@ -135,6 +146,7 @@ class StitcherApp:
         return all_modules
 
     def run_from_config(self, dry_run: bool = False) -> List[Path]:
+        self.ensure_index_fresh()
         configs, project_name = self._load_configs()
         all_generated: List[Path] = []
         found_any = False
@@ -182,6 +194,7 @@ class StitcherApp:
         return all_created
 
     def run_check(self, force_relink: bool = False, reconcile: bool = False) -> bool:
+        self.ensure_index_fresh()
         configs, _ = self._load_configs()
         all_results: List[FileCheckResult] = []
         all_modules: List[ModuleDef] = []
@@ -215,6 +228,7 @@ class StitcherApp:
         reconcile: bool = False,
         dry_run: bool = False,
     ) -> PumpResult:
+        self.ensure_index_fresh()
         bus.info(L.pump.run.start)
         configs, _ = self._load_configs()
         tm = TransactionManager(self.root_path, dry_run=dry_run)
@@ -244,6 +258,7 @@ class StitcherApp:
     def run_strip(
         self, files: Optional[List[Path]] = None, dry_run: bool = False
     ) -> List[Path]:
+        self.ensure_index_fresh()
         files_to_process = []
         if files:
             files_to_process = files
@@ -259,6 +274,7 @@ class StitcherApp:
         return modified
 
     def run_inject(self, dry_run: bool = False) -> List[Path]:
+        self.ensure_index_fresh()
         configs, _ = self._load_configs()
         all_modified: List[Path] = []
         found_any_docs = False
@@ -283,6 +299,7 @@ class StitcherApp:
         return all_modified
 
     def run_cov(self) -> bool:
+        self.ensure_index_fresh()
         configs, _ = self._load_configs()
         all_results: List[CoverageResult] = []
 
@@ -300,6 +317,7 @@ class StitcherApp:
         dry_run: bool = False,
         confirm_callback: Optional[Callable[[int], bool]] = None,
     ) -> bool:
+        self.ensure_index_fresh()
         configs, _ = self._load_configs()
         if not configs:
             bus.error(L.error.config.not_found)

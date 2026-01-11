@@ -34,6 +34,7 @@ def runner(tmp_path) -> PumpRunner:
         differ=MagicMock(spec=Differ),
         merger=MagicMock(spec=DocstringMerger),
         interaction_handler=None,
+        fingerprint_strategy=MagicMock(),
     )
 
 
