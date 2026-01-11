@@ -49,13 +49,17 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
     sig_root = project_root / ".stitcher/signatures"
 
     # 2. ANALYSIS
+    index_store = create_populated_index(project_root)
     workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
     graph.load("mypkg")
     graph.load("app")
     sidecar_manager = SidecarManager(root_path=project_root)
     ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
     )
 
     from stitcher.refactor.migration import MigrationSpec

@@ -49,14 +49,18 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
     app_py_path = project_root / "src/app.py"
 
     # 2. ACT
+    index_store = create_populated_index(project_root)
     workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
     # We load 'cascade' and 'app' to build the full semantic picture
     graph.load("cascade")
     graph.load("app")
     sidecar_manager = SidecarManager(root_path=project_root)
     ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
     )
 
     from stitcher.refactor.migration import MigrationSpec

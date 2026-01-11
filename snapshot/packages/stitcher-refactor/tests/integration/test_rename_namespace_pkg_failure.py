@@ -52,15 +52,19 @@ def test_rename_symbol_in_namespace_package_structure(tmp_path):
     main_file = project_root / "packages/stitcher-core/src/stitcher/core/main.py"
 
     # 2. ACT
+    index_store = create_populated_index(project_root)
     workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
 
     # Load the namespace package. Griffe should traverse 'stitcher' -> 'core'
     graph.load("stitcher")
 
     sidecar_manager = SidecarManager(root_path=project_root)
     ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
     )
 
     # Rename MessageBus -> FeedbackBus

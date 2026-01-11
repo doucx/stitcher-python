@@ -35,13 +35,17 @@ def test_move_file_updates_relative_imports_and_scaffolds_init(tmp_path):
     usage_path = project_root / "mypkg/__init__.py"
 
     # 2. ACT
+    index_store = create_populated_index(project_root)
     workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
     graph.load("mypkg")
 
     sidecar_manager = SidecarManager(root_path=project_root)
     ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
     )
 
     from stitcher.refactor.migration import MigrationSpec

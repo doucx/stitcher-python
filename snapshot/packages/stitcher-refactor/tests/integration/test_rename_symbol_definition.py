@@ -33,12 +33,16 @@ def test_rename_fails_to_update_definition_leading_to_import_error(tmp_path):
     usage_file = project_root / "common/__init__.py"
 
     # 2. ACT: Run the refactoring operation.
+    index_store = create_populated_index(project_root)
     workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
     graph.load("common")
     sidecar_manager = SidecarManager(root_path=project_root)
     ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
     )
 
     from stitcher.refactor.migration import MigrationSpec
@@ -94,12 +98,16 @@ def test_rename_operation_succeeds_in_renaming_symbol_definition(tmp_path):
     usage_file = project_root / "mypkg/app.py"
 
     # 2. ACT: Run the refactoring operation.
+    index_store = create_populated_index(project_root)
     workspace = Workspace(root_path=project_root)
-    graph = SemanticGraph(workspace=workspace)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
     graph.load("mypkg")
     sidecar_manager = SidecarManager(root_path=project_root)
     ctx = RefactorContext(
-        workspace=workspace, graph=graph, sidecar_manager=sidecar_manager
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
     )
 
     from stitcher.refactor.migration import MigrationSpec
