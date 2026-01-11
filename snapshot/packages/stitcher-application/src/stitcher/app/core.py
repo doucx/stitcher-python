@@ -195,14 +195,13 @@ class StitcherApp:
         return all_created
 
     def run_check(self, force_relink: bool = False, reconcile: bool = False) -> bool:
+        self.scanner.had_errors = False
         if not self.ensure_index_fresh():
             self.scanner.had_errors = True
-        
+
         configs, _ = self._load_configs()
         all_results: List[FileCheckResult] = []
         all_modules_for_post_processing: List[ModuleDef] = []
-
-        self.scanner.had_errors = False
 
         for config in configs:
             if config.name != "default":
