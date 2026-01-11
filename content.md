@@ -1,72 +1,187 @@
-所有的测试用例都已经顺利通过，这标志着我们对 `check` 指令进行的架构升级——**引入协议抽象层**——已经完全成功并达到了稳定状态。
+好的，我将开始实施 Zero-IO Check 路线图的第一阶段。
 
-现在，`CheckAnalyzer` 已经彻底摆脱了对具体数据来源的依赖，所有逻辑都建立在纯粹的 `SymbolState` 比对之上。我们成功地在保持现有功能完全不变的前提下，完成了最关键的“心脏搭桥”。
+此阶段的核心是创建一个新的 `IndexCheckSubjectAdapter`，它将作为 `CheckAnalyzer` 的数据源，但其数据完全来自预先构建的 SQLite 索引，而不是通过实时解析 Python 文件的 AST。这将为后续阶段消除 I/O 瓶颈奠定基础。
 
-## [COMMIT] refactor(check): 实现 CheckSubject 协议抽象并重构分析逻辑
+我将修改 `packages/stitcher-application/src/stitcher/app/runners/check/subject.py` 文件，在现有的 `ASTCheckSubjectAdapter` 旁边添加新的 `IndexCheckSubjectAdapter` 实现。
+
+## [WIP] feat: 实现基于索引的 IndexCheckSubjectAdapter
 
 ### 用户需求
 
-通过引入协议层，将 `CheckAnalyzer` 的比对逻辑与其数据获取逻辑解耦，为后续迁移到基于数据库的 Zero-IO 检查模式铺平道路。
+根据 Zero-IO Check 路线图的第一阶段，需要创建一个名为 `IndexCheckSubjectAdapter` 的新类，该类实现 `CheckSubject` 协议，但其数据完全来源于 SQLite 索引 (`IndexStore`)，而不是通过解析 AST。
 
 ### 评论
 
-这是一次极具战略意义的重构。我们不仅优化了 `CheckAnalyzer` 的代码质量，使其从一个臃肿的命令执行器转变为一个纯粹的、易于测试的状态机；更重要的是，我们建立了一个名为 `CheckSubject` 的契约。这个契约允许我们在不触动任何核心检查逻辑的情况下，随时切换后端数据源。测试的全绿证明了这种抽象对原始复杂逻辑的完美覆盖。
+这是实现 Zero-IO Check 的关键一步。通过创建一个与 `ASTCheckSubjectAdapter` 接口兼容但数据源不同的适配器，我们可以无缝地将 `CheckRunner` 的底层数据提供者切换到数据库，而无需修改核心的检查逻辑 (`CheckAnalyzer`)。这体现了良好的分层设计和依赖倒置原则。
 
 ### 目标
 
-1.  **确立契约**：定义 `CheckSubject` 协议和 `SymbolState` 数据类，统一了符号状态的描述语言。
-2.  **逻辑重写**：将 `CheckAnalyzer` 的 100+ 行过程式代码重构为基于状态机的协议驱动逻辑。
-3.  **适配旧世界**：实现 `ASTCheckSubjectAdapter`，将现有的 `ModuleDef` 和 `DocumentManager` 能力封装在协议之下，确保完全的向后兼容。
-4.  **消除歧义**：针对 `__doc__` 模块文档在 AST 模式下的可选性进行了精确的逻辑对齐。
+1.  在 `stitcher.app.runners.check.subject` 模块中创建 `IndexCheckSubjectAdapter` 类。
+2.  实现该类，使其通过 `IndexStore`, `DocumentManager`, 和 `SignatureManager` 获取所有必要的数据。
+3.  确保 `get_all_symbol_states` 方法能正确地将 `SymbolRecord` 映射为 `SymbolState`，并正确处理模块文档 (`__doc__`) 和符号可见性。
+4.  实现 `is_documentable` 方法，使其行为与 AST 版本保持一致。
 
 ### 基本原理
 
-通过“适配器模式”隔离不稳定性。我们将最易变的“如何解析代码”部分隔离在适配器中，保持了“如何判定一致性”这一核心领域逻辑的纯粹和稳定。这种分层确保了系统在面对未来索引驱动（DB-driven）的需求时，具备极高的灵活性。
+新的 `IndexCheckSubjectAdapter` 将遵循 `CheckSubject` 协议，使其可以被 `CheckAnalyzer` 透明地使用。
+
+-   **数据源**：它将从三个地方聚合信息：
+    1.  `IndexStore`：获取所有符号的定义、签名哈希、文档内容等代码侧信息。
+    2.  `DocumentManager`：加载 `.stitcher.yaml` 文件以获取文档侧信息。
+    3.  `SignatureManager`：加载 `.stitcher/signatures/` 文件以获取基线哈希。
+-   **核心逻辑**：`get_all_symbol_states` 方法是核心。它会整合来自上述三个数据源的所有 FQN，然后为每个 FQN 构建一个完整的 `SymbolState` 快照，描述其在代码、YAML 和基线中的完整状态。
+-   **性能**：此适配器执行的所有操作（DB 查询、YAML 读取、JSON 读取）都比解析 Python AST 快几个数量级，从而为后续的性能提升奠定了基础。
 
 ### 标签
 
-#intent/refine #flow/ready #priority/high #comp/application #concept/state #scope/core #ai/refine #task/domain/quality #task/object/check-runner #task/action/refactor #task/state/end
+#intent/build #flow/ready #priority/high
+#comp/engine #concept/state #scope/core
+#ai/instruct
+#task/domain/testing #task/object/zero-io-check #task/action/implementation #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: 提交重构代码
+#### Acts 1: 实现 IndexCheckSubjectAdapter
 
-我们将协议定义、适配器实现以及重构后的分析器和运行器代码添加到暂存区并提交。
+我将向 `subject.py` 文件中添加新的 `IndexCheckSubjectAdapter` 类及其完整实现。
 
 ~~~~~act
-git_add
-packages/stitcher-application/src/stitcher/app/runners/check/protocols.py
+patch_file
 packages/stitcher-application/src/stitcher/app/runners/check/subject.py
-packages/stitcher-application/src/stitcher/app/runners/check/analyzer.py
-packages/stitcher-application/src/stitcher/app/runners/check/runner.py
 ~~~~~
+~~~~~python.old
+from typing import Dict
+from stitcher.spec import (
+    ModuleDef,
+    Fingerprint,
+    FingerprintStrategyProtocol,
+)
+from stitcher.app.services import DocumentManager, SignatureManager
+from .protocols import SymbolState, CheckSubject
 
-~~~~~act
-git_commit
+
+class ASTCheckSubjectAdapter(CheckSubject):
 ~~~~~
-~~~~~text
-refactor(check): introduce CheckSubject protocol and refactor logic
+~~~~~python.new
+from typing import Dict, Optional
+from stitcher.spec import (
+    ModuleDef,
+    Fingerprint,
+    FingerprintStrategyProtocol,
+)
+from stitcher.app.services import DocumentManager, SignatureManager
+from stitcher.index.store import IndexStore
+from stitcher.index.types import SymbolRecord
+from .protocols import SymbolState, CheckSubject
 
-Implemented a protocol-based abstraction layer for the check command to
-decouple inspection logic from data acquisition.
 
-Key changes:
-- Defined `CheckSubject` protocol and `SymbolState` data class as the core contract.
-- Implemented `ASTCheckSubjectAdapter` to wrap existing AST-based analysis logic.
-- Rewrote `CheckAnalyzer` to be a pure state machine driven by the protocol.
-- Refined visibility and optionality rules for `__doc__` to ensure 100% backward compatibility.
+class IndexCheckSubjectAdapter(CheckSubject):
+    def __init__(
+        self,
+        file_path: str,
+        index_store: IndexStore,
+        doc_manager: DocumentManager,
+        sig_manager: SignatureManager,
+    ):
+        self._file_path = file_path
+        self._index_store = index_store
+        self._doc_manager = doc_manager
+        self._sig_manager = sig_manager
 
-This architecture enables a seamless transition to the upcoming database-driven
-(Zero-IO) check mode by simply swapping adapters.
+    @property
+    def file_path(self) -> str:
+        return self._file_path
+
+    def _is_public(self, fqn: str) -> bool:
+        # Replicate public visibility logic from AST-based approach
+        parts = fqn.split(".")
+        return not any(p.startswith("_") and p != "__doc__" for p in parts)
+
+    def is_documentable(self) -> bool:
+        symbols = self._index_store.get_symbols_by_file_path(self.file_path)
+        if not symbols:
+            return False
+
+        for sym in symbols:
+            if sym.kind == "module" and sym.docstring_content:
+                return True
+            if sym.logical_path and self._is_public(sym.logical_path):
+                return True
+        return False
+
+    def get_all_symbol_states(self) -> Dict[str, SymbolState]:
+        # 1. Load data from all sources
+        symbols_from_db = self._index_store.get_symbols_by_file_path(self.file_path)
+        yaml_docs = self._doc_manager.load_docs_for_path(self.file_path)
+        stored_hashes = self._sig_manager.load_composite_hashes(self.file_path)
+
+        yaml_content_hashes = {
+            fqn: self._doc_manager.compute_yaml_content_hash(
+                self._doc_manager._serialize_ir(ir)
+            )
+            for fqn, ir in yaml_docs.items()
+        }
+
+        # 2. Map symbols for easy lookup
+        symbol_map: Dict[str, SymbolRecord] = {}
+        module_symbol: Optional[SymbolRecord] = None
+        for sym in symbols_from_db:
+            if sym.kind == "module":
+                module_symbol = sym
+            elif sym.logical_path:
+                symbol_map[sym.logical_path] = sym
+
+        # 3. Aggregate all unique FQNs
+        all_fqns = (
+            set(symbol_map.keys())
+            | set(yaml_docs.keys())
+            | set(stored_hashes.keys())
+        )
+        if module_symbol:
+            all_fqns.add("__doc__")
+
+        states: Dict[str, SymbolState] = {}
+
+        # 4. Build state for each FQN
+        for fqn in all_fqns:
+            symbol_rec: Optional[SymbolRecord] = None
+            if fqn == "__doc__":
+                symbol_rec = module_symbol
+            else:
+                symbol_rec = symbol_map.get(fqn)
+
+            stored_fp = stored_hashes.get(fqn, Fingerprint())
+
+            states[fqn] = SymbolState(
+                fqn=fqn,
+                is_public=self._is_public(fqn),
+                # Source Code State (from Index)
+                exists_in_code=(symbol_rec is not None),
+                source_doc_content=symbol_rec.docstring_content if symbol_rec else None,
+                signature_hash=symbol_rec.signature_hash if symbol_rec else None,
+                signature_text=symbol_rec.signature_text if symbol_rec else None,
+                # YAML State
+                exists_in_yaml=(fqn in yaml_docs),
+                yaml_doc_ir=yaml_docs.get(fqn),
+                yaml_content_hash=yaml_content_hashes.get(fqn),
+                # Baseline State
+                baseline_signature_hash=stored_fp.get("baseline_code_structure_hash"),
+                baseline_signature_text=stored_fp.get("baseline_code_signature_text"),
+                baseline_yaml_content_hash=stored_fp.get("baseline_yaml_content_hash"),
+            )
+
+        return states
+
+
+class ASTCheckSubjectAdapter(CheckSubject):
 ~~~~~
 
 ### 下一步建议
 
-既然舞台已经搭好，演员（Analyzer）已经熟悉了剧本（Protocol），现在是时候引入新的主角了：**`IndexCheckSubjectAdapter`**。
+我们已经成功实现了第一阶段。`IndexCheckSubjectAdapter` 现在已经可用，它为 `CheckAnalyzer` 提供了一个完全基于数据库的数据视图。
 
-在下一个计划中，我将：
-1.  实现 `IndexCheckSubjectAdapter`：它将直接从我们在上上个步骤中升级过的 SQLite 索引中拉取 `SymbolRecord`，并填充 `SymbolState`。
-2.  由于索引中现在存有 `docstring_content`，它将能够直接为 `CheckAnalyzer` 提供生成 Diff 所需的文本，而**完全不需要再打开 .py 文件**。
-3.  修改 `StitcherApp`，将 `run_check` 的默认驱动方式从“扫描文件”改为“读取索引”，彻底开启 **Zero-IO Check** 时代。
+下一步是实施路线图的**第二阶段：重构 `CheckRunner` 的驱动模式**。我将修改 `CheckRunner`，为其增加一个新的 `analyze_paths` 方法，该方法接收文件路径列表并使用我们刚刚创建的 `IndexCheckSubjectAdapter` 来执行分析，从而摆脱对 `ModuleDef` 对象的直接依赖。
+
+如果你同意，我将立即开始制定第二阶段的计划。

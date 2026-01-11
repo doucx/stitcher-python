@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[COMMIT] refactor(check): 实现 CheckSubject 协议抽象并重构分析逻辑", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768130454.4227397, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat: 实现基于索引的 IndexCheckSubjectAdapter", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768130696.268186, "duration_ms": 0}}
