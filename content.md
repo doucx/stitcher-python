@@ -4,6 +4,6 @@
 
 ### 📝 变更文件摘要:
 ```
-packages/stitcher-application/tests/integration/test_end_to_end.py | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
+.../stitcher-application/src/stitcher/app/runners/pump.stitcher.yaml    | 2 --
+ 1 file changed, 2 deletions(-)
 ```
