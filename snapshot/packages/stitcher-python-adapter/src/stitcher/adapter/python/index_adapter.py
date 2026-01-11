@@ -11,30 +11,49 @@ from stitcher.adapter.python.fingerprint import PythonFingerprintStrategy
 from stitcher.python.analysis.cst.usage_visitor import UsageScanVisitor, UsageRegistry
 from stitcher.python.analysis.scope import ScopeAnalyzer
 from stitcher.python.analysis.utils import path_to_logical_fqn
+from stitcher.refactor.workspace import Workspace
 from .uri import SURIGenerator
 
 
 class PythonAdapter(LanguageAdapter):
-    def __init__(self, root_path: Path):
-        self.root_path = root_path
+    def __init__(self, workspace: Workspace):
+        self.workspace = workspace
+        self.root_path = workspace.root_path
         self.parser = GriffePythonParser()
         self.hasher = PythonFingerprintStrategy()
 
     def parse(
         self, file_path: Path, content: str
     ) -> Tuple[List[SymbolRecord], List[ReferenceRecord]]:
-        # 1. Calculate relative path for SURI
+        # 1. Calculate relative path for SURI (from project root)
         try:
-            rel_path = file_path.relative_to(self.root_path).as_posix()
+            suri_rel_path = file_path.relative_to(self.root_path).as_posix()
         except ValueError:
-            # Fallback if file is not in root (should not happen in normal scan)
-            rel_path = file_path.name
+            suri_rel_path = file_path.name
 
-        # 2. Parse into ModuleDef
-        module_def = self.parser.parse(content, file_path=rel_path)
+        # 2. Determine the correct logical FQN based on workspace search paths
+        source_root = self.root_path
+        longest_match = -1
+        # Find the most specific source root for this file
+        for search_path in self.workspace.get_search_paths():
+            try:
+                if (
+                    file_path.is_relative_to(search_path)
+                    and len(search_path.parts) > longest_match
+                ):
+                    source_root = search_path
+                    longest_match = len(search_path.parts)
+            except ValueError:  # is_relative_to is Python 3.9+
+                if str(file_path).startswith(str(search_path)):
+                    if len(search_path.parts) > longest_match:
+                        source_root = search_path
+                        longest_match = len(search_path.parts)
 
-        # Pre-calculate logical FQN for the module
-        logical_module_fqn = path_to_logical_fqn(rel_path)
+        logical_rel_path = file_path.relative_to(source_root).as_posix()
+        logical_module_fqn = path_to_logical_fqn(logical_rel_path)
+
+        # 3. Parse into ModuleDef
+        module_def = self.parser.parse(content, file_path=suri_rel_path)
 
         # 3. Project to Symbols
         symbols = self._extract_symbols(rel_path, module_def, logical_module_fqn)

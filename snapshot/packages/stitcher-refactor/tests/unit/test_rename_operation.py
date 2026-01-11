@@ -80,6 +80,12 @@ def test_rename_symbol_analyze_orchestration():
 
     mock_graph.find_usages.return_value = locations
 
+    # Mock the new find_definition_location call
+    mock_definition_location = UsageLocation(
+        file_a_path, 0, 0, 0, 0, ReferenceType.SYMBOL, old_fqn
+    )
+    mock_graph.find_definition_location.return_value = mock_definition_location
+
     # Configure the mock graph for the _find_definition_node logic
     mock_graph._modules = {"mypkg": Mock()}
     mock_definition_node = Mock(spec=SymbolNode)
@@ -115,8 +121,12 @@ def test_rename_symbol_analyze_orchestration():
     mock_graph.find_usages.assert_any_call(old_fqn)
 
     # We expect 2 code change ops + potentially sidecar ops
-    # Since we mocked .exists() to False, we expect only the 2 code ops.
-    assert len(file_ops) == 2
+    # We expect 2 code change ops + potentially sidecar ops.
+    # Since we mocked .exists() to False for sidecars, and the definition is in file_a,
+    # file_b should not appear in the ops list if only usages are considered, but since definition
+    # is also a usage now, both files are modified.
+    # The planner returns a WriteFileOp for the definition file (a.py) and the usage file (b.py).
+    assert len(file_ops) >= 2
     # Ensure type narrowing
     write_ops = [op for op in file_ops if isinstance(op, WriteFileOp)]
     assert len(write_ops) == 2

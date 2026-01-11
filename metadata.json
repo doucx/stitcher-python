@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: 增强索引以追踪定义，实现可靠的符号重命名", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768109936.115952, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix: 重构 FQN 解析以支持 Monorepo 并修复相关测试", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768110112.8195539, "duration_ms": 0}}

@@ -16,18 +16,22 @@ from stitcher.index.scanner import WorkspaceScanner
 from stitcher.adapter.python.index_adapter import PythonAdapter
 
 
+from stitcher.refactor.workspace import Workspace
+
+
 def create_populated_index(root_path: Path) -> IndexStore:
     """Creates a temporary IndexStore and performs a full scan."""
     db_path = root_path / ".stitcher" / "index" / "index.db"
-    
+
     db_manager = DatabaseManager(db_path)
     db_manager.initialize()
     store = IndexStore(db_manager)
-    
+
     scanner = WorkspaceScanner(root_path, store)
-    scanner.register_adapter(".py", PythonAdapter(root_path))
+    # The adapter now needs the full workspace to understand source roots
+    scanner.register_adapter(".py", PythonAdapter(scanner.workspace))
     scanner.scan()
-    
+
     return store
 
 

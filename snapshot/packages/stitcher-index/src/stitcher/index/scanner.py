@@ -5,6 +5,14 @@ import logging
 from pathlib import Path
 from typing import Dict, Set
 
+import os
+import hashlib
+import subprocess
+import logging
+from pathlib import Path
+from typing import Dict, Set
+
+from stitcher.refactor.workspace import Workspace
 from .store import IndexStore
 from .types import FileRecord
 from .protocols import LanguageAdapter
@@ -17,6 +25,7 @@ class WorkspaceScanner:
     def __init__(self, root_path: Path, store: IndexStore):
         self.root_path = root_path
         self.store = store
+        self.workspace = Workspace(root_path)
         self.adapters: Dict[str, LanguageAdapter] = {}
         self.linker = Linker(store.db)
 
