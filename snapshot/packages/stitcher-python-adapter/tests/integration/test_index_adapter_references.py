@@ -26,28 +26,25 @@ class Processor:
     _, references = adapter.parse(file_path, code)
 
     # 辅助断言函数
-    def find_refs(target_fragment):
-        return [r for r in references if target_fragment in r.target_id]
+    def find_refs(target_fqn_fragment):
+        # After decoupling, we assert against the logical target_fqn, not the physical target_id
+        return [r for r in references if target_fqn_fragment in r.target_fqn]
 
     # 1. 验证导入引用 (Imports)
-    # import os -> target should assume os
-    # 注意：SURI 生成目前是推测性的，我们主要验证它捕获了 'os' 这个意图
+    # import os
     os_refs = find_refs("os")
     assert len(os_refs) >= 1
     assert os_refs[0].kind == "import_path"
+    assert os_refs[0].target_fqn == "os"
 
     # from mypkg import utils
-    # 修正：SURI 可能是 py://mypkg.py#utils，不包含 "mypkg.utils" 连续字符串
-    # 我们放宽断言，检查 target_id 中是否包含关键部分
-    utils_refs = [
-        r for r in references if "mypkg" in r.target_id and "utils" in r.target_id
-    ]
+    utils_refs = find_refs("mypkg.utils")
     assert len(utils_refs) >= 1
+    assert utils_refs[0].target_fqn == "mypkg.utils"
 
     # 2. 验证调用引用 (Usages)
-    # utils.do_work()
-    # 应该引用 mypkg.utils.do_work (基于 import utils)
-    do_work_refs = find_refs("do_work")
+    # utils.do_work() -> should resolve to a reference to 'mypkg.utils.do_work'
+    do_work_refs = find_refs("mypkg.utils.do_work")
     assert len(do_work_refs) > 0
     assert do_work_refs[0].kind == "symbol"
 

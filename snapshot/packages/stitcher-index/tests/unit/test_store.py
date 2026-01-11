@@ -43,6 +43,7 @@ def test_analysis_update(store):
 
     references = [
         ReferenceRecord(
+            target_fqn="src.other.func",
             target_id="py://src/other.py#func",
             kind="import",
             lineno=6,
