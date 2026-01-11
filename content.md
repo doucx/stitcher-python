@@ -1,237 +1,423 @@
-好的，我们继续执行统一路线图。现在进入 **Phase B: 抽象作用域构建器**。
+好的，我们正式开始实施“确定性链接”路线图中的 **Phase 1: 数据模型解耦**。
 
-此计划将创建一个共享的 `ScopeAnalyzer` 组件。它的唯一职责是分析模块的顶层结构（无论是来自 Griffe 还是 Stitcher IR），并生成一个权威的“本地符号映射表”。这将彻底消除 `refactor` 和 `index` 两个引擎在准备 `UsageScanVisitor` 上下文时的重复逻辑。
+此计划将对 `stitcher-index` 的核心数据库模式进行一次外科手术式的重构。我们将修改 `symbols` 和 `references` 表，以物理性地分离“逻辑 FQN”（一个符号的声明性名称）和“物理 SURI”（一个符号在项目中的确定性位置）。这是构建 Linker 的前提条件。
 
-## [WIP] refactor(analysis): 抽象作用域分析器以统一符号映射逻辑
+## [WIP] refactor(index): Decouple logical and physical links in DB schema
 
 ### 错误分析
 
-无。这是对组件统一与瘦身路线图的第二步实施。
+无。这是对“确定性链接”宏观路线图的主动实施。
 
 ### 用户需求
 
-实现 Phase B 路线图：在 `stitcher-python-analysis` 包中创建一个共享的 `ScopeAnalyzer`，用于抽象和统一 `local_symbols` 映射表的构建逻辑，并重构 `stitcher-refactor` 和 `stitcher-python-adapter` 以使用该新组件。
+根据路线图 Phase 1，修改 `stitcher-index` 的数据库模式和相关的数据访问代码，以解耦符号和引用的逻辑路径 (FQN) 与物理链接 (SURI)。具体包括：
+1.  在 `symbols` 表中添加 `alias_target_fqn` 字段，并将 `alias_target_id` 设为可空。
+2.  在 `references` 表中添加 `target_fqn` 字段，并将 `target_id` 设为可空。
 
 ### 评论
 
-这是继 FQN 工具化之后的又一次关键重构。构建符号作用域（即“在这个文件里，`utils` 到底指向哪个模块？”）是静态分析中最复杂、最容易出错的部分之一。通过将此逻辑抽象到一个单一、可测试的 `ScopeAnalyzer` 中，我们不仅消除了代码重复，更重要的是，我们保证了重构引擎和索引引擎在进行引用分析时，其“世界观”是完全一致的。这是通往“确定性链接”的必要基石。
+这是一个典型的架构“正本清源”操作，完全符合 HFEA 公理。当前的数据库模式错误地将一个尚不确定的“链接意图”强制具体化为一个物理地址，导致上游 `PythonAdapter` 不得不进行“启发式猜测”。通过将 `_id` 字段（物理链接）设为可空，并引入 `_fqn` 字段（逻辑意图），我们使数据模型能够诚实地反映系统在扫描阶段的知识状态：“我知道你想引用 `pkg.mod.ClassA`，但我还不知道它在哪里”。这种本体论上的正确性是构建健壮系统的基石。
 
 ### 目标
 
-1.  在 `stitcher-python-analysis` 中创建新的 `scope.py` 模块。
-2.  实现 `ScopeAnalyzer` 类，它能够从 `stitcher.spec.ModuleDef` (Stitcher IR) 中构建出 `local_symbols` 映射表。
-3.  为 `ScopeAnalyzer` 添加全面的单元测试。
-4.  重构 `stitcher-refactor` 中的 `SemanticGraph`，用 `ScopeAnalyzer` 替换其手动的符号表构建逻辑。
-5.  重构 `stitcher-python-adapter` 中的 `PythonAdapter`，同样用 `ScopeAnalyzer` 替换其符号表构建逻辑。
+1.  重写 `schema.sql`，修改 `symbols` 和 `references` 表的定义。
+2.  更新 `types.py` 中的 `SymbolRecord` 和 `ReferenceRecord` 数据类以匹配新的数据库模式。
+3.  修改 `store.py` 中的 `update_analysis` 方法，使其能够写入新的 `_fqn` 字段。
+4.  修改 `index_adapter.py` 中的 `_extract_symbols` 和 `_extract_references` 方法，使其不再调用 `_guess_suri`，而是将原始 FQN 存入新字段，并将 `_id` 字段留空。
 
 ### 基本原理
 
-核心思想是将“作用域分析”视为一种独立的、可重用的能力。我们创建 `ScopeAnalyzer` 作为这项能力的唯一实现。它的输入是代码的结构化表示（当前阶段为 Stitcher IR），输出是一个标准的符号映射表（`Dict[str, str]`）。这样，无论上游是重构引擎还是索引引擎，它们在调用 `UsageScanVisitor` 之前，都会通过同一个“镜头”来观察和理解代码的作用域。这从根本上消除了因实现差异导致分析结果不一致的风险。
+我们正在将 `stitcher-index` 的工作流转变为一个两阶段过程：**扫描 (Scan)** 和 **链接 (Link)**。
+
+-   **当前计划（扫描阶段）**：我们修改数据模型，使其能够仅记录“扫描”阶段的信息。`PythonAdapter` 在分析文件时，只负责提取它能确定的信息——即符号的定义（FQN）和引用的意图（target_FQN）。它不再承担“链接”的职责。
+-   **未来计划（链接阶段）**：在所有文件都被扫描并存入数据库后，一个全新的“链接器”组件将在全知视角下运行。它会读取所有 `_fqn` 字段，并在数据库中查找匹配的定义，然后回填正确的 `_id` (SURI) 字段。
+
+此计划通过修改数据模型，为未来的链接器铺平了道路。
 
 ### 标签
 
-#intent/refine #flow/ready #priority/high #comp/refactor #comp/index #comp/python-analysis #comp/tests #scope/dx #ai/delegate #task/domain/architecture #task/object/component-unification #task/action/implementation #task/state/continue
+#intent/architect #flow/ready #priority/critical #comp/index #comp/python-adapter #concept/state #scope/core #ai/delegate #task/domain/architecture #task/object/component-unification #task/action/implementation #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建 `ScopeAnalyzer` 及其单元测试
+#### Acts 1: 升级数据库 Schema
 
-我们在 `stitcher-python-analysis` 包中创建 `scope.py` 模块，并实现 `ScopeAnalyzer`。为了简化，我们先让它支持从 Stitcher IR (`ModuleDef`) 构建符号表，因为这是两个消费者都能获取到的数据模型。同时，我们为其编写单元测试。
+我们将重写 `schema.sql` 文件，引入新的 `_fqn` 字段，并将 `_id` 字段（外键）设置为 `NULLABLE`。
 
 ~~~~~act
 write_file
-packages/stitcher-python-analysis/src/stitcher/python/analysis/scope.py
+packages/stitcher-index/src/stitcher/index/schema.sql
 ~~~~~
-~~~~~python
-from typing import Dict
-from stitcher.spec import ModuleDef
+~~~~~sql
+-- File System Tracking
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL UNIQUE,
+    content_hash TEXT NOT NULL,
+    last_mtime REAL NOT NULL,
+    last_size INTEGER NOT NULL,
+    -- 0: Dirty (needs re-indexing), 1: Indexed
+    indexing_status INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_files_path ON files(path);
+
+-- Symbol Definitions
+CREATE TABLE IF NOT EXISTS symbols (
+    -- Stitcher Uniform Resource Identifier (SURI) -> py://<rel_path>#<fragment>
+    id TEXT PRIMARY KEY,
+    file_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    -- The fully qualified name, unique within the project.
+    -- e.g., my_pkg.utils.helper
+    -- NOTE: This column is planned for the "Linker" phase.
+    canonical_fqn TEXT UNIQUE,
+    -- Relative logical path within the file, e.g., MyClass.my_method
+    logical_path TEXT,
+    kind TEXT NOT NULL,
+
+    -- ALIAS-SPECIFIC FIELDS --
+    -- The logical FQN this alias points to, extracted directly by the parser.
+    -- e.g., "my_pkg.utils.helper" for "from my_pkg.utils import helper"
+    alias_target_fqn TEXT,
+    -- The resolved SURI of the target symbol (FK to symbols.id).
+    -- This is populated by the Linker phase. Can be NULL if unresolved.
+    alias_target_id TEXT,
+
+    -- Location in source file
+    lineno INTEGER NOT NULL,
+    col_offset INTEGER NOT NULL,
+    end_lineno INTEGER NOT NULL,
+    end_col_offset INTEGER NOT NULL,
+    
+    -- Structural hash of the symbol's signature
+    signature_hash TEXT,
+
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE,
+    FOREIGN KEY (alias_target_id) REFERENCES symbols(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_symbols_file_id ON symbols(file_id);
+CREATE INDEX IF NOT EXISTS idx_symbols_canonical_fqn ON symbols(canonical_fqn);
 
 
-class ScopeAnalyzer:
-    def build_from_ir(
-        self, module: ModuleDef, logical_module_fqn: str
-    ) -> Dict[str, str]:
-        """
-        Builds a local symbol map (name -> FQN) from a Stitcher ModuleDef IR.
-        This map is used by UsageScanVisitor to resolve names in a file's scope.
-        """
-        local_symbols: Dict[str, str] = {}
+-- Symbol References
+CREATE TABLE IF NOT EXISTS 'references' (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_file_id INTEGER NOT NULL,
 
-        # 1. Register imported aliases (e.g., 'helper' -> 'pkg.utils.helper')
-        for attr in module.attributes:
-            if attr.alias_target:
-                local_symbols[attr.name] = attr.alias_target
+    -- The logical FQN of the target, extracted by the parser.
+    -- e.g., "os.path.join"
+    target_fqn TEXT NOT NULL,
+    -- The resolved SURI of the target symbol (FK to symbols.id).
+    -- This is populated by the Linker phase. Can be NULL if unresolved.
+    target_id TEXT,
 
-        # 2. Register local definitions
-        def register_local(name: str, parent_fqn: str = "") -> str:
-            fqn = (
-                f"{parent_fqn}.{name}"
-                if parent_fqn
-                else f"{logical_module_fqn}.{name}"
-            )
-            local_symbols[name] = fqn
-            return fqn
+    kind TEXT NOT NULL, -- e.g., 'import', 'call', 'annotation'
+    
+    -- Location of the reference in the source file
+    lineno INTEGER NOT NULL,
+    col_offset INTEGER NOT NULL,
+    end_lineno INTEGER NOT NULL,
+    end_col_offset INTEGER NOT NULL,
 
-        for func in module.functions:
-            register_local(func.name)
+    FOREIGN KEY (source_file_id) REFERENCES files(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_id) REFERENCES symbols(id) ON DELETE SET NULL
+);
 
-        for cls in module.classes:
-            cls_fqn = register_local(cls.name)
-            # Register class-level aliases
-            for attr in cls.attributes:
-                if attr.alias_target:
-                    local_symbols[attr.name] = attr.alias_target
-            # Methods are handled by visitor's scope analysis (e.g., self.method)
-
-        return local_symbols
+CREATE INDEX IF NOT EXISTS idx_references_source_file_id ON 'references'(source_file_id);
+CREATE INDEX IF NOT EXISTS idx_references_target_id ON 'references'(target_id);
 ~~~~~
+
+#### Acts 2: 更新数据类型 (`types.py`)
+
+现在更新 Python 数据类以匹配新的数据库结构。
+
 ~~~~~act
 write_file
-packages/stitcher-python-analysis/tests/unit/test_scope.py
+packages/stitcher-index/src/stitcher/index/types.py
 ~~~~~
 ~~~~~python
-from stitcher.spec import ModuleDef, Attribute, FunctionDef, ClassDef
-from stitcher.python.analysis.scope import ScopeAnalyzer
+from dataclasses import dataclass
+from typing import Optional
 
 
-def test_scope_analyzer_from_ir():
-    # 1. Setup: Create a mock ModuleDef IR
-    module_ir = ModuleDef(
-        file_path="src/main.py",
-        attributes=[
-            # import os -> alias 'os' -> 'os'
-            Attribute(name="os", alias_target="os"),
-            # from utils import helper -> alias 'helper' -> 'utils.helper'
-            Attribute(name="helper", alias_target="utils.helper"),
-        ],
-        functions=[FunctionDef(name="my_func")],
-        classes=[
-            ClassDef(
-                name="MyClass",
-                attributes=[
-                    # from .models import User -> alias 'User' -> 'main.models.User'
-                    Attribute(name="User", alias_target="main.models.User")
-                ],
-            )
-        ],
-    )
+@dataclass
+class FileRecord:
+    id: int
+    path: str
+    content_hash: str
+    last_mtime: float
+    last_size: int
+    indexing_status: int
 
-    analyzer = ScopeAnalyzer()
 
-    # 2. Act
-    symbol_map = analyzer.build_from_ir(module_ir, logical_module_fqn="main")
+@dataclass
+class SymbolRecord:
+    id: str  # SURI
+    name: str
+    kind: str
+    lineno: int
+    col_offset: int
+    end_lineno: int
+    end_col_offset: int
 
-    # 3. Assert
-    assert symbol_map["os"] == "os"
-    assert symbol_map["helper"] == "utils.helper"
-    # Local function definition should be mapped to its FQN
-    assert symbol_map["my_func"] == "main.my_func"
-    # Local class definition
-    assert symbol_map["MyClass"] == "main.MyClass"
-    # Class-level alias
-    assert symbol_map["User"] == "main.models.User"
+    # Populated during Scan phase
+    alias_target_fqn: Optional[str] = None
+    
+    # Populated during Link phase
+    alias_target_id: Optional[str] = None
+    canonical_fqn: Optional[str] = None
+    
+    file_id: Optional[int] = None
+    logical_path: Optional[str] = None
+    signature_hash: Optional[str] = None
+
+
+@dataclass
+class ReferenceRecord:
+    target_fqn: str
+    kind: str
+    lineno: int
+    col_offset: int
+    end_lineno: int
+    end_col_offset: int
+
+    # Populated during Link phase
+    target_id: Optional[str] = None
+    
+    # Context
+    source_file_id: Optional[int] = None
+    id: Optional[int] = None  # Database Row ID
 ~~~~~
 
-#### Acts 2: 改造 `stitcher-python-adapter` (`PythonAdapter`)
+#### Acts 3: 更新数据存储层 (`store.py`)
 
-现在，我们让 `PythonAdapter` 使用新的 `ScopeAnalyzer`，移除其内部重复的逻辑。
+修改 `INSERT` 语句以包含新字段。
+
+~~~~~act
+patch_file
+packages/stitcher-index/src/stitcher/index/store.py
+~~~~~
+~~~~~python.old
+            if symbols:
+                conn.executemany(
+                    """
+                    INSERT INTO symbols (
+                        id, file_id, name, logical_path, kind, 
+                        alias_target_id, lineno, col_offset, end_lineno, end_col_offset, signature_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            s.id,
+                            file_id,
+                            s.name,
+                            s.logical_path,
+                            s.kind,
+                            s.alias_target_id,
+                            s.lineno,
+                            s.col_offset,
+                            s.end_lineno,
+                            s.end_col_offset,
+                            s.signature_hash,
+                        )
+                        for s in symbols
+                    ],
+                )
+
+            # 3. Insert new references
+            if references:
+                conn.executemany(
+                    """
+                    INSERT INTO 'references' (
+                        source_file_id, target_id, kind, 
+                        lineno, col_offset, end_lineno, end_col_offset
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            file_id,
+                            r.target_id,
+                            r.kind,
+                            r.lineno,
+                            r.col_offset,
+                            r.end_lineno,
+                            r.end_col_offset,
+                        )
+                        for r in references
+                    ],
+                )
+~~~~~
+~~~~~python.new
+            if symbols:
+                conn.executemany(
+                    """
+                    INSERT INTO symbols (
+                        id, file_id, name, logical_path, kind,
+                        alias_target_fqn, alias_target_id,
+                        lineno, col_offset, end_lineno, end_col_offset, signature_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            s.id,
+                            file_id,
+                            s.name,
+                            s.logical_path,
+                            s.kind,
+                            s.alias_target_fqn,
+                            s.alias_target_id,
+                            s.lineno,
+                            s.col_offset,
+                            s.end_lineno,
+                            s.end_col_offset,
+                            s.signature_hash,
+                        )
+                        for s in symbols
+                    ],
+                )
+
+            # 3. Insert new references
+            if references:
+                conn.executemany(
+                    """
+                    INSERT INTO 'references' (
+                        source_file_id, target_fqn, target_id, kind,
+                        lineno, col_offset, end_lineno, end_col_offset
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            file_id,
+                            r.target_fqn,
+                            r.target_id,
+                            r.kind,
+                            r.lineno,
+                            r.col_offset,
+                            r.end_lineno,
+                            r.end_col_offset,
+                        )
+                        for r in references
+                    ],
+                )
+~~~~~
+
+#### Acts 4: 更新 `PythonAdapter` 以填充新字段
+
+这是关键一步：我们让 Adapter 停止猜测，只记录它确切知道的事情。
 
 ~~~~~act
 patch_file
 packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py
 ~~~~~
 ~~~~~python.old
-from stitcher.adapter.python.griffe_parser import GriffePythonParser
-from stitcher.adapter.python.fingerprint import PythonFingerprintStrategy
-from stitcher.python.analysis.cst.usage_visitor import UsageScanVisitor, UsageRegistry
-from stitcher.python.analysis.utils import path_to_logical_fqn
-from .uri import SURIGenerator
+            # Alias Handling
+            alias_target_id: Optional[str] = None
+            final_kind = kind
+            alias_target_fqn = getattr(entity_for_hash, "alias_target", None)
+            if alias_target_fqn:
+                final_kind = "alias"
+                alias_target_id = self._guess_suri(
+                    alias_target_fqn, logical_module_fqn, rel_path
+                )
+
+            symbols.append(
+                SymbolRecord(
+                    id=suri,
+                    name=name,
+                    kind=final_kind,
+                    lineno=loc.lineno if loc else 0,
+                    col_offset=loc.col_offset if loc else 0,
+                    end_lineno=loc.end_lineno if loc else 0,
+                    end_col_offset=loc.end_col_offset if loc else 0,
+                    logical_path=fragment,  # This is relative logical path in file
+                    signature_hash=sig_hash,
+                    alias_target_id=alias_target_id,
+                )
+            )
 ~~~~~
 ~~~~~python.new
-from stitcher.adapter.python.griffe_parser import GriffePythonParser
-from stitcher.adapter.python.fingerprint import PythonFingerprintStrategy
-from stitcher.python.analysis.cst.usage_visitor import UsageScanVisitor, UsageRegistry
-from stitcher.python.analysis.scope import ScopeAnalyzer
-from stitcher.python.analysis.utils import path_to_logical_fqn
-from .uri import SURIGenerator
+            # Alias Handling
+            alias_target_fqn_val: Optional[str] = None
+            final_kind = kind
+            alias_target_fqn_from_ir = getattr(entity_for_hash, "alias_target", None)
+            if alias_target_fqn_from_ir:
+                final_kind = "alias"
+                alias_target_fqn_val = alias_target_fqn_from_ir
+
+            symbols.append(
+                SymbolRecord(
+                    id=suri,
+                    name=name,
+                    kind=final_kind,
+                    lineno=loc.lineno if loc else 0,
+                    col_offset=loc.col_offset if loc else 0,
+                    end_lineno=loc.end_lineno if loc else 0,
+                    end_col_offset=loc.end_col_offset if loc else 0,
+                    logical_path=fragment,  # This is relative logical path in file
+                    signature_hash=sig_hash,
+                    alias_target_fqn=alias_target_fqn_val,
+                    alias_target_id=None,  # Will be populated by Linker
+                )
+            )
 ~~~~~
 ~~~~~act
 patch_file
 packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py
 ~~~~~
 ~~~~~python.old
-    def _extract_references(
-        self,
-        rel_path: str,
-        module: ModuleDef,
-        content: str,
-        file_path: Path,
-        logical_module_fqn: str,
-    ) -> List[ReferenceRecord]:
-        refs: List[ReferenceRecord] = []
+            for target_fqn, locations in registry._index.items():
+                for loc in locations:
+                    # Convert logical FQN target to SURI
+                    # NOTE: This is a heuristic. We don't have a SourceMap yet.
+                    # We assume standard python layout: a.b.c -> py://a/b.py#c (simplified)
+                    # For local symbols, we can be precise. For external, we guess.
 
-        # 1. Build local_symbols map (Name -> FQN)
-        # This helps the visitor distinguish between local usages and globals/builtins.
-        # It maps a name visible in the current scope to its fully-qualified name.
-        local_symbols = {}
+                    target_suri = self._guess_suri(
+                        target_fqn, logical_module_fqn, rel_path
+                    )
 
-        # 1a. Register all imported aliases (e.g., 'helper' -> 'pkg.utils.helper')
-        for attr in module.attributes:
-            if attr.alias_target:
-                local_symbols[attr.name] = attr.alias_target
-
-        # 1b. Register all local definitions
-        def register_local(name: str, parent_fqn: str = "") -> str:
-            fqn = (
-                f"{parent_fqn}.{name}" if parent_fqn else f"{logical_module_fqn}.{name}"
-            )
-            local_symbols[name] = fqn
-            return fqn
-
-        for func in module.functions:
-            register_local(func.name)
-
-        for cls in module.classes:
-            cls_fqn = register_local(cls.name)
-            # Register class-level aliases
-            for attr in cls.attributes:
-                if attr.alias_target:
-                    local_symbols[attr.name] = attr.alias_target
-            # Methods are handled by the visitor's scope analysis (e.g., self.method)
-            # so we don't need to register them as top-level local symbols.
-
-        # 2. Parse CST and Run Visitor
+                    refs.append(
+                        ReferenceRecord(
+                            target_id=target_suri,
+                            kind=loc.ref_type.value,
+                            lineno=loc.lineno,
+                            col_offset=loc.col_offset,
+                            end_lineno=loc.end_lineno,
+                            end_col_offset=loc.end_col_offset,
+                        )
+                    )
 ~~~~~
 ~~~~~python.new
-    def _extract_references(
-        self,
-        rel_path: str,
-        module: ModuleDef,
-        content: str,
-        file_path: Path,
-        logical_module_fqn: str,
-    ) -> List[ReferenceRecord]:
-        refs: List[ReferenceRecord] = []
-
-        # 1. Build local_symbols map using the centralized analyzer
-        analyzer = ScopeAnalyzer()
-        local_symbols = analyzer.build_from_ir(module, logical_module_fqn)
-
-        # 2. Parse CST and Run Visitor
+            for target_fqn, locations in registry._index.items():
+                for loc in locations:
+                    refs.append(
+                        ReferenceRecord(
+                            target_fqn=target_fqn,
+                            target_id=None,  # Will be populated by Linker
+                            kind=loc.ref_type.value,
+                            lineno=loc.lineno,
+                            col_offset=loc.col_offset,
+                            end_lineno=loc.end_lineno,
+                            end_col_offset=loc.end_col_offset,
+                        )
+                    )
 ~~~~~
-
-#### Acts 3: 改造 `stitcher-refactor` (`SemanticGraph`)
-
-由于 `refactor` 的 `SemanticGraph` 直接消费 Griffe 对象而非 Stitcher IR，我们将暂时跳过对其的重构。当前的 `ScopeAnalyzer` 只支持 IR。在未来的重构中，当 Refactor 引擎也开始消费 Stitcher IR 或 Index 数据时，才能彻底移除其重复逻辑。**此计划将优先统一 Index 端的逻辑，因为它直接影响“确定性链接”路线图**。
+~~~~~act
+delete_file
+packages/stitcher-python-adapter/src/stitcher/adapter/python/uri.py
+~~~~~
 
 ### 下一步建议
 
-我们已经成功地将作用域分析逻辑抽象化，并应用到了 `stitcher-index` 的流程中。`PythonAdapter` 现在更加简洁，其行为也与未来的 Refactor 引擎保持了一致性。
+我们已经成功地完成了数据模型的解耦，这是整个“确定性链接”路线图中最关键的基础设施变更。`stitcher-index` 现在能够诚实地存储扫描阶段的原始信息，而不再依赖脆弱的猜测。
 
-现在，底层的分析工具已经得到了强化和统一。我们准备好正式开始实施“确定性链接”路线图的第一步了：
+**下一步：执行 Phase 2: 构建全局符号映射 (Global Symbol Map)**。
 
-**下一步：执行 Phase 1: 数据模型解耦 (Schema Decoupling)**。
-
-我将为你生成一个计划，该计划将修改数据库的 `schema.sql`，调整 `symbols` 和 `references` 表，以分离“逻辑意图”和“物理链接”。
+我将为你生成一个计划，该计划将：
+1.  在 `symbols` 表中添加 `canonical_fqn` 字段（已在本次 schema 中预留）。
+2.  修改 `PythonAdapter`，使其在扫描文件时，为每个定义的符号计算并存储其全局唯一的 `canonical_fqn`。
+3.  这将为我们的 Linker 提供一个快速查找“逻辑名 -> 物理位置”的索引。

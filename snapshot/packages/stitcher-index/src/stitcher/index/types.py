@@ -14,26 +14,38 @@ class FileRecord:
 
 @dataclass
 class SymbolRecord:
-    id: str
+    id: str  # SURI
     name: str
     kind: str
     lineno: int
     col_offset: int
     end_lineno: int
     end_col_offset: int
-    file_id: Optional[int] = None  # Optional when inserting if handled by store context
-    logical_path: Optional[str] = None
+
+    # Populated during Scan phase
+    alias_target_fqn: Optional[str] = None
+    
+    # Populated during Link phase
     alias_target_id: Optional[str] = None
+    canonical_fqn: Optional[str] = None
+    
+    file_id: Optional[int] = None
+    logical_path: Optional[str] = None
     signature_hash: Optional[str] = None
 
 
 @dataclass
 class ReferenceRecord:
-    target_id: str
+    target_fqn: str
     kind: str
     lineno: int
     col_offset: int
     end_lineno: int
     end_col_offset: int
-    source_file_id: Optional[int] = None  # Optional when inserting
+
+    # Populated during Link phase
+    target_id: Optional[str] = None
+    
+    # Context
+    source_file_id: Optional[int] = None
     id: Optional[int] = None  # Database Row ID

@@ -78,9 +78,10 @@ class IndexStore:
                 conn.executemany(
                     """
                     INSERT INTO symbols (
-                        id, file_id, name, logical_path, kind, 
-                        alias_target_id, lineno, col_offset, end_lineno, end_col_offset, signature_hash
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        id, file_id, name, logical_path, kind,
+                        alias_target_fqn, alias_target_id,
+                        lineno, col_offset, end_lineno, end_col_offset, signature_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         (
@@ -89,6 +90,7 @@ class IndexStore:
                             s.name,
                             s.logical_path,
                             s.kind,
+                            s.alias_target_fqn,
                             s.alias_target_id,
                             s.lineno,
                             s.col_offset,
@@ -105,13 +107,14 @@ class IndexStore:
                 conn.executemany(
                     """
                     INSERT INTO 'references' (
-                        source_file_id, target_id, kind, 
+                        source_file_id, target_fqn, target_id, kind,
                         lineno, col_offset, end_lineno, end_col_offset
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     [
                         (
                             file_id,
+                            r.target_fqn,
                             r.target_id,
                             r.kind,
                             r.lineno,

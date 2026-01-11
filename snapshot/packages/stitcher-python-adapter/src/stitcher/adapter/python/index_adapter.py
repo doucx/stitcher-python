@@ -71,14 +71,12 @@ class PythonAdapter(LanguageAdapter):
             loc = getattr(entity_for_hash, "location", None)
 
             # Alias Handling
-            alias_target_id: Optional[str] = None
+            alias_target_fqn_val: Optional[str] = None
             final_kind = kind
-            alias_target_fqn = getattr(entity_for_hash, "alias_target", None)
-            if alias_target_fqn:
+            alias_target_fqn_from_ir = getattr(entity_for_hash, "alias_target", None)
+            if alias_target_fqn_from_ir:
                 final_kind = "alias"
-                alias_target_id = self._guess_suri(
-                    alias_target_fqn, logical_module_fqn, rel_path
-                )
+                alias_target_fqn_val = alias_target_fqn_from_ir
 
             symbols.append(
                 SymbolRecord(
@@ -91,7 +89,8 @@ class PythonAdapter(LanguageAdapter):
                     end_col_offset=loc.end_col_offset if loc else 0,
                     logical_path=fragment,  # This is relative logical path in file
                     signature_hash=sig_hash,
-                    alias_target_id=alias_target_id,
+                    alias_target_fqn=alias_target_fqn_val,
+                    alias_target_id=None,  # Will be populated by Linker
                 )
             )
             return fragment
@@ -150,18 +149,10 @@ class PythonAdapter(LanguageAdapter):
             # UsageRegistry structure: { target_fqn: [UsageLocation, ...] }
             for target_fqn, locations in registry._index.items():
                 for loc in locations:
-                    # Convert logical FQN target to SURI
-                    # NOTE: This is a heuristic. We don't have a SourceMap yet.
-                    # We assume standard python layout: a.b.c -> py://a/b.py#c (simplified)
-                    # For local symbols, we can be precise. For external, we guess.
-
-                    target_suri = self._guess_suri(
-                        target_fqn, logical_module_fqn, rel_path
-                    )
-
                     refs.append(
                         ReferenceRecord(
-                            target_id=target_suri,
+                            target_fqn=target_fqn,
+                            target_id=None,  # Will be populated by Linker
                             kind=loc.ref_type.value,
                             lineno=loc.lineno,
                             col_offset=loc.col_offset,
