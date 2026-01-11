@@ -64,19 +64,36 @@ class SemanticGraph:
 
     def find_usages(self, target_fqn: str) -> List[UsageLocation]:
         """
-        Query the Index DB for usages of the given FQN.
-        Maps DB ReferenceRecords to UsageLocation objects.
+        Query the Index DB for ALL usages of the given FQN, INCLUDING its definition.
+        Maps DB records to UsageLocation objects.
         """
-        db_refs = self.index_store.find_references(target_fqn)
         usages = []
+
+        # 1. Add Definition (The symbol itself)
+        # We treat the definition as a usage of type SYMBOL so the renamer updates it.
+        def_info = self.index_store.find_symbol_definition(target_fqn)
+        if def_info:
+            sym_rec, file_path_str = def_info
+            abs_path = self.root_path / file_path_str
+            usages.append(
+                UsageLocation(
+                    file_path=abs_path,
+                    lineno=sym_rec.lineno,
+                    col_offset=sym_rec.col_offset,
+                    end_lineno=sym_rec.end_lineno,
+                    end_col_offset=sym_rec.end_col_offset,
+                    ref_type=ReferenceType.SYMBOL, 
+                    target_node_fqn=target_fqn,
+                )
+            )
+
+        # 2. Add References
+        db_refs = self.index_store.find_references(target_fqn)
         for ref, file_path_str in db_refs:
             abs_path = self.root_path / file_path_str
-            # We map DB 'kind' back to ReferenceType.
-            # Assuming DB stores 'symbol' or 'import_path' matching the enum values.
             try:
                 ref_type = ReferenceType(ref.kind)
             except ValueError:
-                # Fallback or log warning if DB contains unknown kinds
                 ref_type = ReferenceType.SYMBOL
 
             usages.append(

@@ -179,3 +179,27 @@ class IndexStore:
                 (ReferenceRecord(**{k: v for k, v in dict(row).items() if k != "file_path"}), row["file_path"])
                 for row in rows
             ]
+
+    def find_symbol_definition(self, canonical_fqn: str) -> Optional[Tuple[SymbolRecord, str]]:
+        """
+        Finds the definition of a symbol by its canonical FQN.
+        Returns (SymbolRecord, file_path_str) or None.
+        """
+        with self.db.get_connection() as conn:
+            row = conn.execute(
+                """
+                SELECT s.*, f.path as file_path
+                FROM symbols s
+                JOIN files f ON s.file_id = f.id
+                WHERE s.canonical_fqn = ?
+                LIMIT 1
+                """,
+                (canonical_fqn,),
+            ).fetchone()
+            
+            if row:
+                return (
+                    SymbolRecord(**{k: v for k, v in dict(row).items() if k != "file_path"}),
+                    row["file_path"]
+                )
+            return None
