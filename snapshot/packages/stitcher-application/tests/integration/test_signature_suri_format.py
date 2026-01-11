@@ -1,39 +1,3 @@
-好的，我将创建一个集成测试，专门用于验证基准存档（Signature Files）中是否正确使用了 SURI 作为标识符。
-
-## [WIP] test(application): 验证基准存档的 SURI 格式
-
-### 用户需求
-需要一个明确的测试用例来证实：在重构之后，存储在 `.stitcher/signatures/*.json` 文件中的键确实是遵循 `py://<path>#<fragment>` 规范的全局唯一标识符（SURI），而非简单的局部名称。
-
-### 评论
-手动验证磁盘文件格式虽然直接，但自动化测试能防止未来的重构无意中退化回旧格式。这个测试将深入物理层，直接读取 JSON 原始内容进行断言。
-
-### 目标
-1.  创建一个集成测试文件 `packages/stitcher-application/tests/integration/test_signature_suri_format.py`。
-2.  在测试中，使用 `WorkspaceFactory` 构建一个包含嵌套函数和类的项目。
-3.  运行 `run_init` 以生成基准文件。
-4.  **物理层验证**: 直接打开生成的 `.json` 文件，断言其字典键（Keys）均以 `py://` 开头且包含正确的物理路径。
-5.  **逻辑层验证**: 确保 `SignatureManager.load_composite_hashes` 能够正确地将这些 SURI 解析回应用逻辑可用的短键。
-
-### 基本原理
-我们利用 `WorkspaceFactory` 创建一个确定的环境。通过对比物理层（磁盘上的原始 JSON）和逻辑层（Manager 返回的对象），我们可以确信 SURI 转换逻辑在两个方向上都工作正常且符合规范。
-
-### 标签
-#intent/tooling #flow/ready #priority/medium #comp/tests #concept/state #scope/dx #ai/instruct #task/domain/storage #task/object/signature-archive #task/action/verification #task/state/continue
-
----
-
-### Script
-
-#### Acts 1: 创建验证测试文件
-
-我们将创建这个专门的测试文件来固化 SURI 的验证逻辑。
-
-~~~~~act
-write_file
-packages/stitcher-application/tests/integration/test_signature_suri_format.py
-~~~~~
-~~~~~python
 import json
 import pytest
 from pathlib import Path
@@ -107,11 +71,3 @@ class MyClass:
     for k in expected_short_keys:
         # 确保数据内容也正确加载了
         assert "baseline_code_structure_hash" in loaded_hashes[k]
-~~~~~
-
-### 下一步建议
-
-建议立即运行这个测试：
-`pytest packages/stitcher-application/tests/integration/test_signature_suri_format.py`
-
-如果测试通过，则证明重构确实生效且符合 SURI 规范。之后，我们就可以开始 **重构 `PumpRunner` (Index-Assisted)**，利用这些已经结构化好的基准数据来优化 `pump` 命令的性能。
