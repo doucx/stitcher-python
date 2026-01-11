@@ -20,8 +20,14 @@ class GlobalBatchRenamer:
         ops: List[WriteFileOp] = []
         usages_by_file: Dict[Path, List[UsageLocation]] = defaultdict(list)
 
-        # 1. Collect all usages for all renames and group by file
+        # 1. Collect all usages AND definitions for all renames and group by file
         for old_fqn in self.rename_map.keys():
+            # Add Definition Site
+            definition = self.ctx.graph.find_definition(old_fqn)
+            if definition:
+                usages_by_file[definition.file_path].append(definition)
+
+            # Add Usage Sites (References)
             usages = self.ctx.graph.find_usages(old_fqn)
             for usage in usages:
                 usages_by_file[usage.file_path].append(usage)

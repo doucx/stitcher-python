@@ -92,6 +92,23 @@ class SemanticGraph:
             )
         return usages
 
+    def find_definition(self, target_fqn: str) -> Optional[UsageLocation]:
+        """Query the Index DB for the definition site of the given FQN."""
+        result = self.index_store.find_symbol_location(target_fqn)
+        if not result:
+            return None
+
+        sym, file_path_str = result
+        return UsageLocation(
+            file_path=self.root_path / file_path_str,
+            lineno=sym.lineno,
+            col_offset=sym.col_offset,
+            end_lineno=sym.end_lineno,
+            end_col_offset=sym.end_col_offset,
+            ref_type=ReferenceType.SYMBOL,
+            target_node_fqn=target_fqn,
+        )
+
     def get_module(self, package_name: str) -> Optional[griffe.Module]:
         if package_name in self._modules:
             return self._modules[package_name]
