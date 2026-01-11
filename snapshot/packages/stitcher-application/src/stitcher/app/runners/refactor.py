@@ -36,16 +36,23 @@ class RefactorRunner:
         confirm_callback: Optional[Callable[[int], bool]] = None,
     ) -> bool:
         try:
-            # 0. Ensure index is up to date
+            # 1. Bootstrap services (Auth workspace first)
+            workspace = Workspace(self.root_path, config)
+            search_paths = workspace.get_search_paths()
+
+            # 2. Sync scanner with the definitive search paths BEFORE scanning
+            from stitcher.adapter.python import PythonAdapter
+
+            self.workspace_scanner.register_adapter(
+                ".py", PythonAdapter(self.root_path, search_paths)
+            )
+
+            # 3. Now perform the scan - indexing will use correct FQNs
             bus.info(L.index.run.start)
             self.workspace_scanner.scan()
 
-            # 1. Bootstrap services
             bus.info(L.refactor.run.loading_graph)
-            workspace = Workspace(self.root_path, config)
-            bus.debug(
-                L.debug.log.refactor_workspace_paths, paths=workspace.get_search_paths()
-            )
+            bus.debug(L.debug.log.refactor_workspace_paths, paths=search_paths)
             sidecar_manager = SidecarManager(self.root_path)
             graph = SemanticGraph(workspace, self.index_store)
 

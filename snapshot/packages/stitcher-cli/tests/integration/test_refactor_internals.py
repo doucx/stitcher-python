@@ -26,8 +26,8 @@ def test_graph_can_find_symbol_after_workspace_refactor(tmp_path: Path):
     assert configs, "Config should be loaded"
     config = configs[0]
 
-    # Create and populate index
-    index_store = create_populated_index(tmp_path)
+    # Create and populate index using the explicit config to ensure correct FQNs
+    index_store = create_populated_index(tmp_path, config=config)
 
     workspace = Workspace(root_path=tmp_path, config=config)
     graph = SemanticGraph(workspace, index_store)

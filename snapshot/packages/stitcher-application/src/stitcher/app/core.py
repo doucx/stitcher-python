@@ -111,9 +111,21 @@ class StitcherApp:
     def _load_configs(self) -> Tuple[List[StitcherConfig], Optional[str]]:
         return load_config_from_path(self.root_path)
 
+    def _sync_with_config(self, config: StitcherConfig):
+        """Synchronizes the app's workspace and scanner state with a specific config."""
+        self.workspace = Workspace(self.root_path, config)
+        search_paths = self.workspace.get_search_paths()
+        # Update scanner with context-aware adapter
+        self.workspace_scanner.register_adapter(
+            ".py", PythonAdapter(self.root_path, search_paths)
+        )
+
     def _configure_and_scan(self, config: StitcherConfig) -> List[ModuleDef]:
         if config.name != "default":
             bus.info(L.generate.target.processing, name=config.name)
+
+        # Ensure the underlying workspace and scanner match this target's configuration
+        self._sync_with_config(config)
 
         # Configure Docstring Strategy
         parser, renderer = get_docstring_codec(config.docstring_style)

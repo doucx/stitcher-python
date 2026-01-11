@@ -15,9 +15,12 @@ from stitcher.index.db import DatabaseManager
 from stitcher.index.store import IndexStore
 from stitcher.index.scanner import WorkspaceScanner
 from stitcher.adapter.python.index_adapter import PythonAdapter
+from stitcher.config import StitcherConfig
 
 
-def create_populated_index(root_path: Path) -> IndexStore:
+def create_populated_index(
+    root_path: Path, config: Optional[StitcherConfig] = None
+) -> IndexStore:
     """Creates a temporary IndexStore and performs a full scan."""
     db_path = root_path / ".stitcher" / "index" / "index.db"
 
@@ -27,7 +30,7 @@ def create_populated_index(root_path: Path) -> IndexStore:
 
     # The scanner needs a workspace-aware adapter.
     # The adapter itself is decoupled; the context is provided here.
-    workspace = Workspace(root_path)
+    workspace = Workspace(root_path, config=config)
     search_paths = workspace.get_search_paths()
 
     scanner = WorkspaceScanner(root_path, store)
