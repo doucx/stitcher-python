@@ -85,6 +85,7 @@ class StitcherApp:
             self.differ,
             interaction_handler,
             fingerprint_strategy=self.fingerprint_strategy,
+            index_store=self.index_store,
         )
         self.pump_runner = PumpRunner(
             root_path,
@@ -197,27 +198,46 @@ class StitcherApp:
         self.ensure_index_fresh()
         configs, _ = self._load_configs()
         all_results: List[FileCheckResult] = []
-        all_modules: List[ModuleDef] = []
+        all_modules_to_reformat: List[ModuleDef] = []
 
         self.scanner.had_errors = False
 
         for config in configs:
-            modules = self._configure_and_scan(config)
-            if not modules:
-                continue
-            all_modules.extend(modules)
+            # Configure docstring strategy first
+            parser, renderer = get_docstring_codec(config.docstring_style)
+            serializer = get_docstring_serializer(config.docstring_style)
+            self.doc_manager.set_strategy(parser, serializer)
 
-            results, conflicts = self.check_runner.analyze_batch(modules)
+            # Get file paths from config, don't parse yet.
+            file_paths = [
+                p.relative_to(self.root_path).as_posix()
+                for p in self.scanner.get_files_from_config(config)
+            ]
+            if not file_paths:
+                continue
+
+            results, conflicts = self.check_runner.analyze_batch(file_paths)
             all_results.extend(results)
 
-            self.check_runner.auto_reconcile_docs(results, modules)
+            # JIT parse modules that had doc improvements for auto-reconciliation
+            paths_to_parse = {res.path for res in results if res.infos["doc_improvement"]}
+            modules_for_reconcile = self.scanner.scan_files(
+                [self.root_path / p for p in paths_to_parse]
+            )
+
+            self.check_runner.auto_reconcile_docs(results, modules_for_reconcile)
 
             if not self.check_runner.resolve_conflicts(
                 results, conflicts, force_relink, reconcile
             ):
                 return False
 
-        self.check_runner.reformat_all(all_modules)
+            # Collect all modules for the final reformatting pass
+            all_modules_to_reformat.extend(
+                self.scanner.scan_files([self.root_path / p for p in file_paths])
+            )
+
+        self.check_runner.reformat_all(all_modules_to_reformat)
         report_success = self.check_runner.report(all_results)
         return report_success and not self.scanner.had_errors
 

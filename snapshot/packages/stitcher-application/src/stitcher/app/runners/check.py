@@ -21,6 +21,7 @@ from stitcher.app.services import (
 from stitcher.app.protocols import InteractionHandler, InteractionContext
 from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
 from stitcher.app.types import FileCheckResult
+from stitcher.index.store import IndexStore
 
 
 class CheckRunner:
@@ -33,6 +34,7 @@ class CheckRunner:
         differ: Differ,
         interaction_handler: InteractionHandler | None,
         fingerprint_strategy: FingerprintStrategyProtocol,
+        index_store: IndexStore,
     ):
         self.root_path = root_path
         self.parser = parser
@@ -41,106 +43,131 @@ class CheckRunner:
         self.differ = differ
         self.interaction_handler = interaction_handler
         self.fingerprint_strategy = fingerprint_strategy
-
-    def _compute_fingerprints(self, module: ModuleDef) -> Dict[str, Fingerprint]:
-        fingerprints: Dict[str, Fingerprint] = {}
-        for func in module.functions:
-            fingerprints[func.name] = self.fingerprint_strategy.compute(func)
-        for cls in module.classes:
-            for method in cls.methods:
-                fqn = f"{cls.name}.{method.name}"
-                fingerprints[fqn] = self.fingerprint_strategy.compute(method)
-        return fingerprints
+        self.index_store = index_store
 
     def _analyze_file(
-        self, module: ModuleDef
+        self, file_path: str
     ) -> Tuple[FileCheckResult, List[InteractionContext]]:
-        result = FileCheckResult(path=module.file_path)
+        result = FileCheckResult(path=file_path)
         unresolved_conflicts: List[InteractionContext] = []
 
-        # Content checks
-        if (self.root_path / module.file_path).with_suffix(".stitcher.yaml").exists():
-            doc_issues = self.doc_manager.check_module(module)
-            result.warnings["missing"].extend(doc_issues["missing"])
-            result.warnings["redundant"].extend(doc_issues["redundant"])
-            result.errors["pending"].extend(doc_issues["pending"])
-            result.errors["conflict"].extend(doc_issues["conflict"])
-            for fqn in doc_issues["extra"]:
-                unresolved_conflicts.append(
-                    InteractionContext(module.file_path, fqn, ConflictType.DANGLING_DOC)
-                )
+        # 1. Load all state from persisted sources
+        actual_symbols_list = self.index_store.get_symbols_by_file_path(file_path)
+        actual_symbols = {
+            s.logical_path: s for s in actual_symbols_list if s.logical_path
+        }
+        doc_irs = self.doc_manager.load_docs_for_path(file_path)
+        baseline_fps = self.sig_manager.load_composite_hashes(file_path)
 
-        # State machine analysis
-        is_tracked = (
-            (self.root_path / module.file_path).with_suffix(".stitcher.yaml").exists()
-        )
+        all_fqns = set(actual_symbols.keys()) | set(doc_irs.keys())
 
-        computed_fingerprints = self._compute_fingerprints(module)
-        current_yaml_map = self.doc_manager.compute_yaml_content_hashes(module)
-        stored_hashes_map = self.sig_manager.load_composite_hashes(module.file_path)
-
-        all_fqns = set(computed_fingerprints.keys()) | set(stored_hashes_map.keys())
-
+        # 2. State Machine Analysis per FQN
         for fqn in sorted(list(all_fqns)):
-            computed_fp = computed_fingerprints.get(fqn, Fingerprint())
+            actual = actual_symbols.get(fqn)
+            doc_ir = doc_irs.get(fqn)
+            baseline_fp = baseline_fps.get(fqn)
 
-            code_hash = computed_fp.get("current_code_structure_hash")
-            current_sig_text = computed_fp.get("current_code_signature_text")
-            yaml_hash = current_yaml_map.get(fqn)
+            # States
+            has_code = actual is not None
+            has_doc = doc_ir is not None
+            is_tracked = baseline_fp is not None
 
-            stored_fp = stored_hashes_map.get(fqn)
-            baseline_code_hash = (
-                stored_fp.get("baseline_code_structure_hash") if stored_fp else None
-            )
-            baseline_yaml_hash = (
-                stored_fp.get("baseline_yaml_content_hash") if stored_fp else None
-            )
-            baseline_sig_text = (
-                stored_fp.get("baseline_code_signature_text") if stored_fp else None
-            )
-
-            if not code_hash and baseline_code_hash:  # Extra
-                continue
-            if code_hash and not baseline_code_hash:  # New
-                continue
-
-            code_matches = code_hash == baseline_code_hash
-            yaml_matches = yaml_hash == baseline_yaml_hash
-
-            if code_matches and not yaml_matches:  # Doc improvement
-                result.infos["doc_improvement"].append(fqn)
-            elif not code_matches:
-                sig_diff = None
-                if baseline_sig_text and current_sig_text:
-                    sig_diff = self.differ.generate_text_diff(
-                        baseline_sig_text,
-                        current_sig_text,
-                        "baseline",
-                        "current",
-                    )
-                elif current_sig_text:
-                    sig_diff = f"(No baseline signature stored)\n+++ current\n{current_sig_text}"
-
-                conflict_type = (
-                    ConflictType.SIGNATURE_DRIFT
-                    if yaml_matches
-                    else ConflictType.CO_EVOLUTION
+            if not has_code and has_doc:
+                unresolved_conflicts.append(
+                    InteractionContext(file_path, fqn, ConflictType.DANGLING_DOC)
                 )
+                continue
 
+            if not has_code:
+                continue
+
+            # From here, we know `actual` exists.
+            actual_code_hash = actual.signature_hash
+            actual_doc_hash = actual.docstring_hash
+            actual_sig_text = actual.signature_text
+            actual_doc_content = actual.docstring_content or ""
+            is_public = not any(p.startswith("_") for p in fqn.split("."))
+
+            if has_doc and actual_doc_hash:
+                yaml_summary = doc_ir.summary or ""
+                if yaml_summary.strip() == actual_doc_content.strip():
+                    result.warnings["redundant"].append(fqn)
+                else:
+                    doc_diff = self.differ.generate_text_diff(
+                        yaml_summary, actual_doc_content, "yaml", "code"
+                    )
+                    unresolved_conflicts.append(
+                        InteractionContext(
+                            file_path, fqn, ConflictType.DOC_CONTENT_CONFLICT, doc_diff
+                        )
+                    )
+
+            if not is_tracked:
+                if actual_doc_hash and not has_doc:
+                    result.errors["pending"].append(fqn)
+                elif not actual_doc_hash and not has_doc and is_public:
+                    result.warnings["missing"].append(fqn)
+                continue
+
+            # From here, we know the symbol is tracked.
+            baseline_code_hash = baseline_fp.get("baseline_code_structure_hash")
+            baseline_yaml_hash = baseline_fp.get("baseline_yaml_content_hash")
+            baseline_sig_text = baseline_fp.get("baseline_code_signature_text")
+            yaml_hash = (
+                self.doc_manager.compute_yaml_content_hash(
+                    self.doc_manager._serialize_ir(doc_ir)
+                )
+                if doc_ir
+                else None
+            )
+
+            code_changed = actual_code_hash != baseline_code_hash
+            doc_changed = yaml_hash != baseline_yaml_hash
+
+            if not code_changed and doc_changed:
+                result.infos["doc_improvement"].append(fqn)
+            elif code_changed:
+                sig_diff = self.differ.generate_text_diff(
+                    baseline_sig_text or "", actual_sig_text or "", "baseline", "current"
+                )
+                conflict_type = (
+                    ConflictType.CO_EVOLUTION
+                    if doc_changed
+                    else ConflictType.SIGNATURE_DRIFT
+                )
                 unresolved_conflicts.append(
                     InteractionContext(
-                        module.file_path, fqn, conflict_type, signature_diff=sig_diff
+                        file_path, fqn, conflict_type, signature_diff=sig_diff
                     )
                 )
 
-        if not is_tracked and module.is_documentable():
-            undocumented = module.get_undocumented_public_keys()
-            if undocumented:
-                result.warnings["untracked_detailed"].extend(undocumented)
-            else:
+        # 3. Handle Untracked files (JIT Parse)
+        doc_path = (self.root_path / file_path).with_suffix(".stitcher.yaml")
+        if not doc_path.exists():
+            try:
+                content = (self.root_path / file_path).read_text("utf-8")
+                module_def = self.parser.parse(content, file_path=file_path)
+                if module_def.is_documentable():
+                    undocumented = module_def.get_undocumented_public_keys()
+                    if undocumented:
+                        result.warnings["untracked_detailed"].extend(undocumented)
+                    else:
+                        result.warnings["untracked"].append("all")
+            except Exception:
                 result.warnings["untracked"].append("all")
 
         return result, unresolved_conflicts
+
+    def analyze_batch(
+        self, file_paths: List[str]
+    ) -> Tuple[List[FileCheckResult], List[InteractionContext]]:
+        results = []
+        conflicts = []
+        for path in file_paths:
+            res, conf = self._analyze_file(path)
+            results.append(res)
+            conflicts.extend(conf)
+        return results, conflicts
 
     def _apply_resolutions(
         self, resolutions: dict[str, list[tuple[str, ResolutionAction]]]
@@ -160,30 +187,31 @@ class CheckRunner:
             stored_hashes = self.sig_manager.load_composite_hashes(file_path)
             new_hashes = copy.deepcopy(stored_hashes)
 
-            full_module_def = self.parser.parse(
-                (self.root_path / file_path).read_text("utf-8"), file_path
-            )
-            computed_fingerprints = self._compute_fingerprints(full_module_def)
-            current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
-                full_module_def
-            )
+            # JIT load current state from index for resolution
+            actual_symbols = {
+                s.logical_path: s
+                for s in self.index_store.get_symbols_by_file_path(file_path)
+                if s.logical_path
+            }
+            doc_irs = self.doc_manager.load_docs_for_path(file_path)
 
             for fqn, action in fqn_actions:
-                if fqn in new_hashes:
+                if fqn in new_hashes and fqn in actual_symbols:
                     fp = new_hashes[fqn]
-                    current_fp = computed_fingerprints.get(fqn, Fingerprint())
-                    current_code_hash = current_fp.get("current_code_structure_hash")
+                    actual = actual_symbols[fqn]
 
                     if action == ResolutionAction.RELINK:
-                        if current_code_hash:
-                            fp["baseline_code_structure_hash"] = str(current_code_hash)
+                        if actual.signature_hash:
+                            fp["baseline_code_structure_hash"] = str(actual.signature_hash)
                     elif action == ResolutionAction.RECONCILE:
-                        if current_code_hash:
-                            fp["baseline_code_structure_hash"] = str(current_code_hash)
-                        if fqn in current_yaml_map:
-                            fp["baseline_yaml_content_hash"] = str(
-                                current_yaml_map[fqn]
+                        if actual.signature_hash:
+                            fp["baseline_code_structure_hash"] = str(actual.signature_hash)
+                        if fqn in doc_irs:
+                            doc_ir = doc_irs[fqn]
+                            yaml_hash = self.doc_manager.compute_yaml_content_hash(
+                                self.doc_manager._serialize_ir(doc_ir)
                             )
+                            fp["baseline_yaml_content_hash"] = str(yaml_hash)
 
             if new_hashes != stored_hashes:
                 self.sig_manager.save_composite_hashes(file_path, new_hashes)
@@ -208,17 +236,6 @@ class CheckRunner:
                         k: self.doc_manager._serialize_ir(v) for k, v in docs.items()
                     }
                     self.doc_manager.adapter.save(doc_path, final_data)
-
-    def analyze_batch(
-        self, modules: List[ModuleDef]
-    ) -> Tuple[List[FileCheckResult], List[InteractionContext]]:
-        results = []
-        conflicts = []
-        for module in modules:
-            res, conf = self._analyze_file(module)
-            results.append(res)
-            conflicts.extend(conf)
-        return results, conflicts
 
     def auto_reconcile_docs(
         self, results: List[FileCheckResult], modules: List[ModuleDef]
@@ -291,6 +308,7 @@ class CheckRunner:
                                 ConflictType.SIGNATURE_DRIFT: "signature_drift",
                                 ConflictType.CO_EVOLUTION: "co_evolution",
                                 ConflictType.DANGLING_DOC: "extra",
+                                ConflictType.DOC_CONTENT_CONFLICT: "conflict",
                             }.get(context.conflict_type, "unknown")
                             res.errors[error_key].append(context.fqn)
                             break
@@ -333,6 +351,7 @@ class CheckRunner:
                                 ConflictType.SIGNATURE_DRIFT: "signature_drift",
                                 ConflictType.CO_EVOLUTION: "co_evolution",
                                 ConflictType.DANGLING_DOC: "extra",
+                                ConflictType.DOC_CONTENT_CONFLICT: "conflict",
                             }.get(context.conflict_type, "unknown")
                             res.errors[error_key].append(context.fqn)
 
