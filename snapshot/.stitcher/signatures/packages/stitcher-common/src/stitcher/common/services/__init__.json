@@ -1,4 +1,4 @@
 {
-  "AssetPathResolver": {},
-  "__all__": {}
+  "py://packages/stitcher-common/src/stitcher/common/services/__init__.py#AssetPathResolver": {},
+  "py://packages/stitcher-common/src/stitcher/common/services/__init__.py#__all__": {}
 }

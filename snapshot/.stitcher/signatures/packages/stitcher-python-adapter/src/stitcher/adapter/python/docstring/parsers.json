@@ -1,42 +1,46 @@
 {
-  "Docstring": {},
-  "DocstringIR": {},
-  "DocstringItem": {},
-  "DocstringParserProtocol": {},
-  "DocstringSection": {},
-  "DocstringSectionAdmonition": {},
-  "DocstringSectionAttributes": {},
-  "DocstringSectionParameters": {},
-  "DocstringSectionRaises": {},
-  "DocstringSectionReturns": {},
-  "DocstringSectionText": {},
-  "DocstringSectionYields": {},
-  "GriffeDocstringParser": {
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#Docstring": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringIR": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringItem": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringParserProtocol": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringSection": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringSectionAdmonition": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringSectionAttributes": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringSectionParameters": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringSectionRaises": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringSectionReturns": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringSectionText": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#DocstringSectionYields": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#GriffeDocstringParser": {
+    "baseline_code_signature_text": "class GriffeDocstringParser(DocstringParserProtocol):",
+    "baseline_code_structure_hash": "c84b38419dc3ddfc13074ec45e9a116ff64c2300c79160d6394a6d5bffb6112d",
     "baseline_yaml_content_hash": "569a5709448b4cd5200d52ed2498f0de9e0466391b9eb8de6d93bdbcc6d0f557"
   },
-  "GriffeDocstringParser.__init__": {
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#GriffeDocstringParser.__init__": {
     "baseline_code_signature_text": "def __init__(self, style: str = 'google'):",
     "baseline_code_structure_hash": "ec921023a48cc1d624e1ef9743308bbfed5895816a6a1a6297b5225e6d242af8"
   },
-  "GriffeDocstringParser._map_section": {
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#GriffeDocstringParser._map_section": {
     "baseline_code_signature_text": "def _map_section(self, section: GriffeSection) -> Union[DocstringSection, None]:",
     "baseline_code_structure_hash": "712c0b7002d98f734abdd03a953db615872dd046db19bbe8ea2f44dd5f64f3fd"
   },
-  "GriffeDocstringParser.parse": {
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#GriffeDocstringParser.parse": {
     "baseline_code_signature_text": "def parse(self, docstring_text: str) -> DocstringIR:",
     "baseline_code_structure_hash": "aa78df2873a9da3428776ed13d1c38d4a292b62b7107d0560002ff94181e5170"
   },
-  "GriffeDocstringParser.style": {},
-  "GriffeSection": {},
-  "List": {},
-  "Parser": {},
-  "RawDocstringParser": {
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#GriffeDocstringParser.style": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#GriffeSection": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#List": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#Parser": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#RawDocstringParser": {
+    "baseline_code_signature_text": "class RawDocstringParser(DocstringParserProtocol):",
+    "baseline_code_structure_hash": "2c70e325044b86eafc9530efc5fd07faf8656d41d618e6c4a708d7f3c418e923",
     "baseline_yaml_content_hash": "5922122cccf14467e0934dd9547315cb778235d0a04be4d7da717da318741a1b"
   },
-  "RawDocstringParser.parse": {
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#RawDocstringParser.parse": {
     "baseline_code_signature_text": "def parse(self, docstring_text: str) -> DocstringIR:",
     "baseline_code_structure_hash": "aa78df2873a9da3428776ed13d1c38d4a292b62b7107d0560002ff94181e5170"
   },
-  "Union": {},
-  "griffe": {}
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#Union": {},
+  "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/parsers.py#griffe": {}
 }

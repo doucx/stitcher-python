@@ -1,20 +1,23 @@
 {
-  "DatabaseManager": {},
-  "FileIndexer": {},
-  "IndexRunner": {},
-  "IndexRunner.__init__": {
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#DatabaseManager": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#FileIndexer": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#IndexRunner": {
+    "baseline_code_signature_text": "class IndexRunner:",
+    "baseline_code_structure_hash": "4bd965e6da96d1aa904399590cc12cf8faa2e158d55df8cfc6fa2f2104154098"
+  },
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#IndexRunner.__init__": {
     "baseline_code_signature_text": "def __init__(self, db_manager: DatabaseManager, indexer: FileIndexer):",
     "baseline_code_structure_hash": "e99918cc8c6395b4f362f72986e9f71a713281fbc03969e3b118748270f9c7fd"
   },
-  "IndexRunner.db_manager": {},
-  "IndexRunner.indexer": {},
-  "IndexRunner.run_build": {
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#IndexRunner.db_manager": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#IndexRunner.indexer": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#IndexRunner.run_build": {
     "baseline_code_signature_text": "def run_build(self, workspace: Workspace) -> bool:",
     "baseline_code_structure_hash": "8fbb503bf6bb2e039d1f4ad3307977405eed953bd022ba12e8ca89378ace8c6a"
   },
-  "IndexRunner.scanner": {},
-  "L": {},
-  "Workspace": {},
-  "WorkspaceScanner": {},
-  "bus": {}
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#IndexRunner.scanner": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#L": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#Workspace": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#WorkspaceScanner": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/index.py#bus": {}
 }

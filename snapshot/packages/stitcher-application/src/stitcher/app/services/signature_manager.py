@@ -2,9 +2,6 @@ import json
 from pathlib import Path
 from typing import Dict
 
-import json
-from pathlib import Path
-from typing import Dict
 
 from stitcher.spec import (
     Fingerprint,
@@ -23,9 +20,6 @@ class SignatureManager:
         return self.resolver.get_signature_path(file_path)
 
     def serialize_hashes(self, file_path: str, hashes: Dict[str, Fingerprint]) -> str:
-        """
-        Serializes fingerprints into a JSON string using SURI as keys.
-        """
         serialized_data = {
             SURIGenerator.for_symbol(file_path, fqn): fp.to_dict()
             for fqn, fp in hashes.items()
