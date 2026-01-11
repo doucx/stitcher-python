@@ -2,9 +2,6 @@ import json
 from pathlib import Path
 from typing import Dict
 
-import json
-from pathlib import Path
-from typing import Dict
 
 from stitcher.spec import (
     Fingerprint,
@@ -22,6 +19,13 @@ class SignatureManager:
     def _get_sig_path(self, file_path: str) -> Path:
         return self.resolver.get_signature_path(file_path)
 
+    def serialize_hashes(self, file_path: str, hashes: Dict[str, Fingerprint]) -> str:
+        serialized_data = {
+            SURIGenerator.for_symbol(file_path, fqn): fp.to_dict()
+            for fqn, fp in hashes.items()
+        }
+        return json.dumps(serialized_data, indent=2, sort_keys=True)
+
     def save_composite_hashes(
         self, file_path: str, hashes: Dict[str, Fingerprint]
     ) -> None:
@@ -33,14 +37,10 @@ class SignatureManager:
 
         sig_path = self._get_sig_path(file_path)
         sig_path.parent.mkdir(parents=True, exist_ok=True)
-
-        serialized_data = {
-            SURIGenerator.for_symbol(file_path, fqn): fp.to_dict()
-            for fqn, fp in hashes.items()
-        }
+        content = self.serialize_hashes(file_path, hashes)
 
         with sig_path.open("w", encoding="utf-8") as f:
-            json.dump(serialized_data, f, indent=2, sort_keys=True)
+            f.write(content)
 
     def load_composite_hashes(self, file_path: str) -> Dict[str, Fingerprint]:
         sig_path = self._get_sig_path(file_path)
@@ -52,13 +52,18 @@ class SignatureManager:
                 if not isinstance(data, dict):
                     return {}
                 result = {}
-                for suri, fp_data in data.items():
+                for key, fp_data in data.items():
                     try:
-                        _path, fragment = SURIGenerator.parse(suri)
+                        # Protocol Check: If it's a SURI, parse it.
+                        if key.startswith("py://"):
+                            _path, fragment = SURIGenerator.parse(key)
+                        else:
+                            # Legacy Fallback: Treat key as direct fragment
+                            fragment = key
+
                         if fragment:
                             result[fragment] = Fingerprint.from_dict(fp_data)
                     except (ValueError, InvalidFingerprintKeyError):
-                        # Gracefully skip malformed SURIs or invalid fingerprint data
                         continue
                 return result
         except (json.JSONDecodeError, OSError):

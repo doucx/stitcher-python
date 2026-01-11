@@ -1,10 +1,10 @@
 {
-  "CheckRunner": {},
-  "CoverageRunner": {},
-  "IndexRunner": {},
-  "InitRunner": {},
-  "PumpRunner": {},
-  "RefactorRunner": {},
-  "TransformRunner": {},
-  "__all__": {}
+  "py://packages/stitcher-application/src/stitcher/app/runners/__init__.py#CheckRunner": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/__init__.py#CoverageRunner": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/__init__.py#IndexRunner": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/__init__.py#InitRunner": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/__init__.py#PumpRunner": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/__init__.py#RefactorRunner": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/__init__.py#TransformRunner": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/__init__.py#__all__": {}
 }

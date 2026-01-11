@@ -7,3 +7,5 @@
 "SignatureManager.save_composite_hashes": |-
   Saves the composite hash map for a module.
   Expected format: { "FQN": { "baseline_code_structure_hash": "...", "baseline_yaml_content_hash": "..." } }
+"SignatureManager.serialize_hashes": |-
+  Serializes fingerprints into a JSON string using SURI as keys.
