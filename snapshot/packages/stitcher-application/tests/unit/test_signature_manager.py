@@ -51,9 +51,7 @@ def test_fingerprint_stability():
 
 def test_manager_save_and_load_composite_hashes(tmp_path: Path):
     # Arrange
-    manager = SignatureManager(
-        root_path=tmp_path, fingerprint_strategy=PythonFingerprintStrategy()
-    )
+    manager = SignatureManager(root_path=tmp_path)
     module = ModuleDef(file_path="src/main.py", functions=[create_func(name="foo")])
 
     # Data is now composed of Fingerprint objects
@@ -73,7 +71,7 @@ def test_manager_save_and_load_composite_hashes(tmp_path: Path):
     }
 
     # Act: Save
-    manager.save_composite_hashes(module, hashes_to_save)
+    manager.save_composite_hashes(module.file_path, hashes_to_save)
 
     # Assert: File exists and has correct structure
     sig_path = tmp_path / ".stitcher/signatures/src/main.json"
@@ -88,5 +86,5 @@ def test_manager_save_and_load_composite_hashes(tmp_path: Path):
         assert "baseline_yaml_content_hash" not in data["bar"]
 
     # Act: Load
-    loaded = manager.load_composite_hashes(module)
+    loaded = manager.load_composite_hashes(module.file_path)
     assert loaded == hashes_to_save
