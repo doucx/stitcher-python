@@ -1,53 +1,3 @@
-这是一个非常棒的建议。既然我们要诊断性能，那么“手动维护 `sys.path`”这种低效的行为本身就应该被自动化掉。
-
-我将为你重构这个脚本，使其具备**全包自动扫描**和**多命令支持**的能力。
-
-## [WIP] refactor: 增强性能分析工具以支持多命令与自动包发现
-
-### 用户需求
-
-1.  修改 `scripts/profile_cov.py`（并建议重命名为 `profile_stitcher.py`），使其能自动扫描 `packages/` 目录并加载所有本地包的 `src` 路径。
-2.  增加对不同命令（如 `check`, `pump`, `generate` 等）的支持，以便进行横向性能对比。
-
-### 评论
-
-随着项目包数量的增加，手动维护 `sys.path` 会变得极其脆弱且难以维护。通过自动化的包发现机制，我们可以确保分析工具始终与最新的项目布局同步。同时，支持多命令分析将帮助我们建立一个完整的性能基准图谱，识别出跨组件的通用瓶颈（如数据库连接开销）。
-
-### 目标
-
-1.  **自动路径发现**: 实现一个函数，自动遍历 `packages/` 目录下所有包含 `src/` 子目录的包，并将其加入 `sys.path`。
-2.  **通用命令映射**: 使用命令行参数指定要分析的操作。
-3.  **重命名脚本**: 将脚本重命名为更通用的 `scripts/profile_stitcher.py`。
-
-### 基本原理
-
-脚本将采用以下逻辑：
--   **动态路径注入**: 利用 `pathlib` 迭代 `packages/` 目录。对于每一个存在的包，只要它有 `src/` 文件夹，就将其绝对路径插入 `sys.path[0]`。
--   **命令分发器**: 建立一个 `target -> method` 的映射表。通过命令行第一个参数选择要运行的 `StitcherApp` 方法。
--   **高保真测量**: 依然保留 `pyinstrument` 的采样分析，并显式测量导入时间和初始化时间。
-
-### 标签
-
-#intent/tooling #flow/ready #priority/medium #comp/build #scope/dx #ai/instruct #task/domain/testing #task/object/profiler #task/action/refactor #task/state/begin
-
----
-
-### Script
-
-#### Acts 1: 删除旧脚本并创建通用的分析工具
-
-我们将删除之前的专用脚本，并创建一个功能更全的新脚本。
-
-~~~~~act
-delete_file
-scripts/profile_cov.py
-~~~~~
-
-~~~~~act
-write_file
-scripts/profile_stitcher.py
-~~~~~
-~~~~~python
 import sys
 import time
 import argparse
@@ -154,10 +104,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-~~~~~
-
-### 下一步建议
-
-1.  **全量扫描**: 建议你运行 `python3 scripts/profile_stitcher.py check` 和 `python3 scripts/profile_stitcher.py pump`。这能让你看到在执行不同复杂度的逻辑时，数据库连接和 I/O 开销的占比。
-2.  **HTML 报告**: 如果终端输出太长，尝试加上 `--html` 参数，然后在浏览器中打开生成的 `.html` 文件，它支持点击展开和火焰图模式，非常直观。
-3.  **自动化基准测试**: 我们可以将此脚本作为未来 CI 流程的一部分，监控核心路径的性能回归。
