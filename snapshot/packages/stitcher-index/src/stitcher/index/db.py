@@ -48,10 +48,6 @@ class DatabaseManager:
 
     @contextmanager
     def session(self) -> Generator[None, None, None]:
-        """
-        Starts a persistent database session.
-        Calls to get_connection() within this context will reuse the same connection.
-        """
         if self._active_connection:
             yield
             return

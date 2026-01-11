@@ -3,6 +3,7 @@ from needle.pointer import L
 from stitcher.index.db import DatabaseManager
 from stitcher.index.indexer import FileIndexer
 from stitcher.workspace import Workspace
+from typing import Dict, Any
 
 
 class IndexRunner:

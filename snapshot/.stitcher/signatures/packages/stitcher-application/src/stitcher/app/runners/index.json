@@ -10,7 +10,7 @@
   "py://packages/stitcher-application/src/stitcher/app/runners/index.py#IndexRunner.db_manager": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/index.py#IndexRunner.indexer": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/index.py#IndexRunner.run_build": {
-    "baseline_code_signature_text": "def run_build(self, workspace: Workspace) -> bool:",
-    "baseline_code_structure_hash": "8fbb503bf6bb2e039d1f4ad3307977405eed953bd022ba12e8ca89378ace8c6a"
+    "baseline_code_signature_text": "def run_build(self, workspace: Workspace) -> Dict[str, Any]:",
+    "baseline_code_structure_hash": "c43fcb271acb41f428ab69ed49861d2ffc9bf2b475f2ebb06084065adf503a79"
   }
 }

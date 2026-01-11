@@ -7,6 +7,7 @@
     "baseline_code_signature_text": "def __init__(self, db_path: Path):",
     "baseline_code_structure_hash": "cf4985b042007ee812049afa8df4871d7409ba0dd6877ee45ef7f5cfb32edeaa"
   },
+  "py://packages/stitcher-index/src/stitcher/index/db.py#DatabaseManager._active_connection": {},
   "py://packages/stitcher-index/src/stitcher/index/db.py#DatabaseManager._get_raw_connection": {
     "baseline_code_signature_text": "def _get_raw_connection(self) -> sqlite3.Connection:",
     "baseline_code_structure_hash": "6304fd6fa633e5a2298b3c39eba5fdcbedd9307841e77b28b840ad462cfacfca"
@@ -21,6 +22,11 @@
     "baseline_code_signature_text": "def initialize(self) -> None:",
     "baseline_code_structure_hash": "e36fa6cfdacc0a16a73991ac1c1abede9d31bda0075ecf8a043ac766d3ce4893",
     "baseline_yaml_content_hash": "e436d30be4ffa94c6c96df11489319423e096a74edced58568e99a460aa0bf27"
+  },
+  "py://packages/stitcher-index/src/stitcher/index/db.py#DatabaseManager.session": {
+    "baseline_code_signature_text": "def session(self) -> Generator[None, None, None]:",
+    "baseline_code_structure_hash": "09ca8e8d7adff4896afb9e30646295643d6c72a8c78ea39789a710d54e968e0d",
+    "baseline_yaml_content_hash": "f74c0d2284a814bd8b5ee10d5cf1c4cfc1dd0decb819b2781a22a8705cd6bdc5"
   },
   "py://packages/stitcher-index/src/stitcher/index/db.py#log": {}
 }
