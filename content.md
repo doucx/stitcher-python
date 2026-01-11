@@ -1,63 +1,208 @@
-好的，我们已经完成了代码架构的梳理和测试文件的归位。现在我将生成一个计划，将这些变更作为一个完整的逻辑单元提交到 Git 仓库。
+好的，我们正式启动 **“从启发式猜测到确定性链接”** 路线图的第一阶段。
 
-## [COMMIT] refactor(python): 解耦 analysis 与 adapter 层并规范测试布局
+此计划将专注于 **Phase A: 统一 FQN 计算逻辑**。我们将创建一个单一、权威的工具函数，用于将文件路径转换为 Python 的完全限定名称 (FQN)，并重构 `refactor` 和 `index` 两个包来使用它。这为后续的架构统一奠定了坚实的基础。
+
+## [WIP] refactor(analysis): 集中化 FQN 计算逻辑
+
+### 错误分析
+
+无。这是一项主动的架构重构，而非错误修复。
 
 ### 用户需求
-完成 `stitcher-python-analysis` 与 `stitcher-python-adapter` 的解耦工作，并按照 monorepo 规范完成测试文件的重组。
+
+创建一个单一事实来源 (SSoT)，用于将文件系统路径转换为 Python 的完全限定名称 (FQN)，以消除在 `refactor` 和 `index` 包中重复且可能不一致的逻辑。
 
 ### 评论
-这是一次重要的架构清理。通过将 `GriffePythonParser` 的实现移动到 `adapter` 层，我们确保了 `analysis` 包作为一个纯粹的工具库，不再逆向依赖应用层的 `stitcher-spec` 协议。同时，测试文件的归位使得每个包都符合“代码与测试共存”的原则，极大提升了项目的可维护性和清晰度。
+
+这是“确定性链接”宏大路线图中的关键第一步。它遵循了 DRY 和 HFEA 公理中的 SSoT 原则，通过将核心命名约定算法集中化，减少了维护开销，并防止了未来因命名方案不一致而导致的棘手错误。这是一次基础性的、高价值的清理工作。
 
 ### 目标
-1. 提交 `GriffePythonParser` 从 `analysis` 包迁移至 `adapter` 包的变更。
-2. 提交测试文件在 `adapter` 与 `analysis` 包之间的重新组织和归类。
-3. 清理掉不再需要的代理模块和目录。
+
+1.  在 `stitcher-python-analysis` 包中创建一个新的工具模块 `utils.py`。
+2.  在该模块中实现一个健壮的、经过单元测试的 `path_to_logical_fqn` 函数。
+3.  重构 `stitcher-refactor` 包，使其调用这个新的集中化函数。
+4.  重构 `stitcher-python-adapter` (服务于 `stitcher-index`)，使其也调用该函数。
+5.  移除旧的、重复的 FQN 计算实现。
 
 ### 基本原理
-遵循 `d3-constraint-quipu-plan-script-rules-D3-P2`，在完成文件系统操作后，在一个独立的 `[COMMIT]` 计划中执行 Git 提交。这将所有架构优化动作封装在一个清晰的历史节点中，便于回溯。
+
+通过将路径到 FQN 的转换逻辑集中到 `stitcher-python-analysis` 包中，我们建立了一个可测试的、规范的算法。现在，重构引擎和索引引擎将使用完全相同的“命名语言”，这是实现更复杂的扫描-链接 (Scan-Link) 架构的绝对先决条件。此举消除了代码重复和两个系统之间语义漂移的风险。
 
 ### 标签
-#intent/refine #flow/ready #priority/medium #comp/tests #comp/engine #scope/core #dx #ai/instruct #task/domain/testing #task/object/test-organization #task/action/refactor #task/state/end #task/status/completed
+
+#intent/refine #flow/ready #priority/high #comp/refactor #comp/index #comp/python-analysis #comp/tests #scope/dx #ai/delegate #task/domain/architecture #task/object/component-unification #task/action/implementation #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: 提交变更
+#### Acts 1: 创建 FQN 工具模块及其单元测试
 
-我们将所有受影响的文件添加到暂存区并创建提交。
-
-~~~~~act
-git_add
-packages/stitcher-python-adapter/src/stitcher/adapter/python/griffe_parser.py
-packages/stitcher-python-analysis/src/stitcher/python/analysis/griffe/parser.py
-packages/stitcher-python-adapter/tests/
-packages/stitcher-python-analysis/tests/
-~~~~~
+我们首先在 `stitcher-python-analysis` 包中创建新的 `utils.py` 模块，并为其编写全面的单元测试，确保它能正确处理各种路径格式，包括 `__init__.py` 文件。
 
 ~~~~~act
-git_commit
+write_file
+packages/stitcher-python-analysis/src/stitcher/python/analysis/utils.py
 ~~~~~
-~~~~~text
-refactor(python): decouple analysis and adapter layers
+~~~~~python
+def path_to_logical_fqn(rel_path_str: str) -> str:
+    """
+    Converts a relative file path string into a Python Fully Qualified Name (FQN).
 
-This commit performs a major architectural cleanup between the Python
-analysis and adapter packages:
+    - 'src/my_pkg/module.py' -> 'my_pkg.module'
+    - 'my_pkg/__init__.py' -> 'my_pkg'
+    """
+    # Normalize path separators to dots
+    fqn = rel_path_str.replace("/", ".")
 
-1. Relocated `GriffePythonParser` implementation from `stitcher-python-analysis`
-   to `stitcher-python-adapter`. This restores the correct dependency flow
-   where the adapter package implements application protocols using the
-   pure utility analysis package.
-2. Reorganized test files across both packages to follow the monorepo
-   standard (tests live with the code they verify).
-3. Corrected test classification by moving integrated component tests
-   from `unit/` to `integration/` directories.
-4. Cleaned up redundant proxy modules in the adapter layer.
+    # Strip .py extension
+    if fqn.endswith(".py"):
+        fqn = fqn[:-3]
 
-These changes significantly improve architectural integrity and developer
-experience by making the project structure more predictable and decoupled.
+    # Handle __init__ files (e.g., 'pkg.__init__' -> 'pkg')
+    if fqn.endswith(".__init__"):
+        fqn = fqn[: -len(".__init__")]
+
+    return fqn
+~~~~~
+~~~~~act
+write_file
+packages/stitcher-python-analysis/tests/unit/test_utils.py
+~~~~~
+~~~~~python
+import pytest
+from stitcher.python.analysis.utils import path_to_logical_fqn
+
+
+@pytest.mark.parametrize(
+    "input_path, expected_fqn",
+    [
+        ("src/my_pkg/module.py", "src.my_pkg.module"),
+        ("my_pkg/module.py", "my_pkg.module"),
+        ("my_pkg/__init__.py", "my_pkg"),
+        ("toplevel.py", "toplevel"),
+        ("a/b/c/__init__.py", "a.b.c"),
+        # Edge case: No extension
+        ("a/b/c", "a.b.c"),
+    ],
+)
+def test_path_to_logical_fqn(input_path, expected_fqn):
+    assert path_to_logical_fqn(input_path) == expected_fqn
+~~~~~
+
+#### Acts 2: 重构 `stitcher-refactor`
+
+接下来，我们将 `stitcher-refactor` 中的 `_path_to_fqn` 方法替换为对新工具的调用。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/src/stitcher/refactor/operations/base.py
+~~~~~
+~~~~~python.old
+from abc import ABC, abstractmethod
+from typing import List, Dict, Any, Optional
+from pathlib import Path
+
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.intent import RefactorIntent
+
+
+class SidecarUpdateMixin:
+    def _path_to_fqn(self, path: Path, search_paths: List[Path]) -> Optional[str]:
+        base_path = None
+        for sp in sorted(search_paths, key=lambda p: len(p.parts), reverse=True):
+            try:
+                path.relative_to(sp)
+                base_path = sp
+                break
+            except ValueError:
+                continue
+
+        if base_path is None:
+            return None
+
+        rel_path = path.relative_to(base_path)
+        parts = list(rel_path.parts)
+
+        if parts[-1].endswith(".py"):
+            parts[-1] = parts[-1][:-3]
+        elif parts[-1].endswith(".pyi"):
+            parts[-1] = parts[-1][:-4]
+
+        if parts[-1] == "__init__":
+            parts = parts[:-1]
+
+        if not parts:
+            return ""
+
+        return ".".join(parts)
+~~~~~
+~~~~~python.new
+from abc import ABC, abstractmethod
+from typing import List, Dict, Any, Optional
+from pathlib import Path
+
+from stitcher.python.analysis.utils import path_to_logical_fqn
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.refactor.engine.intent import RefactorIntent
+
+
+class SidecarUpdateMixin:
+    def _path_to_fqn(self, path: Path, search_paths: List[Path]) -> Optional[str]:
+        base_path = None
+        for sp in sorted(search_paths, key=lambda p: len(p.parts), reverse=True):
+            try:
+                path.relative_to(sp)
+                base_path = sp
+                break
+            except ValueError:
+                continue
+
+        if base_path is None:
+            return None
+
+        rel_path = path.relative_to(base_path)
+        return path_to_logical_fqn(rel_path.as_posix())
+~~~~~
+
+#### Acts 3: 重构 `stitcher-python-adapter`
+
+最后，我们更新 `PythonAdapter`，使其在为 `stitcher-index` 解析符号时使用相同的 FQN 计算逻辑。
+
+~~~~~act
+patch_file
+packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py
+~~~~~
+~~~~~python.old
+from stitcher.adapter.python.griffe_parser import GriffePythonParser
+from stitcher.adapter.python.fingerprint import PythonFingerprintStrategy
+from stitcher.python.analysis.cst.usage_visitor import UsageScanVisitor, UsageRegistry
+from .uri import SURIGenerator
+~~~~~
+~~~~~python.new
+from stitcher.adapter.python.griffe_parser import GriffePythonParser
+from stitcher.adapter.python.fingerprint import PythonFingerprintStrategy
+from stitcher.python.analysis.cst.usage_visitor import UsageScanVisitor, UsageRegistry
+from stitcher.python.analysis.utils import path_to_logical_fqn
+from .uri import SURIGenerator
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py
+~~~~~
+~~~~~python.old
+        # Pre-calculate logical FQN for the module
+        logical_module_fqn = rel_path.replace("/", ".").replace(".py", "")
+        if logical_module_fqn.endswith(".__init__"):
+            logical_module_fqn = logical_module_fqn[: -len(".__init__")]
+~~~~~
+~~~~~python.new
+        # Pre-calculate logical FQN for the module
+        logical_module_fqn = path_to_logical_fqn(rel_path)
 ~~~~~
 
 ### 下一步建议
-- **依赖分析**: 建议运行 `uv tree` 或类似的工具检查 `stitcher-python-analysis` 的依赖，确认其是否已彻底不再依赖 `stitcher-spec`。
-- **环境验证**: 运行 `pytest` 确保所有移动后的测试都能正常发现并执行。由于测试文件位置发生了变化，可能需要更新 CI 配置中的测试路径。
+
+我们已经成功地将 FQN 计算逻辑集中化，为后续的重构铺平了道路。
+
+下一步，我们将执行 **Phase B: 抽象作用域构建器 (Scope Builder Abstraction)**。这将涉及在 `stitcher-python-analysis` 中创建另一个共享组件 `ScopeAnalyzer`，用于标准化 `local_symbols` 映射表的生成过程。这将进一步消除 `refactor` 和 `index` 之间的逻辑重复。

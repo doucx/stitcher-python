@@ -9,6 +9,7 @@ import libcst as cst
 from stitcher.adapter.python.griffe_parser import GriffePythonParser
 from stitcher.adapter.python.fingerprint import PythonFingerprintStrategy
 from stitcher.python.analysis.cst.usage_visitor import UsageScanVisitor, UsageRegistry
+from stitcher.python.analysis.utils import path_to_logical_fqn
 from .uri import SURIGenerator
 
 
@@ -32,9 +33,7 @@ class PythonAdapter(LanguageAdapter):
         module_def = self.parser.parse(content, file_path=rel_path)
 
         # Pre-calculate logical FQN for the module
-        logical_module_fqn = rel_path.replace("/", ".").replace(".py", "")
-        if logical_module_fqn.endswith(".__init__"):
-            logical_module_fqn = logical_module_fqn[: -len(".__init__")]
+        logical_module_fqn = path_to_logical_fqn(rel_path)
 
         # 3. Project to Symbols
         symbols = self._extract_symbols(rel_path, module_def, logical_module_fqn)
