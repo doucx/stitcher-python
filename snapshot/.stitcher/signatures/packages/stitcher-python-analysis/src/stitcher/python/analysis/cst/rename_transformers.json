@@ -2,9 +2,7 @@
   "CodeRange": {},
   "Dict": {},
   "List": {},
-  "NamespaceRenamerTransformer": {
-    "baseline_yaml_content_hash": "561fe244b21a6bd27862288b50bc1906470c61b7473b0bd457f1992e8775d1d7"
-  },
+  "NamespaceRenamerTransformer": {},
   "NamespaceRenamerTransformer.METADATA_DEPENDENCIES": {},
   "NamespaceRenamerTransformer.__init__": {
     "baseline_code_signature_text": "def __init__(self, old_prefix: str, new_prefix: str, locations: Dict[Tuple[int, int], UsageLocation]):",
@@ -32,9 +30,7 @@
   "Optional": {},
   "PositionProvider": {},
   "ReferenceType": {},
-  "SymbolRenamerTransformer": {
-    "baseline_yaml_content_hash": "9a252f0d96c5665d3c35dfe215b2fcf80a1661ce5f6a0926b0d6ab2a40ef5c72"
-  },
+  "SymbolRenamerTransformer": {},
   "SymbolRenamerTransformer.METADATA_DEPENDENCIES": {},
   "SymbolRenamerTransformer.__init__": {
     "baseline_code_signature_text": "def __init__(self, rename_map: Dict[str, str], target_locations: List[UsageLocation]):",
@@ -51,10 +47,6 @@
   "SymbolRenamerTransformer._get_rename_for_node": {
     "baseline_code_signature_text": "def _get_rename_for_node(self, node: cst.CSTNode) -> Optional[Tuple[str, str]]:",
     "baseline_code_structure_hash": "098def532368c1d3e89f0bfc2553abca5dab1491d11aa5f0d935e984abc56297"
-  },
-  "SymbolRenamerTransformer._is_target": {
-    "baseline_code_signature_text": "def _is_target(self, node: cst.CSTNode) -> Optional[str]:",
-    "baseline_code_structure_hash": "740ce980ed3bcf2a2428128eca5366b9f47ddb46621b83b29cd0a2228577b51c"
   },
   "SymbolRenamerTransformer._location_index": {},
   "SymbolRenamerTransformer.leave_Attribute": {

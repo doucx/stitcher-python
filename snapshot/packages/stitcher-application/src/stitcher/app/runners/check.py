@@ -77,7 +77,9 @@ class CheckRunner:
         is_tracked = (self.root_path / file_path).with_suffix(".stitcher.yaml").exists()
         code_keys = set(actual_fingerprints.keys())
         yaml_keys = set(current_yaml_map.keys())
-        public_code_keys = {k for k in code_keys if not k.split(".")[-1].startswith("_")}
+        public_code_keys = {
+            k for k in code_keys if not k.split(".")[-1].startswith("_")
+        }
 
         if is_tracked:
             # Extra (Dangling Doc)

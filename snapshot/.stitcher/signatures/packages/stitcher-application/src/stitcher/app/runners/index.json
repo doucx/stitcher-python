@@ -12,9 +12,7 @@
     "baseline_code_signature_text": "def run_build(self, workspace: Workspace) -> bool:",
     "baseline_code_structure_hash": "8fbb503bf6bb2e039d1f4ad3307977405eed953bd022ba12e8ca89378ace8c6a"
   },
-  "IndexRunner.scanner": {},
   "L": {},
   "Workspace": {},
-  "WorkspaceScanner": {},
   "bus": {}
 }

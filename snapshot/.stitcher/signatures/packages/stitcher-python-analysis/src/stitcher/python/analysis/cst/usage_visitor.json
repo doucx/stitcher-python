@@ -8,9 +8,7 @@
   "PositionProvider": {},
   "ReferenceType": {},
   "UsageLocation": {},
-  "UsageRegistry": {
-    "baseline_yaml_content_hash": "484aa8dc6c520a7af91e59d8c888028d4ae0ed452b7263e1224bdd97221391c5"
-  },
+  "UsageRegistry": {},
   "UsageRegistry.__init__": {
     "baseline_code_signature_text": "def __init__(self):",
     "baseline_code_structure_hash": "9bab2b1dd22fea04e58176b09f65ef4f673738c47abf25fca7e0c62af472206f"
@@ -28,9 +26,7 @@
     "baseline_code_signature_text": "def register(self, target_fqn: str, location: UsageLocation):",
     "baseline_code_structure_hash": "205b208dafd47aeb0946fd69a75d55b5e752676fdcd5d104eeff837e807159a5"
   },
-  "UsageScanVisitor": {
-    "baseline_yaml_content_hash": "c4eb2da8387332274d2623b10594f6c47069aba9833c48a131d6aed7807ef093"
-  },
+  "UsageScanVisitor": {},
   "UsageScanVisitor.METADATA_DEPENDENCIES": {},
   "UsageScanVisitor.__init__": {
     "baseline_code_signature_text": "def __init__(self, file_path: Path, local_symbols: Dict[str, str], registry: UsageRegistry, current_module_fqn: Optional[str] = None, is_init_file: bool = False):",
@@ -38,8 +34,7 @@
   },
   "UsageScanVisitor._register_node": {
     "baseline_code_signature_text": "def _register_node(self, node: cst.CSTNode, fqn: str, ref_type: ReferenceType):",
-    "baseline_code_structure_hash": "abf738b190d9ece13c1b60031acf1cf961a182f223400f30ef8767d05aa9e362",
-    "baseline_yaml_content_hash": "f306310008e15395c4cac50dedd8777fa6b6696bc20acd9c3befbf22499e39cf"
+    "baseline_code_structure_hash": "abf738b190d9ece13c1b60031acf1cf961a182f223400f30ef8767d05aa9e362"
   },
   "UsageScanVisitor.active_symbols": {},
   "UsageScanVisitor.current_module_fqn": {},

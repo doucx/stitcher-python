@@ -60,7 +60,6 @@
     "baseline_code_signature_text": "def visit_ImportFrom(self, node: ast.ImportFrom) -> None:",
     "baseline_code_structure_hash": "bc1e23ad33ae8252ae3444fb7fad823144e14754f8b876b51d1793d05c85c1c1"
   },
-  "__all__": {},
   "_enrich_typing_imports": {},
   "ast": {},
   "cast": {},
