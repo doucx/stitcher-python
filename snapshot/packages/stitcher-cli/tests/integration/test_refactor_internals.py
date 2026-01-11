@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from stitcher.test_utils import WorkspaceFactory
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
 from stitcher.config import load_config_from_path
 from stitcher.refactor.workspace import Workspace
 from stitcher.refactor.engine import SemanticGraph
@@ -26,8 +26,11 @@ def test_graph_can_find_symbol_after_workspace_refactor(tmp_path: Path):
     assert configs, "Config should be loaded"
     config = configs[0]
 
+    # Create and populate index
+    index_store = create_populated_index(tmp_path)
+
     workspace = Workspace(root_path=tmp_path, config=config)
-    graph = SemanticGraph(workspace)
+    graph = SemanticGraph(workspace, index_store)
 
     # The key action performed by RefactorRunner
     pkg_names = list(workspace.import_to_source_dirs.keys())

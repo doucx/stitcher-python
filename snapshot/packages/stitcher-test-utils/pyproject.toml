@@ -13,6 +13,7 @@ dependencies = [
     "tomli-w",
     "stitcher-application",
     "stitcher-python-adapter",
+    "stitcher-index",
 ]
 
 [tool.hatch.build.targets.wheel]

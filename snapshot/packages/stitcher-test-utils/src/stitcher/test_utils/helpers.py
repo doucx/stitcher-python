@@ -10,6 +10,25 @@ from stitcher.adapter.python import (
 )
 
 from stitcher.adapter.python.griffe_parser import GriffePythonParser
+from stitcher.index.db import DatabaseManager
+from stitcher.index.store import IndexStore
+from stitcher.index.scanner import WorkspaceScanner
+from stitcher.adapter.python.index_adapter import PythonAdapter
+
+
+def create_populated_index(root_path: Path) -> IndexStore:
+    """Creates a temporary IndexStore and performs a full scan."""
+    db_path = root_path / ".stitcher" / "index" / "index.db"
+    
+    db_manager = DatabaseManager(db_path)
+    db_manager.initialize()
+    store = IndexStore(db_manager)
+    
+    scanner = WorkspaceScanner(root_path, store)
+    scanner.register_adapter(".py", PythonAdapter(root_path))
+    scanner.scan()
+    
+    return store
 
 
 def create_test_app(
