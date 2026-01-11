@@ -156,3 +156,26 @@ class IndexStore:
     def delete_file(self, file_id: int) -> None:
         with self.db.get_connection() as conn:
             conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+
+    def find_references(
+        self, target_fqn: str
+    ) -> List[Tuple[ReferenceRecord, str]]:
+        """
+        Finds all references to a specific FQN.
+        Returns a list of (ReferenceRecord, file_path_str) tuples.
+        """
+        with self.db.get_connection() as conn:
+            # Join references with files to get the path
+            rows = conn.execute(
+                """
+                SELECT r.*, f.path as file_path
+                FROM "references" r
+                JOIN files f ON r.source_file_id = f.id
+                WHERE r.target_fqn = ?
+                """,
+                (target_fqn,),
+            ).fetchall()
+            return [
+                (ReferenceRecord(**{k: v for k, v in dict(row).items() if k != "file_path"}), row["file_path"])
+                for row in rows
+            ]

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.refactor.workspace import Workspace
+from stitcher.index.store import IndexStore
 from .graph import SemanticGraph
 
 
@@ -10,3 +11,4 @@ class RefactorContext:
     workspace: Workspace
     graph: SemanticGraph
     sidecar_manager: SidecarManager
+    index_store: IndexStore
