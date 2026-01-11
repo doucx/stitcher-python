@@ -57,7 +57,8 @@
   },
   "py://packages/stitcher-python-analysis/src/stitcher/python/analysis/cst/transformers.py#StripperTransformer._get_assign_target_name": {
     "baseline_code_signature_text": "def _get_assign_target_name(self, node: cst.BaseSmallStatement) -> Optional[str]:",
-    "baseline_code_structure_hash": "bc02f181e6f90e04e0879d08eabb342fd1a92a80b39f2cbc1ab495bc8ba0d15a"
+    "baseline_code_structure_hash": "bc02f181e6f90e04e0879d08eabb342fd1a92a80b39f2cbc1ab495bc8ba0d15a",
+    "baseline_yaml_content_hash": "fa52271c5870df81fc6816b51121c7c9c8a9ed0f35ed5b2bda772338ec417cc9"
   },
   "py://packages/stitcher-python-analysis/src/stitcher/python/analysis/cst/transformers.py#StripperTransformer._is_docstring": {
     "baseline_code_signature_text": "def _is_docstring(self, node: cst.BaseSmallStatement) -> bool:",
@@ -99,10 +100,12 @@
   "py://packages/stitcher-python-analysis/src/stitcher/python/analysis/cst/transformers.py#format_docstring": {},
   "py://packages/stitcher-python-analysis/src/stitcher/python/analysis/cst/transformers.py#inject_docstrings": {
     "baseline_code_signature_text": "def inject_docstrings(source_code: str, docs: Dict[str, str]) -> str:",
-    "baseline_code_structure_hash": "612603f2aeaa56fda779309e316bd525eea334148f47d8491ec67cc6503189dc"
+    "baseline_code_structure_hash": "612603f2aeaa56fda779309e316bd525eea334148f47d8491ec67cc6503189dc",
+    "baseline_yaml_content_hash": "0eb0eab733eebf79d21d2e1de840545cc39bd2e75ba19734ff40f8e625cc521e"
   },
   "py://packages/stitcher-python-analysis/src/stitcher/python/analysis/cst/transformers.py#strip_docstrings": {
     "baseline_code_signature_text": "def strip_docstrings(source_code: str, whitelist: Optional[List[str]] = None) -> str:",
-    "baseline_code_structure_hash": "fa209506e5a6891af24f6b1281daf077c780d4ed93ff384174cd502838cfc280"
+    "baseline_code_structure_hash": "fa209506e5a6891af24f6b1281daf077c780d4ed93ff384174cd502838cfc280",
+    "baseline_yaml_content_hash": "2e838da2d92c38e68a351440cc2806be9056020aca4bef1225240a736d799a07"
   }
 }

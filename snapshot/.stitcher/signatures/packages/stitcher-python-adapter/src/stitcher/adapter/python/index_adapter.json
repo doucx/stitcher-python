@@ -23,7 +23,8 @@
   },
   "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py#PythonAdapter._get_source_root_for_file": {
     "baseline_code_signature_text": "def _get_source_root_for_file(self, file_path: Path) -> Path:",
-    "baseline_code_structure_hash": "31afd06d3b5a743c6e7e13a2a36f682cc3898199689e88f1efc91833d7a06c28"
+    "baseline_code_structure_hash": "31afd06d3b5a743c6e7e13a2a36f682cc3898199689e88f1efc91833d7a06c28",
+    "baseline_yaml_content_hash": "9720fc1e5fb6b2522dc5d28c6ff9e5ecae58106d26f2b6b36e5dd2511f27048e"
   },
   "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py#PythonAdapter.hasher": {},
   "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py#PythonAdapter.parse": {
