@@ -5,9 +5,6 @@ from stitcher.test_utils.workspace import WorkspaceFactory
 
 import pytest
 
-# 这会跳过整个文件中的所有测试用例
-pytestmark = pytest.mark.skip(reason="该文件暂未完成")
-
 
 def test_scanner_resolves_aliases_and_references(tmp_path, store):
     """
@@ -80,17 +77,18 @@ def test_scanner_resolves_aliases_and_references(tmp_path, store):
     assert alias_pkg_defs is not None
     assert alias_pkg_defs.kind == "alias"
     # The target of 'import pkg.defs' is the 'pkg' module itself in this context
-    assert alias_pkg_defs.alias_target_id == "py://pkg.py"
+    # Note: 'pkg' is a package directory containing __init__.py, so the SURI points to __init__.py
+    assert alias_pkg_defs.alias_target_id == "py://pkg/__init__.py"
 
     # 3b. Verify References in main.py
     references = store.get_references_by_file(main_py_record.id)
     ref_targets = {ref.target_id for ref in references}
 
-    # instance = MyClass() -> Should reference the MyClass alias in this file
-    assert "py://pkg/main.py#MyClass" in ref_targets
+    # instance = MyClass() -> Should link directly to the definition in defs.py
+    assert "py://pkg/defs.py#MyClass" in ref_targets
 
-    # pkg.defs.my_func() -> Should reference the pkg alias
-    assert "py://pkg/main.py#pkg" in ref_targets
+    # pkg.defs.my_func() -> Should resolve 'pkg' to the package and link to the function
+    assert "py://pkg/defs.py#my_func" in ref_targets
 
-    # func_alias() -> Should reference the func_alias alias
-    assert "py://pkg/main.py#func_alias" in ref_targets
+    # func_alias() -> Should resolve 'func_alias' to its original definition
+    assert "py://pkg/defs.py#my_func" in ref_targets
