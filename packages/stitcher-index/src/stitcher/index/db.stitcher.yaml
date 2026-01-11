@@ -4,3 +4,6 @@
   Closes connection at the end.
 "DatabaseManager.initialize": |-
   Loads schema.sql and initializes the database tables.
+"DatabaseManager.session": |-
+  Starts a persistent database session.
+  Calls to get_connection() within this context will reuse the same connection.
