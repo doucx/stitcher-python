@@ -6,6 +6,7 @@
   },
   "py://packages/stitcher-common/src/stitcher/common/messaging/protocols.py#Renderer.render": {
     "baseline_code_signature_text": "def render(self, message: str, level: str) -> None:",
-    "baseline_code_structure_hash": "5ee01c65ceae57a45c16a7c14d696ccdbefeca3e86709a97c1f828eeae4eedec"
+    "baseline_code_structure_hash": "5ee01c65ceae57a45c16a7c14d696ccdbefeca3e86709a97c1f828eeae4eedec",
+    "baseline_yaml_content_hash": "765e411c8cc6c732339171077c82052cce56b5e2d7637d310ebe40166fbeb6cf"
   }
 }

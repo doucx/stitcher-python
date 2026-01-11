@@ -6,11 +6,13 @@
   },
   "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/serializers.py#BaseSerializer._decode_item_value": {
     "baseline_code_signature_text": "def _decode_item_value(self, value: str) -> dict:",
-    "baseline_code_structure_hash": "af3e631ca59e653d21798b8d50ebaa0fad012739b7eceace04bd77bccde4d8e0"
+    "baseline_code_structure_hash": "af3e631ca59e653d21798b8d50ebaa0fad012739b7eceace04bd77bccde4d8e0",
+    "baseline_yaml_content_hash": "f3b92d73848c68904c9416ba1996ba122de0dda5dba988be46343cd6ab7f8806"
   },
   "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/serializers.py#BaseSerializer._encode_item_value": {
     "baseline_code_signature_text": "def _encode_item_value(self, item: DocstringItem) -> str:",
-    "baseline_code_structure_hash": "f70ce8e0edb44b79237a4fb50d579ac3b5dcef6016f85d5eeb3f6092998f42b7"
+    "baseline_code_structure_hash": "f70ce8e0edb44b79237a4fb50d579ac3b5dcef6016f85d5eeb3f6092998f42b7",
+    "baseline_yaml_content_hash": "9f6d5f5c7c25d1f61f7061d0ec621551d16cf1ab84c52de9c4be7ce9dbbddbfd"
   },
   "py://packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring/serializers.py#BaseSerializer._extract_addons": {
     "baseline_code_signature_text": "def _extract_addons(self, data: Dict[str, Any]) -> Dict[str, Any]:",

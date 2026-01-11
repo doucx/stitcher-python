@@ -17,7 +17,8 @@
   "py://packages/stitcher-application/src/stitcher/app/handlers/noop_handler.py#NoOpInteractionHandler._reconcile": {},
   "py://packages/stitcher-application/src/stitcher/app/handlers/noop_handler.py#NoOpInteractionHandler.process_interactive_session": {
     "baseline_code_signature_text": "def process_interactive_session(self, contexts: List[InteractionContext]) -> List[ResolutionAction]:",
-    "baseline_code_structure_hash": "72ab2928cd87e4ba0ccc8358dc09f0186a38a90654abd80ff66a8358659e5a1b"
+    "baseline_code_structure_hash": "72ab2928cd87e4ba0ccc8358dc09f0186a38a90654abd80ff66a8358659e5a1b",
+    "baseline_yaml_content_hash": "a921cbadd752de4f916efcd51dfe01e88bdc1bfec0eb7aa575c569f7e83f9c91"
   },
   "py://packages/stitcher-application/src/stitcher/app/handlers/noop_handler.py#ResolutionAction": {}
 }
