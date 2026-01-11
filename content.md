@@ -1,143 +1,133 @@
-## [WIP] feat: 升级 PythonAdapter 以支持文档哈希与签名文本提取
+好的，我们正式进入实施路线图的第二阶段。
+
+此阶段的核心是将作为“基准”的签名存档 (`.stitcher/signatures/*.json`) 与作为“现状”的索引库 (`.stitcher/index/index.db`) 在核心标识符和数据结构上完全对齐。
+
+## [WIP] refactor(application): 对齐 SignatureManager 与 SURI 标识符
 
 ### 用户需求
-为了支持“Index-First”架构，需要在索引阶段提取代码实体的原始签名文本 (`signature_text`) 和文档字符串哈希 (`docstring_hash`)。
+根据 [Stitcher 2.0 确定性链接实施路线图：Index-First 架构](Stitcher%202.0%20确定性链接实施路线图：Index-First%20架构.md)，需要重构 `SignatureManager`，以实现以下目标：
+1.  将 `.json` 基准文件中的字典键（Key）从局部的 FQN 片段（fragment）升级为全局唯一的 SURI (Stitcher Uniform Resource Identifier)。
+2.  使其能够存储和加载新增的基准哈希字段：`baseline_code_signature_text` 和 `baseline_code_docstring_hash`。
 
 ### 评论
-通过在 `PythonFingerprintStrategy` 中引入 `DocstringHasher`，我们使得“指纹计算”这一逻辑更加内聚。同时，更新 `PythonAdapter` 将这些计算出的指纹数据持久化到 `stitcher-index` 数据库中，完成了数据流的闭环。
+这是迈向“Query-First”架构的关键一步。通过将基准存档的 Key 切换为 SURI，我们彻底消除了标识符的歧义性。一个 SURI 同时包含了文件的物理路径和符号的逻辑路径，使得基准文件成为一个完全自包含的、可移植的“真理快照”。
 
 ### 目标
-1.  在 `stitcher-python-adapter` 中实现 `DocstringHasher`，用于计算 `current_code_docstring_hash`。
-2.  将 `DocstringHasher` 注册到 `PythonFingerprintStrategy` 中。
-3.  更新 `PythonAdapter`，从计算出的指纹中提取 `signature_text` 和 `docstring_hash` 并存入 `SymbolRecord`。
+1.  修改 `SignatureManager.save_composite_hashes` 方法，在序列化到 JSON 时，将 FQN 片段转换为完整的 SURI 字符串作为 Key。
+2.  修改 `SignatureManager.load_composite_hashes` 方法，在从 JSON 反序列化时，能解析 SURI Key 并提取出 FQN 片段，以维持其返回 `Dict[str, Fingerprint]` 的接口契约。
+3.  `Fingerprint` 类本身的设计已支持新字段，无需修改。
 
 ### 基本原理
--   **指纹策略扩展**: 现有的指纹策略已包含结构哈希和签名文本哈希。新增文档哈希是为了支持快速的“文档脏检查”。
--   **适配器升级**: `PythonAdapter` 是连接解析器与数据库的桥梁。它负责调用策略计算指纹，并将结果映射到数据库记录模型 (`SymbolRecord`)。
+我们将利用在 `stitcher-python-adapter` 中已经实现的 `SURIGenerator` 工具来完成 SURI 的生成和解析。
+-   **写入时**: 对每一个 FQN，结合其所属的 `file_path`，调用 `SURIGenerator.for_symbol()` 来生成 `py://path/to/file.py#ClassName.method` 格式的 Key。
+-   **读取时**: 遍历 JSON 的所有 Key，对每一个 Key 调用 `SURIGenerator.parse()`，提取出 `#` 后的 fragment 作为返回字典的 Key。
 
 ### 标签
-#intent/build #flow/ready #priority/high #comp/runtime #concept/state #scope/core #ai/instruct #task/domain/storage #task/object/python-adapter #task/action/upgrade-extraction #task/state/continue
+#intent/refine #flow/ready #priority/high #comp/application #concept/state #scope/api #ai/instruct #task/domain/storage #task/object/stitcher-index #task/action/upgrade-schema #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 实现 DocstringHasher 并注册
+#### Acts 1: 导入 SURI 生成器
 
-在 `fingerprint.py` 中添加 `DocstringHasher` 类，并在 `PythonFingerprintStrategy` 的初始化列表中注册它。
-
-~~~~~act
-patch_file
-packages/stitcher-python-adapter/src/stitcher/adapter/python/fingerprint.py
-~~~~~
-~~~~~python.old
-        parts.append(":")
-        return " ".join(parts).replace("( ", "(").replace(" )", ")").replace(" :", ":")
-
-
-class PythonFingerprintStrategy:
-    def __init__(self):
-        self.hashers: List[EntityHasher] = [
-            StructureHasher(),
-            SignatureTextHasher(),
-            # Future: AstHasher(), MerkleHasher()
-        ]
-
-    def compute(self, entity: Union[FunctionDef, ClassDef]) -> Fingerprint:
-~~~~~
-~~~~~python.new
-        parts.append(":")
-        return " ".join(parts).replace("( ", "(").replace(" )", ")").replace(" :", ":")
-
-
-class DocstringHasher:
-    def update(
-        self, entity: Union[FunctionDef, ClassDef], fingerprint: Fingerprint
-    ) -> None:
-        doc = getattr(entity, "docstring", None)
-        if doc:
-            h = hashlib.sha256(doc.encode("utf-8")).hexdigest()
-            fingerprint["current_code_docstring_hash"] = h
-
-
-class PythonFingerprintStrategy:
-    def __init__(self):
-        self.hashers: List[EntityHasher] = [
-            StructureHasher(),
-            SignatureTextHasher(),
-            DocstringHasher(),
-        ]
-
-    def compute(self, entity: Union[FunctionDef, ClassDef]) -> Fingerprint:
-~~~~~
-
-#### Acts 2: 更新 PythonAdapter 提取逻辑
-
-修改 `index_adapter.py` 中的 `_extract_symbols` 方法，提取新的指纹字段并填充到 `SymbolRecord` 中。
+首先，我们需要在 `signature_manager.py` 中导入 `SURIGenerator`。
 
 ~~~~~act
 patch_file
-packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py
+packages/stitcher-application/src/stitcher/app/services/signature_manager.py
 ~~~~~
 ~~~~~python.old
-            canonical_fqn = f"{logical_module_fqn}.{fragment}"
-
-            # Compute Hash
-            sig_hash = None
-            if entity_for_hash:
-                fp = self.hasher.compute(entity_for_hash)  # type: ignore
-                sig_hash = fp.get("current_code_structure_hash")
-
-            # Location Handling
-            loc = getattr(entity_for_hash, "location", None)
+from stitcher.spec import (
+    Fingerprint,
+    InvalidFingerprintKeyError,
+)
+from stitcher.common.services import AssetPathResolver
 ~~~~~
 ~~~~~python.new
-            canonical_fqn = f"{logical_module_fqn}.{fragment}"
+import json
+from pathlib import Path
+from typing import Dict
 
-            # Compute Hash & Metadata
-            sig_hash = None
-            sig_text = None
-            doc_hash = None
-
-            if entity_for_hash:
-                fp = self.hasher.compute(entity_for_hash)  # type: ignore
-                sig_hash = fp.get("current_code_structure_hash")
-                sig_text = fp.get("current_code_signature_text")
-                doc_hash = fp.get("current_code_docstring_hash")
-
-            # Location Handling
-            loc = getattr(entity_for_hash, "location", None)
+from stitcher.spec import (
+    Fingerprint,
+    InvalidFingerprintKeyError,
+)
+from stitcher.common.services import AssetPathResolver
+from stitcher.adapter.python.uri import SURIGenerator
 ~~~~~
+
+#### Acts 2: 更新保存逻辑以使用 SURI Key
+
+修改 `save_composite_hashes` 方法，将 FQN 转换为 SURI 作为 JSON 的键。
 
 ~~~~~act
 patch_file
-packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py
+packages/stitcher-application/src/stitcher/app/services/signature_manager.py
 ~~~~~
 ~~~~~python.old
-                    canonical_fqn=canonical_fqn,
-                    alias_target_fqn=alias_target_fqn,
-                    alias_target_id=None,  # Decoupled: Linker will fill this
-                    signature_hash=sig_hash,
-                )
-            )
-            return fragment
+        sig_path = self._get_sig_path(file_path)
+        sig_path.parent.mkdir(parents=True, exist_ok=True)
+
+        serialized_data = {fqn: fp.to_dict() for fqn, fp in hashes.items()}
+
+        with sig_path.open("w", encoding="utf-8") as f:
+            json.dump(serialized_data, f, indent=2, sort_keys=True)
 ~~~~~
 ~~~~~python.new
-                    canonical_fqn=canonical_fqn,
-                    alias_target_fqn=alias_target_fqn,
-                    alias_target_id=None,  # Decoupled: Linker will fill this
-                    signature_hash=sig_hash,
-                    signature_text=sig_text,
-                    docstring_hash=doc_hash,
-                )
-            )
-            return fragment
+        sig_path = self._get_sig_path(file_path)
+        sig_path.parent.mkdir(parents=True, exist_ok=True)
+
+        serialized_data = {
+            SURIGenerator.for_symbol(file_path, fqn): fp.to_dict()
+            for fqn, fp in hashes.items()
+        }
+
+        with sig_path.open("w", encoding="utf-8") as f:
+            json.dump(serialized_data, f, indent=2, sort_keys=True)
+~~~~~
+
+#### Acts 3: 更新加载逻辑以解析 SURI Key
+
+修改 `load_composite_hashes` 方法，使其能够解析 SURI 键并提取 FQN。
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/services/signature_manager.py
+~~~~~
+~~~~~python.old
+            with sig_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+                if not isinstance(data, dict):
+                    return {}
+                result = {}
+                for fqn, fp_data in data.items():
+                    result[fqn] = Fingerprint.from_dict(fp_data)
+                return result
+        except (json.JSONDecodeError, OSError, InvalidFingerprintKeyError):
+            return {}
+~~~~~
+~~~~~python.new
+            with sig_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+                if not isinstance(data, dict):
+                    return {}
+                result = {}
+                for suri, fp_data in data.items():
+                    try:
+                        _path, fragment = SURIGenerator.parse(suri)
+                        if fragment:
+                            result[fragment] = Fingerprint.from_dict(fp_data)
+                    except (ValueError, InvalidFingerprintKeyError):
+                        # Gracefully skip malformed SURIs or invalid fingerprint data
+                        continue
+                return result
+        except (json.JSONDecodeError, OSError):
+            return {}
 ~~~~~
 
 ### 下一步建议
 
-现在 `stitcher-index` 和 `PythonAdapter` 都已升级，能够存储和提取所需的所有语义信息。接下来我们将进入 **阶段 2：基准存档与 SURI 对齐**。
+我们已经成功地升级了基准存档的格式。现在，基准 (`.json`) 和现状 (`.db`) 都拥有了进行精确、高性能比对所需的所有信息。
 
-下一步的具体任务是：
-1.  **重构 `SignatureManager`**: 修改其序列化逻辑，将 JSON 的键（Key）从局部 `fragment` 升级为完整的 `SURI`。
-2.  同时，使其支持存储新的基准字段：`baseline_code_signature_text` 和 `baseline_code_docstring_hash`。
+接下来的任务是 **阶段 3：逻辑驱动重构**，我们将重构 `CheckRunner`，使其完全抛弃实时 AST 解析，转而使用全新的 "Query-First" 模式，即直接在内存中比对从索引库查询出的 `Actual` 状态和从签名文件加载的 `Baseline` 状态。这将是新架构带来性能飞跃的第一次真正体现。
