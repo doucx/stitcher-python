@@ -195,9 +195,11 @@ def test_analyzer_dangling_doc(analyzer: CheckAnalyzer):
     assert conflicts[0].conflict_type == ConflictType.DANGLING_DOC
 
 
-def test_analyzer_untracked_file_warning(analyzer: CheckAnalyzer, monkeypatch):
-    """Verify warning for a documentable but untracked file."""
-    # Mock filesystem to simulate an untracked file
+def test_analyzer_untracked_with_details(analyzer: CheckAnalyzer, monkeypatch):
+    """
+    Verify 'untracked_detailed' warning for an untracked file that has
+    undocumented public APIs.
+    """
     monkeypatch.setattr(Path, "exists", lambda self: False)
 
     state = SymbolState(
@@ -205,7 +207,7 @@ def test_analyzer_untracked_file_warning(analyzer: CheckAnalyzer, monkeypatch):
         is_public=True,
         exists_in_code=True,
         exists_in_yaml=False,
-        source_doc_content=None,
+        source_doc_content=None,  # This makes it undocumented
         signature_hash=None,
         baseline_signature_hash=None,
         yaml_content_hash=None,
@@ -218,7 +220,44 @@ def test_analyzer_untracked_file_warning(analyzer: CheckAnalyzer, monkeypatch):
 
     result, conflicts = analyzer.analyze_subject(subject)
 
-    assert result.warning_count == 2  # missing and untracked
+    # The analyzer correctly identifies 'missing' first, then adds 'untracked_detailed'.
+    assert result.warning_count == 2
     assert "missing" in result.warnings
+    assert "untracked_detailed" in result.warnings
+    assert result.warnings["untracked_detailed"] == ["func"]
+    assert "untracked" not in result.warnings  # Should not have the simple warning
+    assert not conflicts
+
+
+def test_analyzer_untracked_simple(analyzer: CheckAnalyzer, monkeypatch):
+    """
+    Verify simple 'untracked' warning for an untracked file where all
+    public APIs are already documented in the source code.
+    """
+    monkeypatch.setattr(Path, "exists", lambda self: False)
+
+    state = SymbolState(
+        fqn="func",
+        is_public=True,
+        exists_in_code=True,
+        exists_in_yaml=False,
+        source_doc_content="I have a docstring.",  # This makes it documented
+        signature_hash=None,
+        baseline_signature_hash=None,
+        yaml_content_hash=None,
+        baseline_yaml_content_hash=None,
+        signature_text=None,
+        yaml_doc_ir=None,
+        baseline_signature_text=None,
+    )
+    subject = FakeCheckSubject("src/main.py", {"func": state}, is_doc=True)
+
+    result, conflicts = analyzer.analyze_subject(subject)
+
+    # In this case, there's no 'missing' doc, only 'pending' and 'untracked'.
+    assert result.error_count == 1  # pending
+    assert result.warning_count == 1  # untracked
+    assert result.errors["pending"] == ["func"]
     assert result.warnings["untracked"] == ["all"]
+    assert "untracked_detailed" not in result.warnings
     assert not conflicts
