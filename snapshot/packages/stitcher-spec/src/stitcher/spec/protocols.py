@@ -25,7 +25,9 @@ class DifferProtocol(Protocol):
 
 
 class DocstringMergerProtocol(Protocol):
-    def merge(self, base: Optional[DocstringIR], incoming: DocstringIR) -> DocstringIR: ...
+    def merge(
+        self, base: Optional[DocstringIR], incoming: DocstringIR
+    ) -> DocstringIR: ...
 
 
 class StubGeneratorProtocol(Protocol):

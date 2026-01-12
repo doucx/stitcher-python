@@ -4,8 +4,8 @@
     "baseline_code_structure_hash": "58b576791e9e883fe9c77a96fd6c8b7bc3ded2a1b033c535aeb8bcf617bc8456"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/check/analyzer.py#CheckAnalyzer.__init__": {
-    "baseline_code_signature_text": "def __init__(self, root_path: Path, differ: Differ):",
-    "baseline_code_structure_hash": "bce29fd3357f0c162f5a997fe8da8b5a5fdff89f0d5081bd07156d8e80558475"
+    "baseline_code_signature_text": "def __init__(self, root_path: Path, differ: DifferProtocol):",
+    "baseline_code_structure_hash": "8777a51539c9632eef0159db3b1ff6027aa3e4cbbcca39b669ba47760b3367c4"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/check/analyzer.py#CheckAnalyzer.analyze_subject": {
     "baseline_code_signature_text": "def analyze_subject(self, subject: CheckSubject) -> Tuple[FileCheckResult, List[InteractionContext]]:",

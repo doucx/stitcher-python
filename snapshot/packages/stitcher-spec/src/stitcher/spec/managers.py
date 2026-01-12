@@ -1,4 +1,4 @@
-from typing import Protocol, Dict, Union, Optional, Any, List
+from typing import Protocol, Dict, Union, Optional, Any
 from pathlib import Path
 
 from .docstring import DocstringIR
@@ -49,7 +49,9 @@ class SignatureManagerProtocol(Protocol):
     def reformat_hashes_for_file(self, file_path: str) -> bool: ...
 
     # Used by PumpRunner for centralized serialization
-    def serialize_hashes(self, file_path: str, hashes: Dict[str, Fingerprint]) -> str: ...
+    def serialize_hashes(
+        self, file_path: str, hashes: Dict[str, Fingerprint]
+    ) -> str: ...
 
     # Internal helper used by PumpRunner to delete files
     def _get_sig_path(self, file_path: str) -> Path: ...

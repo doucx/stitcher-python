@@ -1,0 +1,12 @@
+"IndexStoreProtocol": |-
+  Defines the contract for querying the semantic index.
+  Application-layer services depend on this protocol, not a concrete
+  database implementation.
+"IndexStoreProtocol.find_references": |-
+  Find all references pointing to a given fully qualified name and return
+  each reference and its containing file path.
+"IndexStoreProtocol.find_symbol_by_fqn": |-
+  Find a single symbol by its fully qualified name and return the symbol
+  and its containing file path.
+"IndexStoreProtocol.get_symbols_by_file_path": |-
+  Retrieve all symbols defined in a specific file.

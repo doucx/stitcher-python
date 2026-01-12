@@ -4,8 +4,8 @@
     "baseline_code_structure_hash": "f32cd836f7a4265c873827c8bf5ba6e0ee9868d683bd9170faf9aa1833ba2bcb"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/pump.py#PumpRunner.__init__": {
-    "baseline_code_signature_text": "def __init__(self, root_path: Path, doc_manager: DocumentManager, sig_manager: SignatureManager, transformer: LanguageTransformerProtocol, differ: Differ, merger: DocstringMerger, interaction_handler: InteractionHandler | None, fingerprint_strategy: FingerprintStrategyProtocol, index_store: IndexStore):",
-    "baseline_code_structure_hash": "48071d1ed01c1d61738639878eb024661979fd280d3cbad460c6dcd14cfd90f5"
+    "baseline_code_signature_text": "def __init__(self, root_path: Path, doc_manager: DocumentManagerProtocol, sig_manager: SignatureManagerProtocol, transformer: LanguageTransformerProtocol, differ: DifferProtocol, merger: DocstringMergerProtocol, interaction_handler: InteractionHandler | None, fingerprint_strategy: FingerprintStrategyProtocol, index_store: IndexStoreProtocol):",
+    "baseline_code_structure_hash": "e84973ace19fffb53684ba6696ff8a7b65226806493a4e9a63e28b3270d9adc0"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/pump.py#PumpRunner._compute_fingerprints": {
     "baseline_code_signature_text": "def _compute_fingerprints(self, module: ModuleDef) -> Dict[str, Fingerprint]:",

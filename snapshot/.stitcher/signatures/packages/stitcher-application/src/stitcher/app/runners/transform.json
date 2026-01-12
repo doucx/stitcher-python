@@ -4,8 +4,8 @@
     "baseline_code_structure_hash": "8f26048a25c09e9b90fefe3c9c895e8713966c5018c405c95387d0bba5e62bf5"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/transform.py#TransformRunner.__init__": {
-    "baseline_code_signature_text": "def __init__(self, root_path: Path, doc_manager: DocumentManager, transformer: LanguageTransformerProtocol):",
-    "baseline_code_structure_hash": "a5e35a2a079423bac8f344713e81151b10740b54ba9d6e09be4a00b46839a2d8"
+    "baseline_code_signature_text": "def __init__(self, root_path: Path, doc_manager: DocumentManagerProtocol, transformer: LanguageTransformerProtocol):",
+    "baseline_code_structure_hash": "10ba26cba314dab82fb16deb09f729b9b803c27b591171c39fed675d2365351f"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/transform.py#TransformRunner.doc_manager": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/transform.py#TransformRunner.root_path": {},

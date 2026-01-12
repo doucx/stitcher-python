@@ -4,8 +4,8 @@
     "baseline_code_structure_hash": "2cb38a2ee50eaf9fe54610e0cb4b1479bb0eecae8257bf4f4fdbb2c413eba011"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/coverage.py#CoverageRunner.__init__": {
-    "baseline_code_signature_text": "def __init__(self, root_path: Path, doc_manager: DocumentManager, index_store: IndexStore):",
-    "baseline_code_structure_hash": "2f2eb0adc83200e83462720ee062866f175077f56b799fd5930bcb5ae2163c65"
+    "baseline_code_signature_text": "def __init__(self, root_path: Path, doc_manager: DocumentManagerProtocol, index_store: IndexStoreProtocol):",
+    "baseline_code_structure_hash": "4a6f530bba38b8cc0bf9acef84e8b831ff77b829a14e9932535e1da6e156ca2b"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/coverage.py#CoverageRunner._analyze_module_coverage": {
     "baseline_code_signature_text": "def _analyze_module_coverage(self, module: ModuleDef) -> CoverageResult:",
