@@ -1,84 +1,287 @@
-好的，整个阶段一的重构工作已经准备就绪。这是 Stitcher 架构演进的关键里程碑，通过“协议下沉（Protocol Sinking）”打破了包之间的隐式耦合，确立了以 `stitcher-spec` 为核心的单向依赖链。
+根据 **Stitcher 架构重构路线图** 的阶段二规划，我现在开始构建 `stitcher-lang-python` 包的骨架，并将其集成到 Monorepo 的工作区中。
 
-以下是提交阶段一重构成果的计划：
-
-## [COMMIT] refactor: Stitcher 架构重构阶段一 - 协议标准化与下沉
+## [WIP] feat: 初始化 stitcher-lang-python 包骨架
 
 ### 用户需求
-实施架构重构的第一阶段，将所有核心协议和数据模型下沉到 `stitcher-spec` 包中，并清理全局引用、依赖关系和元数据记录。
+在 `packages/` 目录下创建新包 `stitcher-lang-python` 的结构，建立符合协议的命名空间初始化文件，并更新全局配置以支持该新包。
 
 ### 评论
-这是一个高保真的工程变更。通过将契约（Protocols）与实现分离，并使用 `stitcher-spec` 作为唯一的真理来源（SSoT），我们消除了功能包之间的循环依赖，为未来的插件化和多语言支持建立了稳固的地基。
+这是合并语言能力的关键一步。通过将 `python-adapter` 和 `python-analysis` 的功能整合进统一的 `lang-python` 插件模型，我们将消除冗余的物理隔离，并为后续的重构引擎泛化（阶段四）打下基础。
 
 ### 目标
-1.  **协议下沉**: 将 `InteractionHandler`、`DocumentAdapter`、`SymbolRecord` 等核心契约从功能包移动到 `stitcher-spec`。
-2.  **全局适配**: 更新全量代码的导入路径，确保业务逻辑指向新的协议地址。
-3.  **元数据同步**: 更新 `.stitcher/signatures` 中的元数据标识符（SURI），保持签名追踪的连续性。
-4.  **配置对齐**: 修正所有包的 `pyproject.toml` 和 `uv.lock`，反映真实的依赖拓扑。
-5.  **记录演进**: 通过 `migrations/001_phase_1_sinking.py` 脚本正式记录此次架构变迁。
+1.  创建 `packages/stitcher-lang-python` 目录结构。
+2.  建立符合 `pkgutil` 扩展协议的 `__init__.py` 文件，确保命名空间包能够正确协同工作。
+3.  配置 `stitcher-lang-python` 的 `pyproject.toml`，声明对 `spec`、`common`、`libcst` 和 `griffe` 的依赖。
+4.  更新根目录 `pyproject.toml`，将新包纳入 `uv` 工作区管理、`pytest` 路径和 `pyright` 类型检查范围。
 
 ### 基本原理
-遵循“架构不可腐蚀性”原则。核心协议包不应依赖于具体实现，而所有实现都应仅依赖于协议。通过这次下沉，我们消除了 `application` 对 `index` 内部实现的硬性依赖，使其仅通过 `stitcher.spec.index` 中定义的模型进行操作。
+我们遵循 Python 命名空间包的标准做法，在顶级 `stitcher` 目录下使用 `extend_path`。新包的设计目标是作为 Python 语言的完整适配层，因此它直接依赖于底层的 `spec` 定义。
 
 ### 标签
-#intent/architect #flow/ready #priority/high #comp/interfaces #comp/build #concept/state #scope/core #ai/brainstorm #task/domain/architecture #task/object/phase-1-sinking #task/action/commit #task/state/end #task/status/completed
+#intent/build #flow/ready #priority/high
+#comp/build #concept/parser #scope/dx
+#ai/instruct
+#task/domain/language-support
+#task/object/stitcher-lang-python
+#task/action/initialization
+#task/state/begin #task/status/active
 
 ---
 
 ### Script
 
-#### Acts 1: 提交阶段一重构成果
+#### Acts 1: 创建 stitcher-lang-python 基础结构
 
-我们将所有涉及到的变更加入暂存区并创建一个结构化的提交。
+首先创建目录并写入初始化文件和项目配置。
 
 ~~~~~act
-git_add
-.stitcher/signatures/
-migrations/001_phase_1_sinking.py
-packages/stitcher-application/
-packages/stitcher-cli/
-packages/stitcher-common/
-packages/stitcher-index/
-packages/stitcher-python-adapter/
-packages/stitcher-spec/
-packages/stitcher-stubgen/
-packages/stitcher-test-utils/
-uv.lock
+run_command
+~~~~~
+~~~~~
+mkdir -p packages/stitcher-lang-python/src/stitcher/lang/python
 ~~~~~
 
 ~~~~~act
-git_commit
+write_file
+packages/stitcher-lang-python/src/stitcher/__init__.py
 ~~~~~
-~~~~~text
-refactor: Stitcher Architecture Evolution Phase 1 - Protocol Sinking
+~~~~~python
+# This allows this package to coexist with other distribution packages
+__path__ = __import__("pkgutil").extend_path(__path__, __name__)
+~~~~~
 
-This commit implements the first major phase of the architectural refactoring,
-aimed at standardizing core protocols and eliminating circular dependencies
-between packages.
+~~~~~act
+write_file
+packages/stitcher-lang-python/src/stitcher/lang/__init__.py
+~~~~~
+~~~~~python
+# This allows this package to coexist with other distribution packages
+__path__ = __import__("pkgutil").extend_path(__path__, __name__)
+~~~~~
 
-Key Changes:
-- Protocol Sinking: Moved all core interface definitions (Protocols) and
-  data models from functional packages into the centralized `stitcher-spec`.
-- Namespace Reorganization:
-    - Interaction: `stitcher.app.protocols` -> `stitcher.spec.interaction`
-    - Persistence: `stitcher.common.interfaces` -> `stitcher.spec.persistence`
-    - Registry: `stitcher.index.protocols` -> `stitcher.spec.registry`
-    - Index Models: `stitcher.index.types` -> `stitcher.spec.index`
-- Global Refactoring: Updated all import statements across the monorepo to
-  match the new structure.
-- Metadata Sync: Updated `.stitcher/signatures` to reflect new SURI (Stitcher
-  Uniform Resource Identifier) paths for moved symbols.
-- Dependency Cleanup: Streamlined `pyproject.toml` files, removing dead
-  internal dependencies and ensuring `stitcher-test-utils` visibility.
-- Migration Log: Added `migrations/001_phase_1_sinking.py` to document the
-  structural change.
+~~~~~act
+write_file
+packages/stitcher-lang-python/src/stitcher/lang/python/__init__.py
+~~~~~
+~~~~~python
+"""Python language support for Stitcher."""
+~~~~~
 
-This establishes a clean, directed dependency graph:
-Implementation Packages -> stitcher-spec -> python primitives.
+~~~~~act
+write_file
+packages/stitcher-lang-python/pyproject.toml
+~~~~~
+~~~~~toml
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "stitcher-lang-python"
+version = "0.1.0"
+description = "Unified Python language support for Stitcher."
+requires-python = ">=3.10"
+dependencies = [
+    "stitcher-spec",
+    "stitcher-common",
+    "libcst>=1.1.0",
+    "griffe>=0.36.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/stitcher"]
+
+[tool.uv.sources]
+stitcher-spec = { workspace = true }
+stitcher-common = { workspace = true }
+~~~~~
+
+#### Acts 2: 更新根目录 pyproject.toml 配置
+
+将新包注册到全局工作区和开发环境中。
+
+~~~~~act
+patch_file
+pyproject.toml
+~~~~~
+~~~~~toml.old
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-timeout",
+    "pytest-mock",
+    "ruff",
+    "mypy",
+    "pyneedle",
+    "pyneedle-pointer",
+    "pyneedle-spec",
+    "stitcher-cli",
+    "stitcher-application",
+    "stitcher-stubgen",
+    "stitcher-test-utils",
+    "stitcher-refactor",
+    "stitcher-index",
+    "stitcher-workspace",
+]
+
+[tool.setuptools.packages.find]
+exclude = ["migrations*"]
+
+[tool.uv.workspace]
+members = ["packages/*", "packages/stitcher-test-utils", "packages/stitcher-python-analysis", "packages/stitcher-index"]
+
+[tool.uv.sources]
+~~~~~
+~~~~~toml.new
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-timeout",
+    "pytest-mock",
+    "ruff",
+    "mypy",
+    "pyneedle",
+    "pyneedle-pointer",
+    "pyneedle-spec",
+    "stitcher-cli",
+    "stitcher-application",
+    "stitcher-stubgen",
+    "stitcher-test-utils",
+    "stitcher-refactor",
+    "stitcher-index",
+    "stitcher-workspace",
+    "stitcher-lang-python",
+]
+
+[tool.setuptools.packages.find]
+exclude = ["migrations*"]
+
+[tool.uv.workspace]
+members = [
+    "packages/*",
+    "packages/stitcher-test-utils",
+    "packages/stitcher-python-analysis",
+    "packages/stitcher-index",
+    "packages/stitcher-lang-python",
+]
+
+[tool.uv.sources]
+~~~~~
+
+~~~~~act
+patch_file
+pyproject.toml
+~~~~~
+~~~~~toml.old
+stitcher-refactor = { workspace = true }
+stitcher-index = { workspace = true }
+stitcher-python-analysis = { workspace = true }
+stitcher-workspace = { workspace = true }
+
+[tool.pytest.ini_options]
+addopts = "-ra --cov=stitcher --cov=needle --cov-report=term-missing"
+testpaths = ["tests", "packages"]
+norecursedirs = ["tests/fixtures"]
+pythonpath = [
+    "packages/stitcher-application/src",
+    "packages/stitcher-cli/src",
+    "packages/stitcher-common/src",
+    "packages/stitcher-config/src",
+    "packages/stitcher-index/src",
+    "packages/stitcher-python-adapter/src",
+    "packages/stitcher-python-analysis/src",
+    "packages/stitcher-refactor/src",
+    "packages/stitcher-spec/src",
+    "packages/stitcher-workspace/src",
+    "packages/stitcher-stubgen/src",
+    "packages/stitcher-test-utils/src",
+    "packages/pyneedle-pointer/src",
+    "packages/pyneedle-runtime/src",
+    "packages/pyneedle-spec/src",
+]
+
+[tool.stitcher.targets.stitcher]
+scan_paths = [
+    "packages/stitcher-application/src",
+    "packages/stitcher-cli/src",
+    "packages/stitcher-common/src",
+    "packages/stitcher-config/src",
+    "packages/stitcher-index/src",
+    "packages/stitcher-python-adapter/src",
+    "packages/stitcher-python-analysis/src",
+    "packages/stitcher-refactor/src",
+    "packages/stitcher-spec/src",
+    "packages/stitcher-stubgen/src",
+    "packages/stitcher-workspace/src",
+    "packages/stitcher-test-utils/src",
+]
+~~~~~
+~~~~~toml.new
+stitcher-refactor = { workspace = true }
+stitcher-index = { workspace = true }
+stitcher-python-analysis = { workspace = true }
+stitcher-workspace = { workspace = true }
+stitcher-lang-python = { workspace = true }
+
+[tool.pytest.ini_options]
+addopts = "-ra --cov=stitcher --cov=needle --cov-report=term-missing"
+testpaths = ["tests", "packages"]
+norecursedirs = ["tests/fixtures"]
+pythonpath = [
+    "packages/stitcher-application/src",
+    "packages/stitcher-cli/src",
+    "packages/stitcher-common/src",
+    "packages/stitcher-config/src",
+    "packages/stitcher-index/src",
+    "packages/stitcher-python-adapter/src",
+    "packages/stitcher-python-analysis/src",
+    "packages/stitcher-refactor/src",
+    "packages/stitcher-spec/src",
+    "packages/stitcher-workspace/src",
+    "packages/stitcher-stubgen/src",
+    "packages/stitcher-test-utils/src",
+    "packages/pyneedle-pointer/src",
+    "packages/pyneedle-runtime/src",
+    "packages/pyneedle-spec/src",
+    "packages/stitcher-lang-python/src",
+]
+
+[tool.stitcher.targets.stitcher]
+scan_paths = [
+    "packages/stitcher-application/src",
+    "packages/stitcher-cli/src",
+    "packages/stitcher-common/src",
+    "packages/stitcher-config/src",
+    "packages/stitcher-index/src",
+    "packages/stitcher-python-adapter/src",
+    "packages/stitcher-python-analysis/src",
+    "packages/stitcher-refactor/src",
+    "packages/stitcher-spec/src",
+    "packages/stitcher-stubgen/src",
+    "packages/stitcher-workspace/src",
+    "packages/stitcher-test-utils/src",
+    "packages/stitcher-lang-python/src",
+]
+~~~~~
+
+~~~~~act
+patch_file
+pyproject.toml
+~~~~~
+~~~~~toml.old
+    "packages/stitcher-index/src",
+    "packages/stitcher-workspace/src",
+]
+~~~~~
+~~~~~toml.new
+    "packages/stitcher-index/src",
+    "packages/stitcher-workspace/src",
+    "packages/stitcher-lang-python/src",
+]
 ~~~~~
 
 ### 下一步建议
-
-- **阶段二规划**: 下一阶段（Phase 2）将聚焦于“能力的解耦”，特别是将 Stub 生成逻辑从 `application` 中完全剥离到 `stitcher-stubgen`，并使其通过 `stitcher-spec` 中的协议与适配器交互。
-- **运行冒烟测试**: 在提交后建议运行一次全量测试 `pytest`，验证在协议下沉后，各组件间的通讯是否依然畅通。
-- **清理残留**: 检查是否还有任何遗漏的旧 `__init__.py` 或临时文件未被包含在内。
+1.  **迁移解析能力**：按照路线图 2.2，开始将 `stitcher-python-adapter` 中的 Griffe 和 LibCST 解析代码迁移到 `stitcher-lang-python` 对应的子目录下。
+2.  **验证环境**：运行 `uv sync` 确保新包及其依赖被正确安装在本地虚拟环境中。

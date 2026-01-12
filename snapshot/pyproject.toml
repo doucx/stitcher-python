@@ -23,13 +23,20 @@ dev = [
     "stitcher-refactor",
     "stitcher-index",
     "stitcher-workspace",
+    "stitcher-lang-python",
 ]
 
 [tool.setuptools.packages.find]
 exclude = ["migrations*"]
 
 [tool.uv.workspace]
-members = ["packages/*", "packages/stitcher-test-utils", "packages/stitcher-python-analysis", "packages/stitcher-index"]
+members = [
+    "packages/*",
+    "packages/stitcher-test-utils",
+    "packages/stitcher-python-analysis",
+    "packages/stitcher-index",
+    "packages/stitcher-lang-python",
+]
 
 [tool.uv.sources]
 pyneedle = { workspace = true }
@@ -48,6 +55,7 @@ stitcher-refactor = { workspace = true }
 stitcher-index = { workspace = true }
 stitcher-python-analysis = { workspace = true }
 stitcher-workspace = { workspace = true }
+stitcher-lang-python = { workspace = true }
 
 [tool.pytest.ini_options]
 addopts = "-ra --cov=stitcher --cov=needle --cov-report=term-missing"
@@ -69,6 +77,7 @@ pythonpath = [
     "packages/pyneedle-pointer/src",
     "packages/pyneedle-runtime/src",
     "packages/pyneedle-spec/src",
+    "packages/stitcher-lang-python/src",
 ]
 
 [tool.stitcher.targets.stitcher]
@@ -85,6 +94,7 @@ scan_paths = [
     "packages/stitcher-stubgen/src",
     "packages/stitcher-workspace/src",
     "packages/stitcher-test-utils/src",
+    "packages/stitcher-lang-python/src",
 ]
 stub_package = "packages/stitcher-stubs"
 
@@ -119,4 +129,5 @@ extraPaths = [
     "packages/stitcher-python-analysis/src",
     "packages/stitcher-index/src",
     "packages/stitcher-workspace/src",
+    "packages/stitcher-lang-python/src",
 ]
