@@ -88,7 +88,14 @@ class CheckRunner:
             if kind_str in KIND_TO_LEGACY_MAP:
                 category, key = KIND_TO_LEGACY_MAP[kind_str]
                 target_dict = getattr(legacy_result, category)
-                target_dict[key].append(violation.fqn)
+
+                # Special handling for untracked_with_details:
+                # The reporter expects a list of symbol keys, which are passed in context['keys'].
+                if kind_str == str(L.check.file.untracked_with_details):
+                    keys = violation.context.get("keys", [])
+                    target_dict[key].extend(keys)
+                else:
+                    target_dict[key].append(violation.fqn)
 
             # 2. Create InteractionContext for resolvable conflicts
             if kind_str in INTERACTIVE_VIOLATIONS:
