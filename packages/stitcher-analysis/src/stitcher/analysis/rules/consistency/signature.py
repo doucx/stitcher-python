@@ -17,9 +17,9 @@ class SignatureRule(AnalysisRule):
         states = subject.get_all_symbol_states()
 
         for fqn, state in states.items():
-            # Skip if not tracked in YAML (not our responsibility)
-            if not state.exists_in_yaml:
-                continue
+            # Legacy Compatibility: Even if not tracked in YAML, if we have a baseline,
+            # we should check for drift. This supports workflows where init generated
+            # signatures but no docs were created (e.g. empty docs).
 
             # Skip if not in code (handled by ExistenceRule/Dangling)
             if not state.exists_in_code:

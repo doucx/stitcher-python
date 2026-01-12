@@ -5,8 +5,8 @@
     "baseline_yaml_content_hash": "356ab574f0b4092d68d3bc296caab0ce3de8cc6ab4f1ecab682fd390d751acc9"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter.__init__": {
-    "baseline_code_signature_text": "def __init__(self, module_def: ModuleDef, doc_manager: DocumentManagerProtocol, sig_manager: SignatureManagerProtocol, fingerprint_strategy: FingerprintStrategyProtocol):",
-    "baseline_code_structure_hash": "1060877eb18702589d46e79523078f2505d0b5b6d319c2289f14860022ac434e"
+    "baseline_code_signature_text": "def __init__(self, module_def: ModuleDef, doc_manager: DocumentManagerProtocol, sig_manager: SignatureManagerProtocol, fingerprint_strategy: FingerprintStrategyProtocol, root_path: Path):",
+    "baseline_code_structure_hash": "47b543af7492ddc8bddb46a2204e19b35531af3e5b196ce720d7aca35da9c7e3"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter._compute_fingerprints": {
     "baseline_code_signature_text": "def _compute_fingerprints(self) -> Dict[str, Fingerprint]:",
@@ -15,6 +15,7 @@
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter._doc_manager": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter._fingerprint_strategy": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter._module": {},
+  "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter._root_path": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter._sig_manager": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter.file_path": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter.get_all_symbol_states": {
@@ -25,13 +26,14 @@
     "baseline_code_signature_text": "def is_documentable(self) -> bool:",
     "baseline_code_structure_hash": "1a55c9ded7bf45553f63ae27c049594f5faa1245bd0c6ce98f4a0d2d7cd30db7"
   },
+  "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter.is_tracked": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter": {
     "baseline_code_signature_text": "class IndexCheckSubjectAdapter(CheckSubject):",
     "baseline_code_structure_hash": "2d58ecb2c30492b92b72c1e76df294fc27becfd22fe1a306f752cd98d42b3f99"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter.__init__": {
-    "baseline_code_signature_text": "def __init__(self, file_path: str, index_store: IndexStoreProtocol, doc_manager: DocumentManagerProtocol, sig_manager: SignatureManagerProtocol):",
-    "baseline_code_structure_hash": "ea830dc4cadb9282ca3bd247ae4faaab49af73bbc81eabcb01babc92834d23c3"
+    "baseline_code_signature_text": "def __init__(self, file_path: str, index_store: IndexStoreProtocol, doc_manager: DocumentManagerProtocol, sig_manager: SignatureManagerProtocol, root_path: Path):",
+    "baseline_code_structure_hash": "a6b10c16d9d4a48f0dfe4b3f2926106e680434e4df587b3142969a4bfd156a4c"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter._doc_manager": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter._file_path": {},
@@ -40,6 +42,7 @@
     "baseline_code_signature_text": "def _is_public(self, fqn: str) -> bool:",
     "baseline_code_structure_hash": "75abdec36c85579d54f11f1663089a95af29cfc091243ded89b22c294ee56554"
   },
+  "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter._root_path": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter._sig_manager": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter.file_path": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter.get_all_symbol_states": {
@@ -49,5 +52,6 @@
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter.is_documentable": {
     "baseline_code_signature_text": "def is_documentable(self) -> bool:",
     "baseline_code_structure_hash": "1a55c9ded7bf45553f63ae27c049594f5faa1245bd0c6ce98f4a0d2d7cd30db7"
-  }
+  },
+  "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter.is_tracked": {}
 }

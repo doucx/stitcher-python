@@ -15,9 +15,9 @@ from stitcher.app.services import (
     DocumentManager,
     SignatureManager,
     ScannerService,
-    Differ,
     DocstringMerger,
 )
+from stitcher.common.services import Differ
 from stitcher.spec.interaction import InteractionHandler
 from .runners import (
     CheckRunner,
@@ -28,7 +28,6 @@ from .runners import (
     RefactorRunner,
     IndexRunner,
 )
-from .runners.check.analyzer import CheckAnalyzer
 from .runners.check.resolver import CheckResolver
 from .runners.check.reporter import CheckReporter
 from .runners.pump.analyzer import PumpAnalyzer
@@ -83,7 +82,6 @@ class StitcherApp:
         )
 
         # 3. Runners (Command Handlers)
-        check_analyzer = CheckAnalyzer(root_path, self.differ)
         check_resolver = CheckResolver(
             root_path,
             parser,
@@ -98,9 +96,10 @@ class StitcherApp:
             self.sig_manager,
             self.fingerprint_strategy,
             self.index_store,
-            analyzer=check_analyzer,
+            differ=self.differ,
             resolver=check_resolver,
             reporter=check_reporter,
+            root_path=self.root_path,
         )
 
         pump_analyzer = PumpAnalyzer(
