@@ -51,20 +51,16 @@ class PumpAnalyzer:
             return {}
 
         all_source_docs = self.doc_manager.flatten_module_docs(module)
-        return {
-            fqn: doc for fqn, doc in all_source_docs.items() if fqn in dirty_fqns
-        }
+        return {fqn: doc for fqn, doc in all_source_docs.items() if fqn in dirty_fqns}
 
-    def analyze(
-        self, modules: List[ModuleDef]
-    ) -> List[InteractionContext]:
+    def analyze(self, modules: List[ModuleDef]) -> List[InteractionContext]:
         all_conflicts: List[InteractionContext] = []
 
         for module in modules:
             dirty_docs = self._get_dirty_source_docs(module)
             if not dirty_docs:
                 continue
-            
+
             res = self.doc_manager.hydrate_module(
                 module, dry_run=True, source_docs_override=dirty_docs
             )

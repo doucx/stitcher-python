@@ -124,38 +124,59 @@ class PumpExecutor:
                 if plan.update_code_fingerprint:
                     current_fp = current_fingerprints.get(fqn, Fingerprint())
                     if "current_code_structure_hash" in current_fp:
-                        fp["baseline_code_structure_hash"] = current_fp["current_code_structure_hash"]
+                        fp["baseline_code_structure_hash"] = current_fp[
+                            "current_code_structure_hash"
+                        ]
                     if "current_code_signature_text" in current_fp:
-                        fp["baseline_code_signature_text"] = current_fp["current_code_signature_text"]
+                        fp["baseline_code_signature_text"] = current_fp[
+                            "current_code_signature_text"
+                        ]
                     fqn_was_updated = True
 
                 if plan.update_doc_fingerprint and fqn in source_docs:
                     ir_to_save = new_yaml_docs.get(fqn)
                     if ir_to_save:
-                        fp["baseline_yaml_content_hash"] = self.doc_manager.compute_ir_hash(ir_to_save)
+                        fp["baseline_yaml_content_hash"] = (
+                            self.doc_manager.compute_ir_hash(ir_to_save)
+                        )
                         fqn_was_updated = True
 
-                if fqn_was_updated: new_hashes[fqn] = fp
-                if fqn in decisions and decisions[fqn] == ResolutionAction.HYDRATE_KEEP_EXISTING:
+                if fqn_was_updated:
+                    new_hashes[fqn] = fp
+                if (
+                    fqn in decisions
+                    and decisions[fqn] == ResolutionAction.HYDRATE_KEEP_EXISTING
+                ):
                     reconciled_keys_in_file.append(fqn)
-                if plan.strip_source_docstring: strip_jobs[module.file_path].append(fqn)
+                if plan.strip_source_docstring:
+                    strip_jobs[module.file_path].append(fqn)
                 if fqn in source_docs and not plan.strip_source_docstring:
                     file_has_redundancy = True
 
             if not file_has_errors:
                 if file_had_updates:
-                    final_data = {k: self.doc_manager.serialize_ir(v) for k, v in new_yaml_docs.items()}
-                    doc_path = (self.root_path / module.file_path).with_suffix(".stitcher.yaml")
+                    final_data = {
+                        k: self.doc_manager.serialize_ir(v)
+                        for k, v in new_yaml_docs.items()
+                    }
+                    doc_path = (self.root_path / module.file_path).with_suffix(
+                        ".stitcher.yaml"
+                    )
                     yaml_content = self.doc_manager.dump_data(final_data)
-                    tm.add_write(str(doc_path.relative_to(self.root_path)), yaml_content)
-                
+                    tm.add_write(
+                        str(doc_path.relative_to(self.root_path)), yaml_content
+                    )
+
                 if new_hashes != stored_hashes:
                     sig_path = self.sig_manager.get_signature_path(module.file_path)
                     rel_sig_path = str(sig_path.relative_to(self.root_path))
                     if not new_hashes:
-                        if sig_path.exists(): tm.add_delete_file(rel_sig_path)
+                        if sig_path.exists():
+                            tm.add_delete_file(rel_sig_path)
                     else:
-                        sig_content = self.sig_manager.serialize_hashes(module.file_path, new_hashes)
+                        sig_content = self.sig_manager.serialize_hashes(
+                            module.file_path, new_hashes
+                        )
                         tm.add_write(rel_sig_path, sig_content)
 
                 if file_has_redundancy:
@@ -163,10 +184,18 @@ class PumpExecutor:
 
             if updated_keys_in_file:
                 total_updated_keys += len(updated_keys_in_file)
-                bus.success(L.pump.file.success, path=module.file_path, count=len(updated_keys_in_file))
+                bus.success(
+                    L.pump.file.success,
+                    path=module.file_path,
+                    count=len(updated_keys_in_file),
+                )
             if reconciled_keys_in_file:
                 total_reconciled_keys += len(reconciled_keys_in_file)
-                bus.info(L.pump.info.reconciled, path=module.file_path, count=len(reconciled_keys_in_file))
+                bus.info(
+                    L.pump.info.reconciled,
+                    path=module.file_path,
+                    count=len(reconciled_keys_in_file),
+                )
 
         if strip_jobs:
             self._execute_strip_jobs(strip_jobs, tm)
@@ -174,20 +203,27 @@ class PumpExecutor:
         if unresolved_conflicts_count > 0:
             bus.error(L.pump.run.conflict, count=unresolved_conflicts_count)
             return PumpResult(success=False)
-        
+
         has_activity = (total_updated_keys > 0) or strip_jobs
-        if not has_activity: bus.info(L.pump.run.no_changes)
-        else: bus.success(L.pump.run.complete, count=total_updated_keys)
+        if not has_activity:
+            bus.info(L.pump.run.no_changes)
+        else:
+            bus.success(L.pump.run.complete, count=total_updated_keys)
         return PumpResult(success=True, redundant_files=redundant_files_list)
 
-    def _execute_strip_jobs(self, strip_jobs: Dict[str, List[str]], tm: TransactionManager):
+    def _execute_strip_jobs(
+        self, strip_jobs: Dict[str, List[str]], tm: TransactionManager
+    ):
         total_stripped_files = 0
         for file_path, whitelist in strip_jobs.items():
             source_path = self.root_path / file_path
-            if not whitelist: continue
+            if not whitelist:
+                continue
             try:
                 original_content = source_path.read_text("utf-8")
-                stripped_content = self.transformer.strip(original_content, whitelist=whitelist)
+                stripped_content = self.transformer.strip(
+                    original_content, whitelist=whitelist
+                )
                 if original_content != stripped_content:
                     relative_path = source_path.relative_to(self.root_path)
                     tm.add_write(str(relative_path), stripped_content)
@@ -195,6 +231,6 @@ class PumpExecutor:
                     total_stripped_files += 1
             except Exception as e:
                 bus.error(L.error.generic, error=e)
-        
+
         if total_stripped_files > 0:
             bus.success(L.strip.run.complete, count=total_stripped_files)
