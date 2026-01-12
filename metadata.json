@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] test(app): 更新 CheckRunner 单元测试以匹配新的生命周期逻辑", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768214567.2869122, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "Capture: M resolver.py", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768214712.1134481, "duration_ms": 0}}

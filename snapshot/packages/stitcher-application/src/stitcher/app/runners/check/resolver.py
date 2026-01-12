@@ -166,12 +166,12 @@ class CheckResolver:
         for res in results:
             if res.path == context.file_path:
                 error_key_map = {
-                    str(L.check.state.signature_drift): "signature_drift",
-                    str(L.check.state.co_evolution): "co_evolution",
-                    str(L.check.issue.extra): "extra",
-                    str(L.check.issue.conflict): "conflict",
+                    L.check.state.signature_drift: "signature_drift",
+                    L.check.state.co_evolution: "co_evolution",
+                    L.check.issue.extra: "extra",
+                    L.check.issue.conflict: "conflict",
                 }
-                error_key = error_key_map.get(str(context.violation_type), "unknown")
+                error_key = error_key_map.get(context.violation_type, "unknown")
                 res.errors[error_key].append(context.fqn)
                 break
 
