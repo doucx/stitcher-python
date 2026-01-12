@@ -28,7 +28,6 @@ from .runners import (
     RefactorRunner,
     IndexRunner,
 )
-from .runners.check.analyzer import CheckAnalyzer
 from .runners.check.resolver import CheckResolver
 from .runners.check.reporter import CheckReporter
 from .runners.pump.analyzer import PumpAnalyzer

@@ -17,7 +17,10 @@ from .protocols import (
     CheckReporterProtocol,
 )
 from .subject import IndexCheckSubjectAdapter, ASTCheckSubjectAdapter
-from stitcher.analysis.engines.consistency import create_consistency_engine
+from stitcher.analysis.engines.consistency.engine import create_consistency_engine
+from stitcher.analysis.schema import (
+    FileCheckResult as AnalysisFileCheckResult,
+)
 
 
 class CheckRunner:
@@ -45,7 +48,7 @@ class CheckRunner:
         self.reporter = reporter
 
     def _translate_results(
-        self, analysis_result: "FileCheckResult"
+        self, analysis_result: AnalysisFileCheckResult
     ) -> Tuple[FileCheckResult, List[InteractionContext]]:
         # This is the adapter logic. It translates the new, unified `FileCheckResult`
         # from the analysis engine into the old structures expected by the resolver/reporter.
