@@ -3,7 +3,7 @@ import yaml
 from typing import List
 from stitcher.test_utils import create_test_app
 from stitcher.spec.interaction import InteractionHandler, InteractionContext
-from stitcher.spec import ResolutionAction, ConflictType
+from stitcher.spec import ResolutionAction
 from stitcher.test_utils import WorkspaceFactory, SpyBus, get_stored_hashes
 from needle.pointer import L
 
@@ -139,7 +139,7 @@ def test_check_interactive_purge_removes_dangling_doc(
     # Assert correct context was passed to handler
     assert len(handler.called_with) == 1
     assert handler.called_with[0].fqn == "dangling_func"
-    assert handler.called_with[0].conflict_type == ConflictType.DANGLING_DOC
+    assert handler.called_with[0].violation_type == L.check.issue.extra
 
     # Assert correct bus message was sent
     spy_bus.assert_id_called(L.check.state.purged, level="success")

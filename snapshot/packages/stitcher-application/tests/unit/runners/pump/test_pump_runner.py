@@ -9,6 +9,7 @@ from stitcher.spec import ModuleDef, ResolutionAction
 from stitcher.spec.interaction import InteractionHandler, InteractionContext
 from stitcher.config import StitcherConfig
 from stitcher.common.transaction import TransactionManager
+from needle.pointer import L
 
 
 def test_runner_orchestrates_conflict_resolution_flow():
@@ -25,7 +26,9 @@ def test_runner_orchestrates_conflict_resolution_flow():
     # Configure mock return values
     mock_modules = [ModuleDef(file_path="src/main.py")]
     mock_conflicts = [
-        InteractionContext(file_path="src/main.py", fqn="func", conflict_type="TEST")
+        InteractionContext(
+            file_path="src/main.py", fqn="func", violation_type=L.check.issue.conflict
+        )
     ]
     mock_decisions = {"func": ResolutionAction.HYDRATE_OVERWRITE}
 
