@@ -2,6 +2,7 @@ from unittest.mock import create_autospec, PropertyMock, MagicMock
 
 import pytest
 from needle.pointer import L
+from typing import Any
 
 from stitcher.analysis.engines.pump import PumpEngine, create_pump_engine
 from stitcher.spec import DifferProtocol, DocstringIR
