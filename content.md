@@ -1,227 +1,190 @@
-非常感谢您的澄清。您指出的点非常关键：**我们不应使用不完备的启发式逻辑（Guessing），而应要求上游（Check Command/Index）提供明确的事实。**
+Of course. Let's proceed with building the Consistency Engine, which will orchestrate the rules we've just created.
 
-这也是 **HFEA (高保真工程)** 原则的体现：系统状态必须建立在确定性的事实之上。
-
-### 修正方案
-
-1.  **协议变更**: 修改 `AnalysisSubject` 协议，增加 `is_tracked` 属性。这意味着“是否存在对应的 YAML 文件”这一事实，应由数据提供者（Adapter）明确告知分析引擎。
-2.  **规则修正**: 重写 `UntrackedRule`。不再猜测，而是基于 `subject.is_tracked == False` 这一事实。
-3.  **行为对齐**: 您提到“不需要文件级别的 untracked，我们需要的是符号级别的”。
-    *   在现有逻辑（Legacy `analyzer.py`）中，`Untracked` 确实是一个文件级状态，用于提示用户运行 `stitcher init`。
-    *   为了在 **Phase 1 (Extract)** 阶段保持行为一致性（不丢失功能），我建议保留 `UntrackedRule`，但将其逻辑严格限制为：**“当文件未初始化（无 YAML）且包含可文档化符号时，提示文件级警告”**。
-    *   具体的符号级缺失（Missing/Pending）由 `ExistenceRule` 继续负责。
-
-我们将执行以下操作来修复这个问题。
-
-## [WIP] fix(analysis): Explicit tracking state in AnalysisSubject
+## [WIP] feat(analysis): Implement ConsistencyEngine to orchestrate rules
 
 ### 用户需求
 
-修正 `UntrackedRule` 的实现逻辑。
-1.  放弃基于“YAML 内容是否为空”的启发式判断。
-2.  在 `AnalysisSubject` 协议中显式增加 `is_tracked` 属性。
-3.  更新规则以利用此属性。
+实施 Phase 1.4：构建一致性引擎 (`ConsistencyEngine`)。
+创建一个编排器，负责加载、运行所有一致性检查规则，并聚合它们的分析结果，为 `stitcher-application` 提供一个统一的分析入口。
 
 ### 评论
 
-这是一个必要的修正。它消除了分析引擎中的不确定性，将 IO 状态（文件是否存在）的获取责任归还给了负责 IO 的层级（Adapter），分析引擎只负责基于事实进行判断。
+这是将我们零散的规则 (`Rule`) 转化为一个 cohesive (内聚的) 分析能力的关键一步。`ConsistencyEngine` 将扮演 CPU 的角色，执行我们编写的指令（规则）。通过依赖注入的方式提供规则，我们保持了引擎的通用性，未来可以轻松地增删或替换规则集，而无需修改引擎本身。
 
 ### 目标
 
-1.  修改 `stitcher/analysis/protocols/subject.py`，添加 `is_tracked` 属性。
-2.  重写 `stitcher/analysis/rules/consistency/untracked.py`。
-3.  更新 `tests/unit/rules/consistency/test_rules.py` 以适配新协议。
+1.  创建 `stitcher.analysis.engines.consistency` 模块。
+2.  实现 `ConsistencyEngine` 类，其核心职责是接收 `AnalysisSubject`，遍历运行一组 `AnalysisRule`，并返回一个聚合了所有 `Violation` 的 `FileCheckResult`。
+3.  提供一个 `create_consistency_engine` 工厂函数，用于方便地创建带有默认规则集的引擎实例。
+4.  为 `ConsistencyEngine` 编写单元测试，验证其编排和聚合逻辑的正确性。
 
 ### 基本原理
 
-通过协议明确契约，确保所有进入分析引擎的数据都是完备的。
+`ConsistencyEngine` 的设计遵循了“组合优于继承”和“依赖注入”的原则。它本身不包含任何具体的检查逻辑，而是通过其构造函数接收一个规则列表。它的 `analyze` 方法是整个分析流程的核心，它确保了每个规则都被执行，并且所有结果都被统一收集。工厂函数的引入进一步解耦了引擎的使用者（如 `CheckRunner`）与引擎的具体配置细节。
 
 ### 标签
 
-#intent/refine #intent/fix #flow/ready #priority/high #comp/interfaces #scope/core #ai/instruct #task/domain/architecture #task/object/analysis-engine #task/action/fix-rule #task/state/continue
+#intent/build #flow/ready #priority/high #comp/logic #scope/core #ai/instruct #task/domain/architecture #task/object/analysis-engine #task/action/implement-engine #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 更新 `AnalysisSubject` 协议
+#### Acts 1: 创建引擎目录结构
 
-添加 `is_tracked` 属性。
+首先，为我们的引擎和相关测试创建目录。
 
 ~~~~~act
-patch_file
-packages/stitcher-analysis/src/stitcher/analysis/protocols/subject.py
+run_command
 ~~~~~
-~~~~~python.old
-    @property
-    def file_path(self) -> str:
-        """The relative path of the file being analyzed."""
-        ...
-
-    def is_documentable(self) -> bool:
 ~~~~~
-~~~~~python.new
-    @property
-    def file_path(self) -> str:
-        """The relative path of the file being analyzed."""
-        ...
-
-    @property
-    def is_tracked(self) -> bool:
-        """
-        Whether the file is currently tracked by Stitcher
-        (i.e., has a corresponding .stitcher.yaml file).
-        """
-        ...
-
-    def is_documentable(self) -> bool:
+mkdir -p packages/stitcher-analysis/src/stitcher/analysis/engines/consistency
+mkdir -p packages/stitcher-analysis/tests/unit/engines
+touch packages/stitcher-analysis/src/stitcher/analysis/engines/__init__.py
+touch packages/stitcher-analysis/src/stitcher/analysis/engines/consistency/__init__.py
 ~~~~~
 
-#### Acts 2: 重写 `UntrackedRule`
+#### Acts 2: 实现 `ConsistencyEngine` 及其工厂函数
 
-使用明确的 `is_tracked` 属性。
+这是分析引擎的核心实现。
 
 ~~~~~act
 write_file
-packages/stitcher-analysis/src/stitcher/analysis/rules/consistency/untracked.py
+packages/stitcher-analysis/src/stitcher/analysis/engines/consistency/engine.py
 ~~~~~
 ~~~~~python
-from dataclasses import dataclass
 from typing import List
 
-from needle.pointer import L
+from stitcher.app.services import Differ
+from stitcher.spec import DifferProtocol
 from stitcher.analysis.protocols import AnalysisSubject
-from stitcher.analysis.schema import Violation
+from stitcher.analysis.schema import FileCheckResult
 from stitcher.analysis.rules.protocols import AnalysisRule
+from stitcher.analysis.rules.consistency.content import ContentRule
+from stitcher.analysis.rules.consistency.existence import ExistenceRule
+from stitcher.analysis.rules.consistency.signature import SignatureRule
+from stitcher.analysis.rules.consistency.untracked import UntrackedRule
 
 
-@dataclass
-class UntrackedRule(AnalysisRule):
-    def check(self, subject: AnalysisSubject) -> List[Violation]:
-        # 1. If explicitly tracked, this rule does not apply.
-        if subject.is_tracked:
-            return []
+class ConsistencyEngine:
+    """
+    Orchestrates the execution of a set of analysis rules against a subject.
+    """
 
-        # 2. If not tracked, but has nothing to document, we don't care.
-        if not subject.is_documentable():
-            return []
+    def __init__(self, rules: List[AnalysisRule]):
+        self._rules = rules
 
-        # 3. It is untracked and documentable.
-        # We now identify which specific public symbols are missing documentation.
-        states = subject.get_all_symbol_states()
-        undocumented_keys = [
-            s.fqn
-            for s in states.values()
-            if s.is_public
-            and s.fqn != "__doc__"
-            and not s.source_doc_content
-        ]
+    def analyze(self, subject: AnalysisSubject) -> FileCheckResult:
+        """
+        Runs all configured rules against the subject and aggregates the results.
+        """
+        all_violations = []
+        for rule in self._rules:
+            violations = rule.check(subject)
+            all_violations.extend(violations)
 
-        # Mimic legacy behavior:
-        # If there are specific symbols needing docs, give a detailed warning.
-        # Otherwise (e.g. only __doc__ or all have docs but just no YAML), generic warning.
-        if undocumented_keys:
-            return [
-                Violation(
-                    kind=L.check.file.untracked_with_details,
-                    fqn=subject.file_path,
-                    context={"count": len(undocumented_keys), "keys": undocumented_keys}
-                )
-            ]
-        else:
-            return [
-                Violation(
-                    kind=L.check.file.untracked,
-                    fqn=subject.file_path
-                )
-            ]
+        return FileCheckResult(path=subject.file_path, violations=all_violations)
+
+
+def create_consistency_engine(
+    differ: DifferProtocol | None = None,
+) -> ConsistencyEngine:
+    """
+    Factory function to create a ConsistencyEngine with a default set of rules.
+    """
+    # If no differ is provided, create a default one.
+    # This allows consumers to inject a mock or custom differ if needed.
+    effective_differ = differ or Differ()
+
+    default_rules = [
+        SignatureRule(differ=effective_differ),
+        ContentRule(differ=effective_differ),
+        ExistenceRule(),
+        UntrackedRule(),
+    ]
+    return ConsistencyEngine(rules=default_rules)
 ~~~~~
 
-#### Acts 3: 更新测试
+#### Acts 3: 暴露引擎
 
-Mock 对象需要增加 `is_tracked` 属性。
+通过 `__init__.py` 文件暴露 `ConsistencyEngine` 和工厂函数。
 
 ~~~~~act
-patch_file
-packages/stitcher-analysis/tests/unit/rules/consistency/test_rules.py
+write_file
+packages/stitcher-analysis/src/stitcher/analysis/engines/consistency/__init__.py
 ~~~~~
-~~~~~python.old
-@pytest.fixture
-def mock_subject():
-    subject = Mock()
-    subject.file_path = "test.py"
-    return subject
-~~~~~
-~~~~~python.new
-@pytest.fixture
-def mock_subject():
-    subject = Mock()
-    subject.file_path = "test.py"
-    subject.is_tracked = True  # Default to tracked
-    return subject
+~~~~~python
+from .engine import ConsistencyEngine, create_consistency_engine
+
+__all__ = ["ConsistencyEngine", "create_consistency_engine"]
 ~~~~~
 
 ~~~~~act
-patch_file
-packages/stitcher-analysis/tests/unit/rules/consistency/test_rules.py
+write_file
+packages/stitcher-analysis/src/stitcher/analysis/engines/__init__.py
 ~~~~~
-~~~~~python.old
-def test_untracked_rule_untracked_file(mock_subject):
-    # Setup: No symbols exist in YAML
-    state = create_state(exists_in_yaml=False)
-    mock_subject.get_all_symbol_states.return_value = {"test.func": state}
-    mock_subject.is_documentable.return_value = True
+~~~~~python
+from .consistency import ConsistencyEngine, create_consistency_engine
 
-    rule = UntrackedRule()
-    # Since test.func is public and missing doc (create_state default has doc, let's remove it)
-    state.source_doc_content = None
-    
-    violations = rule.check(mock_subject)
-    
-    # Should report untracked_with_details because we have an undocumented public symbol
-    assert len(violations) == 1
-    assert violations[0].kind == L.check.file.untracked_with_details
-    assert violations[0].fqn == "test.py"
+__all__ = ["ConsistencyEngine", "create_consistency_engine"]
 ~~~~~
-~~~~~python.new
-def test_untracked_rule_untracked_file(mock_subject):
-    # Setup: File is explicitly untracked
-    mock_subject.is_tracked = False
-    
-    state = create_state(exists_in_yaml=False)
-    # Ensure no source doc so it triggers 'untracked_with_details' logic
-    state.source_doc_content = None
-    
-    mock_subject.get_all_symbol_states.return_value = {"test.func": state}
-    mock_subject.is_documentable.return_value = True
 
-    rule = UntrackedRule()
-    violations = rule.check(mock_subject)
-    
-    assert len(violations) == 1
-    assert violations[0].kind == L.check.file.untracked_with_details
-    assert violations[0].fqn == "test.py"
+#### Acts 4: 编写 `ConsistencyEngine` 的单元测试
+
+验证引擎的编排和结果聚合逻辑是否正确。
+
+~~~~~act
+write_file
+packages/stitcher-analysis/tests/unit/engines/test_consistency_engine.py
+~~~~~
+~~~~~python
+from unittest.mock import Mock
+from needle.pointer import L
+
+from stitcher.analysis.schema import Violation
+from stitcher.analysis.engines.consistency import ConsistencyEngine
 
 
-def test_untracked_rule_tracked_file_ignored(mock_subject):
-    # Setup: File IS tracked
-    mock_subject.is_tracked = True
-    mock_subject.is_documentable.return_value = True
+def test_consistency_engine_aggregates_violations_from_all_rules():
+    # 1. Setup
+    mock_subject = Mock()
+    mock_subject.file_path = "path/to/file.py"
+
+    violation1 = Violation(kind=L.rule1.error, fqn="func1")
+    violation2 = Violation(kind=L.rule2.warning, fqn="func2")
+    violation3 = Violation(kind=L.rule2.info, fqn="class1")
+
+    mock_rule1 = Mock()
+    mock_rule1.check.return_value = [violation1]
+
+    mock_rule2 = Mock()
+    mock_rule2.check.return_value = [violation2, violation3]
     
-    rule = UntrackedRule()
-    violations = rule.check(mock_subject)
-    assert len(violations) == 0
+    mock_rule3 = Mock()
+    mock_rule3.check.return_value = [] # A rule that finds nothing
+
+    # 2. Execute
+    engine = ConsistencyEngine(rules=[mock_rule1, mock_rule2, mock_rule3])
+    result = engine.analyze(mock_subject)
+
+    # 3. Assert
+    # All rules should have been called once with the subject
+    mock_rule1.check.assert_called_once_with(mock_subject)
+    mock_rule2.check.assert_called_once_with(mock_subject)
+    mock_rule3.check.assert_called_once_with(mock_subject)
+
+    # The result should contain all violations from all rules
+    assert result.path == "path/to/file.py"
+    assert len(result.violations) == 3
+    assert violation1 in result.violations
+    assert violation2 in result.violations
+    assert violation3 in result.violations
 ~~~~~
 
 ### 下一步建议
 
-现在规则定义已经完善且基于明确的协议。
+我们已经成功构建了分析引擎。现在，`stitcher-analysis` 包已经具备了完整的、独立的“一致性检查”能力。
 
-接下来的步骤是 **Phase 1.4: 构建一致性引擎 (Build Consistency Engine)**。
-我们需要在 `stitcher.analysis.engines.consistency` 中实现 `ConsistencyEngine` 类。这个类将负责：
-1.  接受 `AnalysisSubject`。
-2.  实例化并运行所有已定义的规则（`SignatureRule`, `ContentRule` 等）。
-3.  聚合所有规则产生的 `Violation`。
-4.  构造并返回 `FileCheckResult`。
+接下来的 **Phase 1.6: 集成与替换** 是整个重构工作的收官阶段。我们需要修改 `stitcher-application` 中的 `CheckRunner`，让它放弃旧的 `CheckAnalyzer`，转而调用我们新创建的 `ConsistencyEngine`。
 
-这个引擎将是 `CheckRunner` 调用分析层的唯一入口。
+这将会是激动人心的一步，因为它将正式启用我们的新架构。如果你准备好了，我将生成执行此集成步骤的计划。
