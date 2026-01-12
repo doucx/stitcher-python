@@ -35,14 +35,12 @@ class CheckRunner:
         reporter: CheckReporterProtocol,
         root_path: Path,
     ):
-        # Keep services needed by adapter
         self.doc_manager = doc_manager
         self.sig_manager = sig_manager
         self.fingerprint_strategy = fingerprint_strategy
         self.index_store = index_store
         self.root_path = root_path
 
-        # Injected sub-components
         self.engine = create_consistency_engine(differ=differ)
         self.resolver = resolver
         self.reporter = reporter
@@ -53,42 +51,41 @@ class CheckRunner:
         legacy_result = FileCheckResult(path=analysis_result.path)
         conflicts: List[InteractionContext] = []
 
-        # Mapping from new Violation 'kind' to old result dict keys
+        # Object-based mapping
+        # Note: We rely on SemanticPointer.__hash__ and __eq__ working correctly.
         KIND_TO_LEGACY_MAP = {
-            str(L.check.issue.conflict): ("errors", "conflict"),
-            str(L.check.state.signature_drift): ("errors", "signature_drift"),
-            str(L.check.state.co_evolution): ("errors", "co_evolution"),
-            str(L.check.issue.extra): ("errors", "extra"),
-            str(L.check.issue.pending): ("errors", "pending"),
-            str(L.check.issue.missing): ("warnings", "missing"),
-            str(L.check.issue.redundant): ("warnings", "redundant"),
-            str(L.check.file.untracked): ("warnings", "untracked"),
-            str(L.check.file.untracked_with_details): ("warnings", "untracked_detailed"),
-            str(L.check.state.doc_updated): ("infos", "doc_improvement"),
+            L.check.issue.conflict: ("errors", "conflict"),
+            L.check.state.signature_drift: ("errors", "signature_drift"),
+            L.check.state.co_evolution: ("errors", "co_evolution"),
+            L.check.issue.extra: ("errors", "extra"),
+            L.check.issue.pending: ("errors", "pending"),
+            L.check.issue.missing: ("warnings", "missing"),
+            L.check.issue.redundant: ("warnings", "redundant"),
+            L.check.file.untracked: ("warnings", "untracked"),
+            L.check.file.untracked_with_details: ("warnings", "untracked_detailed"),
+            L.check.state.doc_updated: ("infos", "doc_improvement"),
         }
 
         INTERACTIVE_VIOLATIONS = {
-            str(L.check.state.signature_drift),
-            str(L.check.state.co_evolution),
-            str(L.check.issue.extra),
-            str(L.check.issue.conflict),
+            L.check.state.signature_drift,
+            L.check.state.co_evolution,
+            L.check.issue.extra,
+            L.check.issue.conflict,
         }
 
-        print(f"DEBUG: Processing {len(analysis_result.violations)} violations for {analysis_result.path}")
         for violation in analysis_result.violations:
-            kind_str = str(violation.kind)
-            print(f"DEBUG: Violation kind={kind_str} fqn={violation.fqn}")
-
-            if kind_str in KIND_TO_LEGACY_MAP:
-                category, key = KIND_TO_LEGACY_MAP[kind_str]
+            # Direct object lookup
+            if violation.kind in KIND_TO_LEGACY_MAP:
+                category, key = KIND_TO_LEGACY_MAP[violation.kind]
                 target_dict = getattr(legacy_result, category)
-                if kind_str == str(L.check.file.untracked_with_details):
+                
+                if violation.kind == L.check.file.untracked_with_details:
                     keys = violation.context.get("keys", [])
                     target_dict[key].extend(keys)
                 else:
                     target_dict[key].append(violation.fqn)
 
-            if kind_str in INTERACTIVE_VIOLATIONS:
+            if violation.kind in INTERACTIVE_VIOLATIONS:
                 conflicts.append(
                     InteractionContext(
                         file_path=legacy_result.path,
@@ -107,7 +104,6 @@ class CheckRunner:
         all_results: List[FileCheckResult] = []
         all_conflicts: List[InteractionContext] = []
 
-        print(f"DEBUG: analyze_paths called with {file_paths}")
         for file_path in file_paths:
             subject = IndexCheckSubjectAdapter(
                 file_path,
