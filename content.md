@@ -1,427 +1,77 @@
-好的，我们来执行协议文件的结构化重构。`refactor` 包已卸载，相关操作将跳过。
+好的，我们现在将“阶段三：核心服务抽象化”中关于索引存储协议化以及协议文件结构化的变更作为一个完整的逻辑单元提交。
 
-## [WIP] refactor(spec): 将服务协议按领域划分到独立文件
+## [COMMIT] refactor(app): 索引存储协议化与协议架构结构化
 
 ### 用户需求
-根据路线图的要求，将 `stitcher-spec/src/stitcher/spec/protocols.py` 中定义的 `DocumentManagerProtocol` 和 `SignatureManagerProtocol` 移动到新的 `managers.py` 文件中，以改善代码组织结构。
-
-### 评论
-随着协议数量的增加，将所有协议都放在一个 `protocols.py` 文件中会变得难以维护。按照领域（如 `storage`, `managers`）将它们分拆到不同的文件中，可以使 `stitcher-spec` 包的内部结构更清晰、更符合逻辑，便于开发者快速定位特定领域的接口定义。
+完成对 `IndexStore` 的抽象化，解耦应用层与索引层的具体实现，并按照重构路线图要求优化协议文件的物理组织结构。
 
 ### 目标
-1.  在 `stitcher-spec` 中创建 `src/stitcher/spec/managers.py` 文件。
-2.  将 `DocumentManagerProtocol` 和 `SignatureManagerProtocol` 从 `protocols.py` 移动到 `managers.py`。
-3.  更新 `stitcher-spec/__init__.py` 的导入路径。
-4.  更新 `stitcher-application` 中所有引用这些协议的 Runner 和子组件的导入路径。
+1.  提交 `stitcher-spec` 中新增的 `storage.py` (包含 `IndexStoreProtocol`) 和 `managers.py` (包含 `DocumentManagerProtocol` 和 `SignatureManagerProtocol`)。
+2.  提交对 `stitcher-spec/protocols.py` 的清理以及包入口 `__init__.py` 的导出更新。
+3.  提交 `stitcher-application` 中所有 Runner 和子组件对新协议的引用及其导入路径的更新。
+4.  提交对 `CheckAnalyzer` 构造函数的协议化更新。
+5.  提交对 `StitcherApp.run_index_build` 返回类型的修正。
 
 ### 基本原理
-此操作是一次纯粹的代码组织重构。通过将相关的协议组合在一起，我们提高了代码的内聚性，并遵循了“关注点分离”的设计原则。这使得 `stitcher-spec` 包本身更易于理解和扩展。
+通过引入 `IndexStoreProtocol`，我们彻底切断了应用层对 `stitcher-index` 具体实现类的物理依赖，实现了路线图 3.1 的目标。同时，通过按领域（存储、管理）拆分协议文件，我们将 `stitcher-spec` 的内部结构调整为可扩展的模块化布局，为后续引入更多语言和存储后端打下了坚实基础。
 
 ### 标签
-#intent/refine #flow/ready #priority/low
-#comp/interfaces
-#scope/dx
+#intent/refine #flow/done #priority/high
+#comp/interfaces #comp/runtime #comp/index
+#concept/architecture #scope/core
 #ai/instruct
-#task/domain/architecture #task/object/code-organization #task/action/refactor
-#task/state/continue
+#task/domain/architecture #task/object/service-abstraction #task/action/restructure-protocols
+#task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 创建 managers.py 并移动协议
+#### Acts 1: 提交代码变更
 
-首先，我们创建 `managers.py` 并将 `DocumentManagerProtocol` 和 `SignatureManagerProtocol` 的定义剪切/粘贴到新文件中。
+我们将所有涉及协议定义、文件重组以及依赖更新的文件添加到暂存区并提交。
 
 ~~~~~act
-write_file
+git_add
+packages/stitcher-spec/src/stitcher/spec/storage.py
 packages/stitcher-spec/src/stitcher/spec/managers.py
-~~~~~
-~~~~~python
-from typing import Protocol, Dict, Union, Optional, Any, List
-from pathlib import Path
-
-from .docstring import DocstringIR
-from .fingerprint import Fingerprint
-from .models import ModuleDef
-
-
-class DocumentManagerProtocol(Protocol):
-    def load_docs_for_module(self, module: ModuleDef) -> Dict[str, DocstringIR]: ...
-
-    def load_docs_for_path(self, file_path: str) -> Dict[str, DocstringIR]: ...
-
-    def save_docs_for_module(self, module: ModuleDef) -> Path: ...
-
-    def flatten_module_docs(self, module: ModuleDef) -> Dict[str, DocstringIR]: ...
-
-    def compute_yaml_content_hashes(self, module: ModuleDef) -> Dict[str, str]: ...
-
-    def compute_yaml_content_hash(self, content: Union[str, Dict[str, Any]]) -> str: ...
-
-    def hydrate_module(
-        self,
-        module: ModuleDef,
-        force: bool = False,
-        reconcile: bool = False,
-        resolution_map: Optional[Dict[str, Any]] = None,
-        dry_run: bool = False,
-        source_docs_override: Optional[Dict[str, DocstringIR]] = None,
-    ) -> Dict[str, Any]: ...
-
-    def reformat_docs_for_module(self, module: ModuleDef) -> bool: ...
-
-    # Helper method used by PumpRunner to serialize for hash computation
-    def _serialize_ir(self, ir: DocstringIR) -> Union[str, Dict[str, Any]]: ...
-
-    # Accessor for the underlying adapter, used for raw dumps in PumpRunner
-    @property
-    def adapter(self) -> Any: ...
-
-
-class SignatureManagerProtocol(Protocol):
-    def load_composite_hashes(self, file_path: str) -> Dict[str, Fingerprint]: ...
-
-    def save_composite_hashes(
-        self, file_path: str, hashes: Dict[str, Fingerprint]
-    ) -> None: ...
-
-    def reformat_hashes_for_file(self, file_path: str) -> bool: ...
-
-    # Used by PumpRunner for centralized serialization
-    def serialize_hashes(self, file_path: str, hashes: Dict[str, Fingerprint]) -> str: ...
-
-    # Internal helper used by PumpRunner to delete files
-    def _get_sig_path(self, file_path: str) -> Path: ...
-~~~~~
-
-#### Acts 2: 从 protocols.py 中移除已移动的协议
-
-现在清理旧的 `protocols.py` 文件。
-
-~~~~~act
-patch_file
 packages/stitcher-spec/src/stitcher/spec/protocols.py
-~~~~~
-~~~~~python.old
-from typing import Protocol, Dict, Union, Optional, List, Any
-from pathlib import Path
-from .models import ModuleDef, FunctionDef, ClassDef
-from .fingerprint import Fingerprint
-from .docstring import DocstringIR
-
-
-class LanguageParserProtocol(Protocol):
-    def parse(self, source_code: str, file_path: str = "") -> ModuleDef: ...
-
-
-class LanguageTransformerProtocol(Protocol):
-    def strip(self, source_code: str, whitelist: Optional[List[str]] = None) -> str: ...
-
-    def inject(self, source_code: str, docs: Dict[str, str]) -> str: ...
-
-
-class FingerprintStrategyProtocol(Protocol):
-    def compute(self, entity: Union[FunctionDef, ClassDef]) -> Fingerprint: ...
-
-
-class DifferProtocol(Protocol):
-    def generate_text_diff(
-        self, a: str, b: str, label_a: str = "old", label_b: str = "new"
-    ) -> str: ...
-
-
-class DocstringMergerProtocol(Protocol):
-    def merge(self, base: Optional[DocstringIR], incoming: DocstringIR) -> DocstringIR: ...
-
-
-class DocumentManagerProtocol(Protocol):
-    def load_docs_for_module(self, module: ModuleDef) -> Dict[str, DocstringIR]: ...
-
-    def load_docs_for_path(self, file_path: str) -> Dict[str, DocstringIR]: ...
-
-    def save_docs_for_module(self, module: ModuleDef) -> Path: ...
-
-    def flatten_module_docs(self, module: ModuleDef) -> Dict[str, DocstringIR]: ...
-
-    def compute_yaml_content_hashes(self, module: ModuleDef) -> Dict[str, str]: ...
-
-    def compute_yaml_content_hash(self, content: Union[str, Dict[str, Any]]) -> str: ...
-
-    def hydrate_module(
-        self,
-        module: ModuleDef,
-        force: bool = False,
-        reconcile: bool = False,
-        resolution_map: Optional[Dict[str, Any]] = None,
-        dry_run: bool = False,
-        source_docs_override: Optional[Dict[str, DocstringIR]] = None,
-    ) -> Dict[str, Any]: ...
-
-    def reformat_docs_for_module(self, module: ModuleDef) -> bool: ...
-
-    # Helper method used by PumpRunner to serialize for hash computation
-    def _serialize_ir(self, ir: DocstringIR) -> Union[str, Dict[str, Any]]: ...
-
-    # Accessor for the underlying adapter, used for raw dumps in PumpRunner
-    @property
-    def adapter(self) -> Any: ...
-
-
-class SignatureManagerProtocol(Protocol):
-    def load_composite_hashes(self, file_path: str) -> Dict[str, Fingerprint]: ...
-
-    def save_composite_hashes(
-        self, file_path: str, hashes: Dict[str, Fingerprint]
-    ) -> None: ...
-
-    def reformat_hashes_for_file(self, file_path: str) -> bool: ...
-
-    # Used by PumpRunner for centralized serialization
-    def serialize_hashes(self, file_path: str, hashes: Dict[str, Fingerprint]) -> str: ...
-
-    # Internal helper used by PumpRunner to delete files
-    def _get_sig_path(self, file_path: str) -> Path: ...
-~~~~~
-~~~~~python.new
-from typing import Protocol, Dict, Union, Optional, List, Any
-from .models import ModuleDef, FunctionDef, ClassDef
-from .fingerprint import Fingerprint
-from .docstring import DocstringIR
-
-
-class LanguageParserProtocol(Protocol):
-    def parse(self, source_code: str, file_path: str = "") -> ModuleDef: ...
-
-
-class LanguageTransformerProtocol(Protocol):
-    def strip(self, source_code: str, whitelist: Optional[List[str]] = None) -> str: ...
-
-    def inject(self, source_code: str, docs: Dict[str, str]) -> str: ...
-
-
-class FingerprintStrategyProtocol(Protocol):
-    def compute(self, entity: Union[FunctionDef, ClassDef]) -> Fingerprint: ...
-
-
-class DifferProtocol(Protocol):
-    def generate_text_diff(
-        self, a: str, b: str, label_a: str = "old", label_b: str = "new"
-    ) -> str: ...
-
-
-class DocstringMergerProtocol(Protocol):
-    def merge(self, base: Optional[DocstringIR], incoming: DocstringIR) -> DocstringIR: ...
-~~~~~
-
-#### Acts 3: 更新 `stitcher-spec` 的 `__init__.py`
-
-我们更新 `__init__.py` 以从新的 `managers.py` 文件导入协议。
-
-~~~~~act
-patch_file
 packages/stitcher-spec/src/stitcher/spec/__init__.py
-~~~~~
-~~~~~python.old
-    StubGeneratorProtocol,
-    DocstringParserProtocol,
-    DocstringRendererProtocol,
-    DocstringSerializerProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
-    DifferProtocol,
-    DocstringMergerProtocol,
-)
-from .storage import IndexStoreProtocol
-
-__all__ = [
-~~~~~
-~~~~~python.new
-    StubGeneratorProtocol,
-    DocstringParserProtocol,
-    DocstringRendererProtocol,
-    DocstringSerializerProtocol,
-    DifferProtocol,
-    DocstringMergerProtocol,
-)
-from .storage import IndexStoreProtocol
-from .managers import DocumentManagerProtocol, SignatureManagerProtocol
-
-__all__ = [
-~~~~~
-
-#### Acts 4: 更新 `stitcher-application` 中的导入路径
-
-最后，我们修复所有因协议文件位置变更而损坏的导入语句。
-
-~~~~~act
-patch_file
 packages/stitcher-application/src/stitcher/app/runners/check/runner.py
-~~~~~
-~~~~~python.old
-from stitcher.spec import (
-    ModuleDef,
-    LanguageParserProtocol,
-    FingerprintStrategyProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
-    DifferProtocol,
-    IndexStoreProtocol,
-)
-~~~~~
-~~~~~python.new
-from stitcher.spec import (
-    ModuleDef,
-    LanguageParserProtocol,
-    FingerprintStrategyProtocol,
-    DifferProtocol,
-    IndexStoreProtocol,
-)
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
-~~~~~
-
-~~~~~act
-patch_file
 packages/stitcher-application/src/stitcher/app/runners/check/resolver.py
-~~~~~
-~~~~~python.old
-from stitcher.spec import (
-    ModuleDef,
-    ConflictType,
-    ResolutionAction,
-    Fingerprint,
-    LanguageParserProtocol,
-    FingerprintStrategyProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
-)
-~~~~~
-~~~~~python.new
-from stitcher.spec import (
-    ModuleDef,
-    ConflictType,
-    ResolutionAction,
-    Fingerprint,
-    LanguageParserProtocol,
-    FingerprintStrategyProtocol,
-)
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
-~~~~~
-
-~~~~~act
-patch_file
 packages/stitcher-application/src/stitcher/app/runners/check/subject.py
-~~~~~
-~~~~~python.old
-from stitcher.spec import (
-    ModuleDef,
-    Fingerprint,
-    FingerprintStrategyProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
-    IndexStoreProtocol,
-)
-~~~~~
-~~~~~python.new
-from stitcher.spec import (
-    ModuleDef,
-    Fingerprint,
-    FingerprintStrategyProtocol,
-    IndexStoreProtocol,
-)
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
-~~~~~
-
-~~~~~act
-patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/analyzer.py
 packages/stitcher-application/src/stitcher/app/runners/pump.py
-~~~~~
-~~~~~python.old
-from stitcher.spec import (
-    ModuleDef,
-    ConflictType,
-    ResolutionAction,
-    Fingerprint,
-    FunctionExecutionPlan,
-    LanguageTransformerProtocol,
-    FingerprintStrategyProtocol,
-    DocstringIR,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
-    DifferProtocol,
-    DocstringMergerProtocol,
-    IndexStoreProtocol,
-)
-~~~~~
-~~~~~python.new
-from stitcher.spec import (
-    ModuleDef,
-    ConflictType,
-    ResolutionAction,
-    Fingerprint,
-    FunctionExecutionPlan,
-    LanguageTransformerProtocol,
-    FingerprintStrategyProtocol,
-    DocstringIR,
-    DifferProtocol,
-    DocstringMergerProtocol,
-    IndexStoreProtocol,
-)
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
-~~~~~
-
-~~~~~act
-patch_file
 packages/stitcher-application/src/stitcher/app/runners/init.py
-~~~~~
-~~~~~python.old
-from stitcher.spec import (
-    Fingerprint,
-    ModuleDef,
-    FingerprintStrategyProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
-)
-~~~~~
-~~~~~python.new
-from stitcher.spec import (
-    Fingerprint,
-    ModuleDef,
-    FingerprintStrategyProtocol,
-)
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
-~~~~~
-
-~~~~~act
-patch_file
 packages/stitcher-application/src/stitcher/app/runners/transform.py
-~~~~~
-~~~~~python.old
-from stitcher.spec import (
-    LanguageTransformerProtocol,
-    ModuleDef,
-    DocumentManagerProtocol,
-)
-~~~~~
-~~~~~python.new
-from stitcher.spec import (
-    LanguageTransformerProtocol,
-    ModuleDef,
-)
-from stitcher.spec.managers import DocumentManagerProtocol
+packages/stitcher-application/src/stitcher/app/runners/coverage.py
+packages/stitcher-application/src/stitcher/app/runners/refactor.py
+packages/stitcher-application/src/stitcher/app/core.py
 ~~~~~
 
 ~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/runners/coverage.py
+git_commit
 ~~~~~
-~~~~~python.old
-from stitcher.spec import DocumentManagerProtocol, IndexStoreProtocol
-~~~~~
-~~~~~python.new
-from stitcher.spec import IndexStoreProtocol
-from stitcher.spec.managers import DocumentManagerProtocol
+~~~~~text
+refactor(app): abstract index store and restructure spec protocols
+
+Implemented Stage 3.1 of the roadmap by introducing IndexStoreProtocol and restructured the spec package for better domain isolation.
+
+Key Changes:
+- Created `stitcher.spec.storage` and defined `IndexStoreProtocol` to decouple application logic from concrete database implementations.
+- Created `stitcher.spec.managers` and moved `DocumentManagerProtocol` and `SignatureManagerProtocol` there, aligning with the planned architectural layout.
+- Updated all Runners in `stitcher-application` (Check, Pump, Init, Transform, Coverage, Refactor) to depend on these new protocols.
+- Refactored `CheckAnalyzer` to use `DifferProtocol` and updated subject adapters to use `IndexStoreProtocol`.
+- Fixed all cascading import paths across the application layer.
+- Corrected `StitcherApp.run_index_build` return type implementation.
+
+This commit achieves full dependency inversion for the index storage layer and optimizes the organizational structure of the system's core contracts.
 ~~~~~
 
 ### 下一步建议
-我们已经成功地将协议文件结构化。建议运行 `pyright` 确认所有导入路径都已正确更新。如果通过，我们可以创建一个 `[COMMIT]` 计划，将 **3.1 索引存储协议化** 和 **协议文件结构化** 这两个步骤合并为一个逻辑提交，从而完成阶段三的大部分工作。
+我们已经圆满完成了阶段三的核心抽象工作。由于 `stitcher-refactor` 包当前处于卸载状态，路线图中的阶段四（Refactor 引擎泛化）和阶段五（Sidecar 标准化）将暂时挂起。
+
+如果你准备好了，我们可以探讨接下来的方向，例如：
+1.  **细化现有协议**：检查协议中是否还存在暴露实现细节的方法，并进一步收敛。
+2.  **增强单元测试**：利用现在已经解耦的 Runner，编写基于 Mock 协议的单元测试，验证重构后的健壮性。
+3.  **重新加载并重构 Refactor 包**：如果你希望继续执行阶段四和阶段五。

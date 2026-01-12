@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] refactor(spec): 将服务协议按领域划分到独立文件", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768196612.580531, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[COMMIT] refactor(app): 索引存储协议化与协议架构结构化", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768196659.8294687, "duration_ms": 0}}
