@@ -13,6 +13,7 @@ members = [
     "pyneedle-pointer",
     "pyneedle-runtime",
     "pyneedle-spec",
+    "stitcher-analysis",
     "stitcher-application",
     "stitcher-cli",
     "stitcher-common",
@@ -689,6 +690,25 @@ wheels = [
 ]
 
 [[package]]
+name = "stitcher-analysis"
+version = "0.1.0"
+source = { editable = "packages/stitcher-analysis" }
+dependencies = [
+    { name = "stitcher-common" },
+    { name = "stitcher-config" },
+    { name = "stitcher-index" },
+    { name = "stitcher-spec" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "stitcher-common", editable = "packages/stitcher-common" },
+    { name = "stitcher-config", editable = "packages/stitcher-config" },
+    { name = "stitcher-index", editable = "packages/stitcher-index" },
+    { name = "stitcher-spec", editable = "packages/stitcher-spec" },
+]
+
+[[package]]
 name = "stitcher-application"
 version = "0.1.0"
 source = { editable = "packages/stitcher-application" }
@@ -825,6 +845,7 @@ dev = [
     { name = "pytest-mock" },
     { name = "pytest-timeout" },
     { name = "ruff" },
+    { name = "stitcher-analysis" },
     { name = "stitcher-application" },
     { name = "stitcher-cli" },
     { name = "stitcher-index" },
@@ -847,6 +868,7 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'dev'" },
     { name = "pytest-timeout", marker = "extra == 'dev'" },
     { name = "ruff", marker = "extra == 'dev'" },
+    { name = "stitcher-analysis", marker = "extra == 'dev'", editable = "packages/stitcher-analysis" },
     { name = "stitcher-application", marker = "extra == 'dev'", editable = "packages/stitcher-application" },
     { name = "stitcher-cli", marker = "extra == 'dev'", editable = "packages/stitcher-cli" },
     { name = "stitcher-index", marker = "extra == 'dev'", editable = "packages/stitcher-index" },
