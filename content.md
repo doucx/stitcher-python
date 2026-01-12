@@ -1,145 +1,39 @@
-根据 **Stitcher 架构重构路线图** 的阶段二规划，我将为你生成用于“语言能力统一与合并”的重构脚本。
+# 📸 Snapshot Capture
 
-## [WIP] feat: 创建阶段二重构脚本：统一 Python 语言能力
+检测到工作区发生变更。
 
-### 用户需求
-编写一个名为 `002_phase_2_unify_python_lang.py` 的重构脚本，将 `stitcher-python-adapter` 和 `stitcher-python-analysis` 中的所有代码、文档和逻辑迁移到新创建的 `stitcher-lang-python` 包中。
-
-### 评论
-这是架构重构中最具实质性的一步。通过将分散的“解析”、“分析”、“转换”和“索引适配”能力整合到一个垂直的语言插件包中，我们不仅消除了物理包的冗余，还为将来支持多语言（如 TypeScript 或 Go）建立了一个清晰的模板。Stitcher 的 `Move` 和 `MoveDir` 操作将确保所有跨包引用（例如 `application` 对 `adapter` 的依赖）都能被精确自动地更新。
-
-### 目标
-1.  定义从 `adapter` 包到 `lang-python` 包的文件迁移映射。
-2.  定义从 `analysis` 包到 `lang-python` 包的文件迁移映射。
-3.  重组 Python 内部目录结构，使其符合新的垂直功能切分（Parser, Analysis, Transform, Docstring）。
-4.  确保 Sidecar 文件（`.stitcher.yaml`）随源码同步移动。
-
-### 基本原理
-我们利用 Stitcher `Move` 指令的语义感知特性。当我们将 `griffe_parser.py` 移动到新的位置时，Stitcher 会自动计算出 FQN 的变化（从 `stitcher.adapter.python.griffe_parser` 变为 `stitcher.lang.python.parser.griffe`），并自动修补整个工作区中所有引用了该模块或其中类/函数的 `import` 语句。
-
-### 标签
-#intent/build #flow/ready #priority/high
-#comp/build #concept/parser #scope/dx
-#ai/instruct
-#task/domain/language-support
-#task/object/stitcher-lang-python
-#task/action/refactor
-#task/state/continue #task/status/active
-
----
-
-### Script
-
-#### Acts 1: 创建阶段二重构脚本
-
-~~~~~act
-write_file
-migrations/002_phase_2_unify_python_lang.py
-~~~~~
-~~~~~python
-from pathlib import Path
-from stitcher.refactor.migration import MigrationSpec, Move, MoveDir
-
-def upgrade(spec: MigrationSpec):
-    """
-    Stitcher 架构重构阶段二：语言能力统一与合并
-    
-    将原来的 stitcher-python-adapter 和 stitcher-python-analysis 合并为
-    统一的 stitcher-lang-python 包，并按功能垂直重构内部结构。
-    """
-
-    # --- 1. 从 stitcher-python-adapter 迁移 ---
-    
-    # 迁移解析能力 (Parsing)
-    spec.add(Move(
-        Path("packages/stitcher-python-adapter/src/stitcher/adapter/python/griffe_parser.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/parser/griffe.py")
-    ))
-    spec.add(Move(
-        Path("packages/stitcher-python-adapter/src/stitcher/adapter/python/parser.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/parser/cst.py")
-    ))
-
-    # 迁移索引适配器 (Indexing)
-    spec.add(Move(
-        Path("packages/stitcher-python-adapter/src/stitcher/adapter/python/index_adapter.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/adapter.py")
-    ))
-
-    # 迁移转换门面 (Transforming)
-    spec.add(Move(
-        Path("packages/stitcher-python-adapter/src/stitcher/adapter/python/transformer.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/transform/facade.py")
-    ))
-
-    # 迁移文档能力 (Docstrings)
-    spec.add(MoveDir(
-        Path("packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/docstring")
-    ))
-
-    # 迁移其他基础能力
-    spec.add(Move(
-        Path("packages/stitcher-python-adapter/src/stitcher/adapter/python/fingerprint.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/fingerprint.py")
-    ))
-    spec.add(Move(
-        Path("packages/stitcher-python-adapter/src/stitcher/adapter/python/inspector.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/inspector.py")
-    ))
-    spec.add(Move(
-        Path("packages/stitcher-python-adapter/src/stitcher/adapter/python/uri.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/uri.py")
-    ))
-
-    # --- 2. 从 stitcher-python-analysis 迁移 ---
-
-    # 迁移分析模型与基础工具
-    spec.add(Move(
-        Path("packages/stitcher-python-analysis/src/stitcher/python/analysis/models.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/analysis/models.py")
-    ))
-    spec.add(Move(
-        Path("packages/stitcher-python-analysis/src/stitcher/python/analysis/scope.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/analysis/scope.py")
-    ))
-    spec.add(Move(
-        Path("packages/stitcher-python-analysis/src/stitcher/python/analysis/utils.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/analysis/utils.py")
-    ))
-
-    # 迁移分析访问器 (Analysis Visitors)
-    spec.add(Move(
-        Path("packages/stitcher-python-analysis/src/stitcher/python/analysis/cst/visitors.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/analysis/visitors.py")
-    ))
-    spec.add(Move(
-        Path("packages/stitcher-python-analysis/src/stitcher/python/analysis/cst/usage_visitor.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/analysis/usage_visitor.py")
-    ))
-
-    # 迁移重构转换器 (Refactor/Transform Visitors)
-    spec.add(Move(
-        Path("packages/stitcher-python-analysis/src/stitcher/python/analysis/cst/transformers.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/transform/cst_visitors.py")
-    ))
-    spec.add(Move(
-        Path("packages/stitcher-python-analysis/src/stitcher/python/analysis/cst/rename_transformers.py"),
-        Path("packages/stitcher-lang-python/src/stitcher/lang/python/transform/rename.py")
-    ))
-
-    # --- 3. 迁移测试用例 (可选但建议) ---
-    spec.add(MoveDir(
-        Path("packages/stitcher-python-adapter/tests"),
-        Path("packages/stitcher-lang-python/tests/adapter")
-    ))
-    spec.add(MoveDir(
-        Path("packages/stitcher-python-analysis/tests"),
-        Path("packages/stitcher-lang-python/tests/analysis")
-    ))
-~~~~~
-
-### 下一步建议
-1.  **执行 Dry-run**：建议你先执行 `stitcher refactor apply migrations/002_phase_2_unify_python_lang.py --dry-run` 来审查即将发生的巨大变更。
-2.  **清理旧包**：在确认重构成功并运行测试后，你需要物理删除 `packages/stitcher-python-adapter` 和 `packages/stitcher-python-analysis` 目录，并从 `pyproject.toml` 的工作区定义中移除它们。
-3.  **修复导入循环（如果有）**：合并后，请检查是否有原来分属两包的模块现在产生了循环引用。
+### 📝 变更文件摘要:
+```
+.../src/stitcher/lang/python/adapter.json          |  31 ++++++
+ .../src/stitcher/lang/python/analysis/models.json  |  24 +++++
+ .../src/stitcher/lang/python/analysis/scope.json   |  11 +++
+ .../lang/python/analysis/usage_visitor.json        |  70 ++++++++++++++
+ .../src/stitcher/lang/python/analysis/utils.json   |   7 ++
+ .../stitcher/lang/python/analysis/visitors.json    |  77 +++++++++++++++
+ .../stitcher/lang/python/docstring/__init__.json   |   3 +
+ .../stitcher/lang/python/docstring/factory.json    |  21 +++++
+ .../stitcher/lang/python/docstring/parsers.json    |  29 ++++++
+ .../stitcher/lang/python/docstring/renderers.json  |  50 ++++++++++
+ .../lang/python/docstring/serializers.json         |  71 ++++++++++++++
+ .../src/stitcher/lang/python/fingerprint.json      |  68 +++++++++++++
+ .../src/stitcher/lang/python/inspector.json        |  18 ++++
+ .../src/stitcher/lang/python/parser/cst.json       |  10 ++
+ .../src/stitcher/lang/python/parser/griffe.json    |  55 +++++++++++
+ .../lang/python/transform/cst_visitors.json        | 105 +++++++++++++++++++++
+ .../src/stitcher/lang/python/transform/facade.json |  14 +++
+ .../src/stitcher/lang/python/transform/rename.json |  67 +++++++++++++
+ .../src/stitcher/lang/python/uri.json              |  22 +++++
+ .../adapter/python/docstring/__init__.json         |   3 -
+ .../stitcher/adapter/python/docstring/factory.json |  21 -----
+ .../stitcher/adapter/python/docstring/parsers.json |  29 ------
+ .../adapter/python/docstring/renderers.json        |  50 ----------
+ .../adapter/python/docstring/serializers.json      |  71 --------------
+ .../src/stitcher/adapter/python/fingerprint.json   |  68 -------------
+ .../src/stitcher/adapter/python/griffe_parser.json |  55 -----------
+ .../src/stitcher/adapter/python/index_adapter.json |  31 ------
+ .../src/stitcher/adapter/python/inspector.json     |  18 ----
+ .../src/stitcher/adapter/python/parser.json        |  10 --
+ .../src/stitcher/adapter/python/transformer.json   |  14 ---
+ ...
+ 150 files changed, 4116 insertions(+), 4132 deletions(-)
+```
