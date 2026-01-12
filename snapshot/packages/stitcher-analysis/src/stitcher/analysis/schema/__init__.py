@@ -1,5 +1,5 @@
 from .symbol_state import SymbolState
+from .violation import Violation
 from .results import FileCheckResult
-from .violations import Violation, ViolationLevel
 
-__all__ = ["SymbolState", "FileCheckResult", "Violation", "ViolationLevel"]
+__all__ = ["SymbolState", "Violation", "FileCheckResult"]

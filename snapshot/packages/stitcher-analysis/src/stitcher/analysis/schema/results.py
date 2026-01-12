@@ -1,40 +1,30 @@
 from dataclasses import dataclass, field
-from collections import defaultdict
-from typing import Dict, List
+from typing import List
+
+from .violation import Violation
 
 
 @dataclass
 class FileCheckResult:
     """
-    Aggregates all analysis results (errors, warnings, infos) for a single file.
+    Aggregates all analysis results for a single file.
+    Uses a flat list of Violations instead of categorizing by severity/type,
+    delegating interpretation to the consumer/reporter.
     """
 
     path: str
-    errors: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
-    warnings: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
-    infos: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
     
-    # Used for tracking auto-reconciliation actions performed during analysis
-    reconciled: Dict[str, List[str]] = field(default_factory=lambda: defaultdict(list))
-    auto_reconciled_count: int = 0
-
-    @property
-    def error_count(self) -> int:
-        return sum(len(keys) for keys in self.errors.values())
-
-    @property
-    def warning_count(self) -> int:
-        return sum(len(keys) for keys in self.warnings.values())
-
-    @property
-    def reconciled_count(self) -> int:
-        return sum(len(keys) for keys in self.reconciled.values())
+    # All findings (errors, warnings, infos)
+    violations: List[Violation] = field(default_factory=list)
+    
+    # Records of actions taken during auto-reconciliation
+    # Reconciled items are also fundamentally Violations that were resolved.
+    reconciled: List[Violation] = field(default_factory=list)
 
     @property
     def is_clean(self) -> bool:
-        return (
-            self.error_count == 0
-            and self.warning_count == 0
-            and self.reconciled_count == 0
-            # Auto-reconciled (infos) do not affect cleanliness
-        )
+        """
+        A file is clean if there are no active violations.
+        Reconciled items do not count against cleanliness as they are resolved.
+        """
+        return len(self.violations) == 0
