@@ -1,14 +1,16 @@
 from typing import Protocol, List, Optional
 from dataclasses import dataclass
 
-from stitcher.spec import ResolutionAction, ConflictType
+from needle.pointer import SemanticPointer
+
+from stitcher.spec import ResolutionAction
 
 
 @dataclass
 class InteractionContext:
     file_path: str
     fqn: str
-    conflict_type: ConflictType
+    violation_type: SemanticPointer
     signature_diff: Optional[str] = None
     doc_diff: Optional[str] = None
 
