@@ -694,6 +694,7 @@ name = "stitcher-analysis"
 version = "0.1.0"
 source = { editable = "packages/stitcher-analysis" }
 dependencies = [
+    { name = "pyneedle-pointer" },
     { name = "stitcher-common" },
     { name = "stitcher-config" },
     { name = "stitcher-index" },
@@ -702,6 +703,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "pyneedle-pointer", editable = "packages/pyneedle-pointer" },
     { name = "stitcher-common", editable = "packages/stitcher-common" },
     { name = "stitcher-config", editable = "packages/stitcher-config" },
     { name = "stitcher-index", editable = "packages/stitcher-index" },
