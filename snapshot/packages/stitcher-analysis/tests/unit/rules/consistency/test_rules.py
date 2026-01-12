@@ -21,6 +21,7 @@ def mock_differ():
 def mock_subject():
     subject = Mock()
     subject.file_path = "test.py"
+    subject.is_tracked = True  # Default to tracked
     return subject
 
 
@@ -109,18 +110,29 @@ def test_existence_rule_missing(mock_subject):
 
 
 def test_untracked_rule_untracked_file(mock_subject):
-    # Setup: No symbols exist in YAML
+    # Setup: File is explicitly untracked
+    mock_subject.is_tracked = False
+    
     state = create_state(exists_in_yaml=False)
+    # Ensure no source doc so it triggers 'untracked_with_details' logic
+    state.source_doc_content = None
+    
     mock_subject.get_all_symbol_states.return_value = {"test.func": state}
     mock_subject.is_documentable.return_value = True
 
     rule = UntrackedRule()
-    # Since test.func is public and missing doc (create_state default has doc, let's remove it)
-    state.source_doc_content = None
-    
     violations = rule.check(mock_subject)
     
-    # Should report untracked_with_details because we have an undocumented public symbol
     assert len(violations) == 1
     assert violations[0].kind == L.check.file.untracked_with_details
     assert violations[0].fqn == "test.py"
+
+
+def test_untracked_rule_tracked_file_ignored(mock_subject):
+    # Setup: File IS tracked
+    mock_subject.is_tracked = True
+    mock_subject.is_documentable.return_value = True
+    
+    rule = UntrackedRule()
+    violations = rule.check(mock_subject)
+    assert len(violations) == 0

@@ -10,29 +10,17 @@ from stitcher.analysis.rules.protocols import AnalysisRule
 @dataclass
 class UntrackedRule(AnalysisRule):
     def check(self, subject: AnalysisSubject) -> List[Violation]:
-        # Simple heuristic: tracked if any symbol has baseline state or is in yaml
-        # But per original logic: check if .stitcher.yaml exists. 
-        # Since Subject abstracts IO, we check if ANY symbol claims to be in YAML.
-        # Wait, get_all_symbol_states might return empty if untracked?
-        # A better heuristic for Subject abstraction: 
-        # If get_all_symbol_states is populated BUT 'exists_in_yaml' is False for ALL symbols,
-        # AND baseline is empty for all.
-        
-        # Actually, original logic checked file existence: (root / path).with_suffix(".stitcher.yaml").exists()
-        # The Subject protocol should probably carry this "is_tracked" bit or we infer it.
-        # Let's infer: If NO symbol has 'exists_in_yaml', the file is likely untracked.
-        
-        states = subject.get_all_symbol_states()
-        is_tracked = any(s.exists_in_yaml for s in states.values())
-        
-        if is_tracked:
+        # 1. If explicitly tracked, this rule does not apply.
+        if subject.is_tracked:
             return []
 
+        # 2. If not tracked, but has nothing to document, we don't care.
         if not subject.is_documentable():
             return []
 
-        # It's untracked and documentable.
-        # Check for undocumented public symbols
+        # 3. It is untracked and documentable.
+        # We now identify which specific public symbols are missing documentation.
+        states = subject.get_all_symbol_states()
         undocumented_keys = [
             s.fqn
             for s in states.values()
@@ -41,18 +29,17 @@ class UntrackedRule(AnalysisRule):
             and not s.source_doc_content
         ]
 
+        # Mimic legacy behavior:
+        # If there are specific symbols needing docs, give a detailed warning.
+        # Otherwise (e.g. only __doc__ or all have docs but just no YAML), generic warning.
         if undocumented_keys:
-            # Report file-level issue with context about missing keys
             return [
                 Violation(
                     kind=L.check.file.untracked_with_details,
-                    fqn=subject.file_path, # File level violation
+                    fqn=subject.file_path,
                     context={"count": len(undocumented_keys), "keys": undocumented_keys}
                 )
             ]
-            # Note: Individual missing keys logic is handled by ExistenceRule? 
-            # No, original logic outputted a specific warning for untracked files.
-            # We stick to reproducing original logic's output structure via Violation context.
         else:
             return [
                 Violation(

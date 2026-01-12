@@ -14,6 +14,14 @@ class AnalysisSubject(Protocol):
         """The relative path of the file being analyzed."""
         ...
 
+    @property
+    def is_tracked(self) -> bool:
+        """
+        Whether the file is currently tracked by Stitcher
+        (i.e., has a corresponding .stitcher.yaml file).
+        """
+        ...
+
     def is_documentable(self) -> bool:
         """Whether this subject contains any documentable entities."""
         ...
