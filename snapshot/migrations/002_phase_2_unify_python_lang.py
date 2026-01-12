@@ -90,11 +90,11 @@ def upgrade(spec: MigrationSpec):
     ))
 
     # --- 3. 迁移测试用例 (可选但建议) ---
-    spec.add(MoveDir(
-        Path("packages/stitcher-python-adapter/tests"),
-        Path("packages/stitcher-lang-python/tests/adapter")
-    ))
-    spec.add(MoveDir(
-        Path("packages/stitcher-python-analysis/tests"),
-        Path("packages/stitcher-lang-python/tests/analysis")
-    ))
+    # spec.add(MoveDir(
+    #     Path("packages/stitcher-python-adapter/tests"),
+    #     Path("packages/stitcher-lang-python/tests/adapter")
+    # ))
+    # spec.add(MoveDir(
+    #     Path("packages/stitcher-python-analysis/tests"),
+    #     Path("packages/stitcher-lang-python/tests/analysis")
+    # ))
