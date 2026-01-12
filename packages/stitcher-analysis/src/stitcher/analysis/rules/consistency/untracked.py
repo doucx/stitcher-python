@@ -24,9 +24,7 @@ class UntrackedRule(AnalysisRule):
         undocumented_keys = [
             s.fqn
             for s in states.values()
-            if s.is_public
-            and s.fqn != "__doc__"
-            and not s.source_doc_content
+            if s.is_public and s.fqn != "__doc__" and not s.source_doc_content
         ]
 
         # Mimic legacy behavior:
@@ -37,13 +35,11 @@ class UntrackedRule(AnalysisRule):
                 Violation(
                     kind=L.check.file.untracked_with_details,
                     fqn=subject.file_path,
-                    context={"count": len(undocumented_keys), "keys": undocumented_keys}
+                    context={
+                        "count": len(undocumented_keys),
+                        "keys": undocumented_keys,
+                    },
                 )
             ]
         else:
-            return [
-                Violation(
-                    kind=L.check.file.untracked,
-                    fqn=subject.file_path
-                )
-            ]
+            return [Violation(kind=L.check.file.untracked, fqn=subject.file_path)]

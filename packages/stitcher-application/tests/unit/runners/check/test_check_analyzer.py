@@ -3,10 +3,11 @@ from unittest.mock import MagicMock, create_autospec
 from typing import Dict
 
 import pytest
+from needle.pointer import L
 
 from stitcher.app.runners.check.analyzer import CheckAnalyzer
 from stitcher.app.runners.check.protocols import CheckSubject, SymbolState
-from stitcher.spec import DifferProtocol, ConflictType
+from stitcher.spec import DifferProtocol
 
 
 # Test Double: A Fake implementation of the CheckSubject protocol for controlled input.
@@ -143,7 +144,7 @@ def test_analyzer_signature_drift(analyzer: CheckAnalyzer, mock_differ: DifferPr
     assert len(conflicts) == 1
     conflict = conflicts[0]
     assert conflict.fqn == "func"
-    assert conflict.conflict_type == ConflictType.SIGNATURE_DRIFT
+    assert conflict.violation_type == L.check.state.signature_drift
     mock_differ.generate_text_diff.assert_called_once()
 
 
@@ -168,7 +169,7 @@ def test_analyzer_co_evolution(analyzer: CheckAnalyzer, mock_differ: DifferProto
     result, conflicts = analyzer.analyze_subject(subject)
 
     assert len(conflicts) == 1
-    assert conflicts[0].conflict_type == ConflictType.CO_EVOLUTION
+    assert conflicts[0].violation_type == L.check.state.co_evolution
     mock_differ.generate_text_diff.assert_called_once()
 
 
@@ -194,7 +195,7 @@ def test_analyzer_dangling_doc(analyzer: CheckAnalyzer):
 
     assert len(conflicts) == 1
     assert conflicts[0].fqn == "dangling_func"
-    assert conflicts[0].conflict_type == ConflictType.DANGLING_DOC
+    assert conflicts[0].violation_type == L.check.issue.extra
 
 
 def test_analyzer_untracked_with_details(analyzer: CheckAnalyzer, monkeypatch):

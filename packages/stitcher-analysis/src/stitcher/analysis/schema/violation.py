@@ -5,11 +5,6 @@ from needle.pointer import SemanticPointer
 
 @dataclass
 class Violation:
-    """
-    Represents a specific finding or issue identified by the analysis engine.
-    Instead of using string keys, it uses SemanticPointers to strictly type the issue kind.
-    """
-
     # The semantic type of the violation (e.g., L.issue.signature_drift)
     kind: SemanticPointer
 

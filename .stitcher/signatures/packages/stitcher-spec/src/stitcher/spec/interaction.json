@@ -19,6 +19,7 @@
   "py://packages/stitcher-spec/src/stitcher/spec/interaction.py#InteractionContext.signature_diff": {
     "baseline_yaml_content_hash": "fbcdd365c44df3e0aafe36bd45becbed357d9599463f7e1ec298a84059b7d086"
   },
+  "py://packages/stitcher-spec/src/stitcher/spec/interaction.py#InteractionContext.violation_type": {},
   "py://packages/stitcher-spec/src/stitcher/spec/interaction.py#InteractionHandler": {
     "baseline_code_signature_text": "class InteractionHandler(Protocol):",
     "baseline_code_structure_hash": "4bf6724d8de0266e3285a6c2591459c7199b742116715a982658f5487ed17e9c",

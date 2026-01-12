@@ -1,0 +1,4 @@
+"AnalysisRule": |-
+  Protocol for a single analysis rule that checks a subject for specific issues.
+"AnalysisRule.check": |-
+  Analyze the subject and return a list of violations found.

@@ -1,0 +1,13 @@
+"AnalysisSubject": |-
+  A protocol defining the interface for any subject (file/module)
+  that can be analyzed by the consistency engine.
+"AnalysisSubject.file_path": |-
+  The relative path of the file being analyzed.
+"AnalysisSubject.get_all_symbol_states": |-
+  Retrieves the complete state map for all symbols in this subject,
+  aggregating data from code, yaml, and history.
+"AnalysisSubject.is_documentable": |-
+  Whether this subject contains any documentable entities.
+"AnalysisSubject.is_tracked": |-
+  Whether the file is currently tracked by Stitcher
+  (i.e., has a corresponding .stitcher.yaml file).

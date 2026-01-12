@@ -1,0 +1,6 @@
+"ConsistencyEngine": |-
+  Orchestrates the execution of a set of analysis rules against a subject.
+"ConsistencyEngine.analyze": |-
+  Runs all configured rules against the subject and aggregates the results.
+"create_consistency_engine": |-
+  Factory function to create a ConsistencyEngine with a default set of rules.

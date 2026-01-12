@@ -19,9 +19,9 @@ def test_consistency_engine_aggregates_violations_from_all_rules():
 
     mock_rule2 = Mock()
     mock_rule2.check.return_value = [violation2, violation3]
-    
+
     mock_rule3 = Mock()
-    mock_rule3.check.return_value = [] # A rule that finds nothing
+    mock_rule3.check.return_value = []  # A rule that finds nothing
 
     # 2. Execute
     engine = ConsistencyEngine(rules=[mock_rule1, mock_rule2, mock_rule3])

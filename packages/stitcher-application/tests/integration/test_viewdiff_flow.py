@@ -1,8 +1,9 @@
 from typing import List
 from stitcher.test_utils import create_test_app
 from stitcher.spec.interaction import InteractionHandler, InteractionContext
-from stitcher.spec import ResolutionAction, ConflictType
+from stitcher.spec import ResolutionAction
 from stitcher.test_utils import WorkspaceFactory, SpyBus
+from needle.pointer import L
 
 
 class CapturingHandler(InteractionHandler):
@@ -50,7 +51,7 @@ def test_check_generates_signature_diff(tmp_path, monkeypatch):
     assert len(handler.captured_contexts) == 1
     ctx = handler.captured_contexts[0]
 
-    assert ctx.conflict_type == ConflictType.SIGNATURE_DRIFT
+    assert ctx.violation_type == L.check.state.signature_drift
     assert ctx.signature_diff is not None
 
     # Check for unified diff markers
@@ -85,7 +86,7 @@ def test_pump_generates_doc_diff(tmp_path, monkeypatch):
     assert len(handler.captured_contexts) == 1
     ctx = handler.captured_contexts[0]
 
-    assert ctx.conflict_type == ConflictType.DOC_CONTENT_CONFLICT
+    assert ctx.violation_type == L.check.issue.conflict
     assert ctx.doc_diff is not None
 
     # Check for unified diff markers

@@ -1,6 +1,7 @@
 from unittest.mock import create_autospec, MagicMock
 
 import pytest
+from needle.pointer import L
 
 from stitcher.app.runners.pump.analyzer import PumpAnalyzer
 from stitcher.spec import (
@@ -10,7 +11,6 @@ from stitcher.spec import (
     DocstringIR,
 )
 from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
-from stitcher.spec.interaction import ConflictType
 
 
 @pytest.fixture
@@ -108,7 +108,7 @@ def test_analyzer_detects_conflict(
     conflict = conflicts[0]
     assert conflict.fqn == "func"
     assert conflict.file_path == "src/main.py"
-    assert conflict.conflict_type == ConflictType.DOC_CONTENT_CONFLICT
+    assert conflict.violation_type == L.check.issue.conflict
     assert conflict.doc_diff == "diff content"
     mock_differ.generate_text_diff.assert_called_once_with(
         "YAML Doc", "Code Doc", "yaml", "code"

@@ -14,6 +14,7 @@ from stitcher.app.runners.check.protocols import (
 )
 from stitcher.app.types import FileCheckResult
 from stitcher.spec.interaction import InteractionContext
+from needle.pointer import L
 
 
 def test_check_runner_orchestrates_analysis_and_resolution():
@@ -38,7 +39,11 @@ def test_check_runner_orchestrates_analysis_and_resolution():
     mock_modules = [ModuleDef(file_path="src/main.py")]
     mock_results = [FileCheckResult(path="src/main.py")]
     mock_conflicts = [
-        InteractionContext(file_path="src/main.py", fqn="func", conflict_type="TEST")
+        InteractionContext(
+            file_path="src/main.py",
+            fqn="func",
+            violation_type=L.check.state.signature_drift,
+        )
     ]
     # IMPORTANT: The runner calls analyze_subject internally. We mock that.
     mock_analyzer.analyze_subject.return_value = (mock_results[0], mock_conflicts)
@@ -96,7 +101,11 @@ def test_check_runner_passes_relink_and_reconcile_flags_to_resolver():
     )
     mock_results = [FileCheckResult(path="src/main.py")]
     mock_conflicts = [
-        InteractionContext(file_path="src/main.py", fqn="func", conflict_type="TEST")
+        InteractionContext(
+            file_path="src/main.py",
+            fqn="func",
+            violation_type=L.check.state.signature_drift,
+        )
     ]
 
     # Act
