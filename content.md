@@ -1,61 +1,57 @@
-Of course. Your analysis is correct: only the tests that *directly validate `SemanticGraph`* should be moved. Tests for `Planner` or `RenameSymbolOperation`, which are *consumers* of `SemanticGraph`, should remain in the `stitcher-refactor` package as they are testing `refactor`'s logic.
+太棒了。测试通过意味着我们的“脑手分离”手术已经圆满完成。
 
-Based on my analysis of the files you provided, `test_graph.py` is the only file that should be relocated.
+现在，我们将正式提交这一系列重构，确立 `stitcher-analysis` 作为项目核心语义大脑的地位。
 
-Here is the plan to execute this move.
-
-## [WIP] refactor(tests): Relocate SemanticGraph tests to stitcher-analysis
+## [COMMIT] refactor(analysis): migrate SemanticGraph from refactor to analysis
 
 ### 用户需求
-
-將 `stitcher-refactor` 包中用于测试 `SemanticGraph` 的单元测试文件，迁移到 `stitcher-analysis` 包中，以遵循“测试与代码共存”的原则。
+由于测试已经通过，需要将 `SemanticGraph` 的迁移、依赖更新以及测试重定位等一系列重构操作作为一个逻辑单元提交到 Git 仓库。
 
 ### 评论
-
-这是一个精确且必要的重构。`test_graph.py` 的唯一目的是验证 `SemanticGraph` 的行为。既然 `SemanticGraph` 的源码已经移至 `stitcher-analysis`，其对应的测试也必须随之迁移。
-
-其他测试文件，如 `test_planner_merging.py` 和 `test_rename_operation.py`，虽然它们 Mock 或使用了 `SemanticGraph`，但它们的核心测试目标是 `Planner` 和 `RenameSymbolOperation` 等 `refactor` 模块的功能。因此，将它们保留在 `stitcher-refactor` 是正确的决定。
+这是一次重要的架构对齐。通过将“代码理解能力”从“重构执行器”中剥离并放入“分析引擎”，我们不仅消除了代码冗余，还为 `stitcher-analysis` 未来实现基于全局语义的架构检查（如跨文件的类型检查、继承链分析等）扫清了障碍。
 
 ### 目标
-
-1.  在 `packages/stitcher-analysis/tests/unit/` 目录下创建一个新的 `semantic/` 目录来存放相关测试。
-2.  将 `packages/stitcher-refactor/tests/unit/engine/test_graph.py` 文件移动到新的 `packages/stitcher-analysis/tests/unit/semantic/` 目录中。
+1.  将 `stitcher-analysis` 的新文件和修改后的 `pyproject.toml` 加入暂存区。
+2.  将 `stitcher-refactor` 的修改（包括删除旧文件和更新 `pyproject.toml`）加入暂存区。
+3.  创建一个描述详尽的提交记录。
 
 ### 基本原理
-
-此操作将测试代码的物理位置与其所验证的生产代码的物理位置对齐。这提高了代码库的可维护性，使得开发人员在修改 `SemanticGraph` 时，可以轻松地找到并运行其对应的测试。新的测试路径 `tests/unit/semantic/` 也与源码路径 `src/stitcher/analysis/semantic/` 形成了清晰的镜像关系。
+遵循 `d3-constraint-quipu-plan-script-rules` 指令，我们将 Git 操作放在一个独立的 `[COMMIT]` 计划中。这确保了在所有文件修改都经过测试验证（如用户确认测试通过）之后，再将它们固化到项目历史中。
 
 ### 标签
-
-#intent/refine #flow/ready #priority/high #comp/tests #comp/analysis #comp/refactor #scope/dx #task/domain/refactor #task/object/dependency-graph #task/action/refactor #task/state/continue
+#intent/refine #flow/ready #priority/high #comp/analysis #comp/refactor #scope/core #ai/instruct #task/domain/refactor #task/object/dependency-graph #task/action/refactor #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 在 `stitcher-analysis` 中创建新的测试目录
+#### Acts 1: 提交重构变更
 
-我们首先在 `stitcher-analysis` 包中创建 `tests/unit/semantic` 目录，为即将移入的测试文件做准备。
-
-~~~~~act
-run_command
-~~~~~
-~~~~~bash
-mkdir -p packages/stitcher-analysis/tests/unit/semantic
-~~~~~
-
-#### Acts 2: 移动 `SemanticGraph` 的测试文件
-
-现在，我们将 `test_graph.py` 从 `stitcher-refactor` 移动到它在 `stitcher-analysis` 中的新家。
+我们将所有涉及到的包和测试文件的变更添加到 Git 暂存区并提交。
 
 ~~~~~act
-move_file
-packages/stitcher-refactor/tests/unit/engine/test_graph.py
-packages/stitcher-analysis/tests/unit/semantic/test_graph.py
+git_add
+~~~~~
+
+~~~~~act
+git_commit
+~~~~~
+~~~~~text
+refactor(analysis): migrate SemanticGraph from refactor to analysis
+
+Performs a strategic architectural split by moving the 'brain' (semantic code understanding) from 'stitcher-refactor' to 'stitcher-analysis'.
+
+Key changes:
+- Relocated 'SemanticGraph' to 'stitcher.analysis.semantic.graph'.
+- Extracted 'SymbolNode' into 'stitcher.analysis.semantic.models' for better separation of concerns.
+- Updated 'stitcher-analysis' to depend on 'griffe' and 'stitcher-workspace'.
+- Updated 'stitcher-refactor' to depend on 'stitcher-analysis' and removed direct 'griffe' dependency.
+- Relocated semantic graph unit tests to the analysis package.
+
+This migration enables the check/pump engines to leverage full semantic awareness for advanced diagnostics, while keeping the refactor engine focused on transactional code modification.
 ~~~~~
 
 ### 下一步建议
 
-文件已经移动完毕。现在最重要的一步是验证我们的重构是否成功。请在项目根目录运行以下命令，以确保 `stitcher-analysis` 和 `stitcher-refactor` 的测试套件都能正常通过：
-
-`pytest packages/stitcher-analysis packages/stitcher-refactor`
+- **探索高级检查**: 既然 `analysis` 已经拥有了 `SemanticGraph`，你可以考虑为 `check` 命令添加一条新规则，例如：“验证所有的公共接口是否有对应的类型提示”。
+- **继续 Phase 2**: 我们已经为 `analysis` 引入了语义分析能力，现在可以按照之前的路线图，开始引入 `networkx` 来构建宏观的依赖图谱，实现循环依赖检测。
