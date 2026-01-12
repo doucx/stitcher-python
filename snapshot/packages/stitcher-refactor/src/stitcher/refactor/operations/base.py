@@ -59,11 +59,7 @@ class SidecarUpdateMixin:
                 suri_changed = False
 
                 # 1. Update Path (File Move)
-                if (
-                    old_file_path
-                    and new_file_path
-                    and path == old_file_path
-                ):
+                if old_file_path and new_file_path and path == old_file_path:
                     path = new_file_path
                     suri_changed = True
 
@@ -80,9 +76,7 @@ class SidecarUpdateMixin:
 
                 if suri_changed:
                     # Reconstruct SURI
-                    new_key = (
-                        f"py://{path}#{fragment}" if fragment else f"py://{path}"
-                    )
+                    new_key = f"py://{path}#{fragment}" if fragment else f"py://{path}"
                     new_data[new_key] = value
                     modified = True
                     continue

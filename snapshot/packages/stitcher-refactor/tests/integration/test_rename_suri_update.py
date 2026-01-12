@@ -16,25 +16,20 @@ def test_rename_symbol_updates_suri_fragment_in_signatures(tmp_path):
     """
     # 1. ARRANGE
     factory = WorkspaceFactory(tmp_path)
-    
+
     # 构造 SURI (注意: 路径相对于项目根目录)
     rel_py_path = "src/mypkg/core.py"
     old_suri = f"py://{rel_py_path}#MyClass"
     new_suri = f"py://{rel_py_path}#YourClass"
-    
+
     project_root = (
         factory.with_pyproject(".")
         .with_source("src/mypkg/__init__.py", "")
-        .with_source(
-            rel_py_path,
-            "class MyClass:\n    pass\n"
-        )
+        .with_source(rel_py_path, "class MyClass:\n    pass\n")
         # 模拟对应的 Signature 文件
         .with_raw_file(
             ".stitcher/signatures/src/mypkg/core.json",
-            json.dumps({
-                old_suri: {"baseline_code_structure_hash": "original_hash"}
-            })
+            json.dumps({old_suri: {"baseline_code_structure_hash": "original_hash"}}),
         )
         .build()
     )
@@ -46,7 +41,7 @@ def test_rename_symbol_updates_suri_fragment_in_signatures(tmp_path):
     workspace = Workspace(root_path=project_root)
     graph = SemanticGraph(workspace=workspace, index_store=index_store)
     graph.load("mypkg")
-    
+
     sidecar_manager = SidecarManager(root_path=project_root)
     ctx = RefactorContext(
         workspace=workspace,
@@ -60,8 +55,7 @@ def test_rename_symbol_updates_suri_fragment_in_signatures(tmp_path):
     from stitcher.refactor.engine.planner import Planner
 
     op = RenameSymbolOperation(
-        old_fqn="mypkg.core.MyClass", 
-        new_fqn="mypkg.core.YourClass"
+        old_fqn="mypkg.core.MyClass", new_fqn="mypkg.core.YourClass"
     )
     spec = MigrationSpec().add(op)
     planner = Planner()
@@ -76,15 +70,15 @@ def test_rename_symbol_updates_suri_fragment_in_signatures(tmp_path):
 
     # 3. ASSERT
     assert sig_path.exists(), "Signature 文件不应丢失"
-    
+
     updated_data = json.loads(sig_path.read_text(encoding="utf-8"))
-    
+
     # 验证旧 SURI 已消失
     assert old_suri not in updated_data, f"旧 SURI Key 未被移除: {old_suri}"
-    
+
     # 验证新 SURI 存在
     assert new_suri in updated_data, f"新 SURI Key 未生成: {new_suri}"
-    
+
     # 验证数据完整性 (Hash 值应保留)
     assert updated_data[new_suri]["baseline_code_structure_hash"] == "original_hash"
 
@@ -97,11 +91,11 @@ def test_rename_nested_method_updates_suri_fragment(tmp_path):
     # 1. ARRANGE
     factory = WorkspaceFactory(tmp_path)
     rel_py_path = "src/mypkg/logic.py"
-    
+
     # SURI for methods usually looks like #Class.method
     old_suri = f"py://{rel_py_path}#MyClass.old_method"
     new_suri = f"py://{rel_py_path}#MyClass.new_method"
-    
+
     project_root = (
         factory.with_pyproject(".")
         .with_source(
@@ -110,17 +104,15 @@ def test_rename_nested_method_updates_suri_fragment(tmp_path):
 class MyClass:
     def old_method(self):
         pass
-"""
+""",
         )
         .with_raw_file(
             ".stitcher/signatures/src/mypkg/logic.json",
-            json.dumps({
-                old_suri: {"hash": "123"}
-            })
+            json.dumps({old_suri: {"hash": "123"}}),
         )
         .build()
     )
-    
+
     sig_path = project_root / ".stitcher/signatures/src/mypkg/logic.json"
 
     # 2. ACT
@@ -128,7 +120,7 @@ class MyClass:
     workspace = Workspace(root_path=project_root)
     graph = SemanticGraph(workspace=workspace, index_store=index_store)
     graph.load("mypkg")
-    
+
     sidecar_manager = SidecarManager(root_path=project_root)
     ctx = RefactorContext(
         workspace=workspace,
@@ -141,8 +133,8 @@ class MyClass:
     from stitcher.refactor.engine.planner import Planner
 
     op = RenameSymbolOperation(
-        old_fqn="mypkg.logic.MyClass.old_method", 
-        new_fqn="mypkg.logic.MyClass.new_method"
+        old_fqn="mypkg.logic.MyClass.old_method",
+        new_fqn="mypkg.logic.MyClass.new_method",
     )
     spec = MigrationSpec().add(op)
     planner = Planner()
