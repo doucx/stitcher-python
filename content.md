@@ -1,192 +1,74 @@
-简要回答
-好的，我将执行步骤 3。在实现过程中，为了能够复用现有的、健壮的 `SymbolRenamerTransformer`（它依赖旧的 FQN 来进行安全检查和短名提取），我需要微调一下 `RefactoringStrategyProtocol`，增加 `old_name` 参数。这是一个必要的架构修正。
+好的，我们来为这些重要的架构变更创建一个提交。
 
-## [WIP] feat: 实现 Python 重构策略并修正协议
+## [COMMIT] feat(arch): 引入重构策略协议与 sidecar 语言包
 
 ### 用户需求
-1.  **修正协议**: 更新 `RefactoringStrategyProtocol`，增加 `old_name` 参数，以便策略层能进行更精确的重构（例如区分短名/长名）。
-2.  **实现策略**: 在 `stitcher-lang-python` 中实现 `PythonRefactoringStrategy`，封装现有的 CST 转换逻辑。
+为 `RefactoringStrategyProtocol` 的定义、`stitcher-lang-sidecar` 包的创建以及 `PythonRefactoringStrategy` 的实现创建一个 Git 提交。
 
 ### 评论
-现有的 `SymbolRenamerTransformer` 是一个基于 LibCST 的强大工具，它依赖 `old_fqn` 来确保只重命名正确的目标，并智能处理 `import` 和 `Attribute` 的重写。为了复用这一资产而不是重写一个脆弱的文本替换器，协议必须传递 `old_name` 上下文。
+这是一个关键的里程碑提交。它为 `stitcher-refactor` 引擎的完全泛化奠定了坚实的基础。通过将 Sidecar 文件抽象为一种独立的语言，并定义通用的重构协议，我们正在从根本上消除硬编码逻辑，使系统更具扩展性。
 
 ### 目标
-1.  更新 `stitcher-spec` 中的重构协议。
-2.  在 `stitcher-lang-python` 中创建 `refactor.py`，实现适配逻辑。
+1.  将所有相关的创建和修改的文件暂存。
+2.  创建一个原子性的、描述清晰的 Git 提交，记录本次架构演进。
 
 ### 基本原理
-通过适配器模式，将通用的 `RefactorUsage` 转换为 Python 分析层专用的 `UsageLocation`，从而打通 spec 层与具体的语言实现层。
+将协议定义、Sidecar 语言包的创建和 Python 策略的实现捆绑在一次提交中是合理的，因为它们共同构成了“泛化重构引擎”这一宏大目标的第一步：建立接口并提供初步实现。
 
 ### 标签
-#intent/build #intent/refine #flow/ready #priority/high
-#comp/lang-python #comp/spec #concept/refactor
-#task/domain/refactor #task/object/python-strategy #task/action/implement #task/state/continue
+#intent/tooling #flow/ready #priority/high
+#comp/spec #comp/lang-sidecar #comp/lang-python
+#task/domain/refactor #task/object/sidecar-adapter #task/action/create #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修正重构协议 (添加 old_name)
+#### Acts 1: 暂存变更
+
+我们将所有新创建和修改的文件添加到 Git 暂存区。
 
 ~~~~~act
-patch_file
+git_add
 packages/stitcher-spec/src/stitcher/spec/refactor.py
-~~~~~
-~~~~~python.old
-    def rename_symbol(
-        self,
-        source_code: str,
-        usages: List[RefactorUsage],
-        new_name: str
-    ) -> str:
-        """
-        Apply a rename operation to the source code.
-
-        Args:
-            source_code: The original content of the file.
-            usages: A list of locations in this file that refer to the symbol being renamed.
-            new_name: The new fully qualified name (FQN) or short name.
-                      The strategy is responsible for determining whether to use
-                      the short name or FQN based on the context of each usage.
-
-        Returns:
-            The modified source code.
-        """
-        ...
-~~~~~
-~~~~~python.new
-    def rename_symbol(
-        self,
-        source_code: str,
-        usages: List[RefactorUsage],
-        old_name: str,
-        new_name: str,
-    ) -> str:
-        """
-        Apply a rename operation to the source code.
-
-        Args:
-            source_code: The original content of the file.
-            usages: A list of locations in this file that refer to the symbol being renamed.
-            old_name: The original fully qualified name (FQN) of the symbol.
-                      Useful for verification and context awareness (e.g. short name extraction).
-            new_name: The new fully qualified name (FQN). The strategy logic
-                      should determine if a short name or full name is appropriate
-                      for each insertion point.
-
-        Returns:
-            The modified source code.
-        """
-        ...
-~~~~~
-
-#### Acts 2: 实现 PythonRefactoringStrategy
-
-我们在 `stitcher-lang-python` 中实现该策略。我们需要将通用的 `RefactorUsage` 映射回内部的 `UsageLocation`，以便复用 `SymbolRenamerTransformer`。
-
-~~~~~act
-write_file
+packages/stitcher-spec/src/stitcher/spec/__init__.py
+packages/stitcher-lang-sidecar/pyproject.toml
+packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/__init__.py
+packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/parser.py
+packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/adapter.py
 packages/stitcher-lang-python/src/stitcher/lang/python/refactor.py
-~~~~~
-~~~~~python
-from pathlib import Path
-from typing import List
-
-import libcst as cst
-
-from stitcher.spec import (
-    RefactoringStrategyProtocol,
-    RefactorUsage,
-)
-from stitcher.lang.python.analysis.models import UsageLocation, ReferenceType
-from stitcher.lang.python.transform.rename import SymbolRenamerTransformer
-
-
-class PythonRefactoringStrategy(RefactoringStrategyProtocol):
-    def rename_symbol(
-        self,
-        source_code: str,
-        usages: List[RefactorUsage],
-        old_name: str,
-        new_name: str,
-    ) -> str:
-        if not usages:
-            return source_code
-
-        # 1. Adapt generic RefactorUsage to internal UsageLocation
-        # The SymbolRenamerTransformer relies on 'target_node_fqn' (old_name) to verify
-        # nodes before renaming.
-        internal_locations: List[UsageLocation] = []
-        dummy_path = Path("")  # Path is not used by the transformer for single-file ops
-
-        for u in usages:
-            loc = UsageLocation(
-                file_path=dummy_path,
-                lineno=u.location.lineno,
-                col_offset=u.location.col_offset,
-                end_lineno=u.location.end_lineno,
-                end_col_offset=u.location.end_col_offset,
-                ref_type=ReferenceType.SYMBOL,  # Default assumption
-                target_node_fqn=old_name,
-            )
-            internal_locations.append(loc)
-
-        # 2. Prepare the rename map
-        rename_map = {old_name: new_name}
-
-        # 3. Apply transformation
-        try:
-            module = cst.parse_module(source_code)
-            wrapper = cst.MetadataWrapper(module)
-            
-            transformer = SymbolRenamerTransformer(rename_map, internal_locations)
-            modified_module = wrapper.visit(transformer)
-            
-            return modified_module.code
-        except Exception:
-            # In case of syntax errors or other CST issues, return original code
-            # Caller handles logging/error reporting
-            return source_code
-~~~~~
-
-#### Acts 3: 导出新组件
-
-~~~~~act
-patch_file
 packages/stitcher-lang-python/src/stitcher/lang/python/__init__.py
 ~~~~~
-~~~~~python.old
-from .transform.facade import PythonTransformer
-from .uri import SURIGenerator
 
-__all__ = [
-    "PythonAdapter",
-    "PythonFingerprintStrategy",
-    "InspectionError",
-    "parse_plugin_entry",
-    "GriffePythonParser",
-    "PythonParser",
-    "PythonTransformer",
-    "SURIGenerator",
-]
+#### Acts 2: 提交变更
+
+现在，我们创建一个内容详尽的提交，以记录这些架构级别的改动。
+
+~~~~~act
+git_commit
 ~~~~~
-~~~~~python.new
-from .transform.facade import PythonTransformer
-from .uri import SURIGenerator
-from .refactor import PythonRefactoringStrategy
+~~~~~text
+feat(arch): Introduce refactor strategy protocol and sidecar lang pack
 
-__all__ = [
-    "PythonAdapter",
-    "PythonFingerprintStrategy",
-    "InspectionError",
-    "parse_plugin_entry",
-    "GriffePythonParser",
-    "PythonParser",
-    "PythonTransformer",
-    "SURIGenerator",
-    "PythonRefactoringStrategy",
-]
+This commit lays the foundational groundwork for generalizing the refactoring engine, moving it away from Python-specific and sidecar-specific logic.
+
+Key changes:
+
+1.  **Define `RefactoringStrategyProtocol` in `stitcher-spec`**: Establishes a formal, language-agnostic interface for applying rename operations. This decouples the refactor engine from the implementation details of any given language.
+
+2.  **Create `stitcher-lang-sidecar` Package**: Elevates `.stitcher.yaml` files to be first-class language citizens. It includes a `SidecarAdapter` that parses YAML keys as `ReferenceRecord`s. This allows the indexer to treat sidecar files as source code containing references, which is critical for unified refactoring.
+
+3.  **Implement `PythonRefactoringStrategy`**: Implements the new protocol in `stitcher-lang-python`, wrapping the existing robust LibCST-based `SymbolRenamerTransformer`.
+
+This prepares the system for the final step of refactoring the `stitcher-refactor` engine itself to consume these new, generic components.
 ~~~~~
 
 ### 下一步建议
-接下来是 **步骤 4: 重构 `stitcher-refactor`**。这是最核心的一步，我们将移除 `SidecarUpdateMixin`，引入 `StrategyRegistry`，并重写 `GlobalBatchRenamer` 以使用新的协议。这将彻底完成引擎的泛化。
+我们已经完成了协议定义和语言包的准备工作。下一步就是最核心的手术：**重构 `stitcher-refactor` 引擎**。
+
+具体行动将包括：
+1.  移除 `SidecarUpdateMixin` 和相关的 `SidecarUpdateIntent`。
+2.  在 `RefactorContext` 中引入一个策略注册表。
+3.  重写 `GlobalBatchRenamer`，使其不再硬编码 `SymbolRenamerTransformer`，而是通过策略注册表动态地为不同文件类型（`.py`, `.yaml`）分发重构任务。
+
+如果你同意，我将开始制定执行此项重构的计划。

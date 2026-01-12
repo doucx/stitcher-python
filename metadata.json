@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat: 实现 Python 重构策略并修正协议", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768199643.659835, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[COMMIT] feat(arch): 引入重构策略协议与 sidecar 语言包", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768199924.0015264, "duration_ms": 0}}
