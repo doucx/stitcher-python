@@ -1,0 +1,4 @@
+"SubjectRule": |-
+  A rule that checks the entire subject (file).
+"SymbolRule": |-
+  A rule that checks a single symbol's state.

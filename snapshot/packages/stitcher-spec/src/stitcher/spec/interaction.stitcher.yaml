@@ -1,7 +1,5 @@
 "InteractionContext": |-
   Data packet passed to the handler to request a user decision.
-"InteractionContext.conflict_type": |-
-  The type of conflict detected.
 "InteractionContext.doc_diff": |-
   The unified diff for a docstring content change.
 "InteractionContext.file_path": |-

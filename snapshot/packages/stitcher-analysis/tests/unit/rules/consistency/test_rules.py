@@ -3,7 +3,7 @@ from unittest.mock import Mock
 from needle.pointer import L
 from stitcher.spec import DocstringIR
 
-from stitcher.analysis.schema import SymbolState, Violation
+from stitcher.analysis.schema import SymbolState
 from stitcher.analysis.rules.consistency.signature import SignatureRule
 from stitcher.analysis.rules.consistency.content import ContentRule
 from stitcher.analysis.rules.consistency.existence import ExistenceRule
@@ -97,9 +97,7 @@ def test_content_rule_conflict(mock_differ, mock_subject):
 
 def test_existence_rule_missing(mock_subject):
     # Setup: Public, in code, no doc, not in YAML
-    state = create_state(
-        exists_in_yaml=False, source_doc=None, yaml_doc=None
-    )
+    state = create_state(exists_in_yaml=False, source_doc=None, yaml_doc=None)
     mock_subject.get_all_symbol_states.return_value = {"test.func": state}
 
     rule = ExistenceRule()
@@ -112,17 +110,17 @@ def test_existence_rule_missing(mock_subject):
 def test_untracked_rule_untracked_file(mock_subject):
     # Setup: File is explicitly untracked
     mock_subject.is_tracked = False
-    
+
     state = create_state(exists_in_yaml=False)
     # Ensure no source doc so it triggers 'untracked_with_details' logic
     state.source_doc_content = None
-    
+
     mock_subject.get_all_symbol_states.return_value = {"test.func": state}
     mock_subject.is_documentable.return_value = True
 
     rule = UntrackedRule()
     violations = rule.check(mock_subject)
-    
+
     assert len(violations) == 1
     assert violations[0].kind == L.check.file.untracked_with_details
     assert violations[0].fqn == "test.py"
@@ -132,7 +130,7 @@ def test_untracked_rule_tracked_file_ignored(mock_subject):
     # Setup: File IS tracked
     mock_subject.is_tracked = True
     mock_subject.is_documentable.return_value = True
-    
+
     rule = UntrackedRule()
     violations = rule.check(mock_subject)
     assert len(violations) == 0

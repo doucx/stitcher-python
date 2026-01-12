@@ -10,9 +10,6 @@ class ViolationLevel(str, Enum):
 
 @dataclass
 class Violation:
-    """
-    Represents a single issue found by a rule.
-    """
     fqn: str
     rule_id: str
     level: ViolationLevel

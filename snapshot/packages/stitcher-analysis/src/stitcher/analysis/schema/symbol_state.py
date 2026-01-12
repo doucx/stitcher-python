@@ -6,13 +6,6 @@ from stitcher.spec import DocstringIR
 
 @dataclass
 class SymbolState:
-    """
-    Represents the state of a symbol across three dimensions:
-    1. Source Code (Current Reality)
-    2. YAML Documentation (Stored Documentation)
-    3. Baseline/Signature History (Last Known State)
-    """
-
     fqn: str
     is_public: bool
 

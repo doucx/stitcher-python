@@ -1,0 +1,4 @@
+"DocstringContentRule": |-
+  Checks for consistency between docstrings in source code and YAML.
+  - `conflict`: Docstring summaries differ.
+  - `redundant`: Docstring summaries are identical.

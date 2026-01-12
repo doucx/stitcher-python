@@ -1,0 +1,7 @@
+"FileCheckResult": |-
+  Aggregates all analysis results for a single file.
+  Uses a flat list of Violations instead of categorizing by severity/type,
+  delegating interpretation to the consumer/reporter.
+"FileCheckResult.is_clean": |-
+  A file is clean if there are no active violations.
+  Reconciled items do not count against cleanliness as they are resolved.

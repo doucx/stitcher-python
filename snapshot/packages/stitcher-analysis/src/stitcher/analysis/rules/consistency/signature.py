@@ -20,7 +20,7 @@ class SignatureRule(AnalysisRule):
             # Skip if not tracked in YAML (not our responsibility)
             if not state.exists_in_yaml:
                 continue
-            
+
             # Skip if not in code (handled by ExistenceRule/Dangling)
             if not state.exists_in_code:
                 continue
@@ -52,7 +52,7 @@ class SignatureRule(AnalysisRule):
                     "baseline",
                     "current",
                 )
-                
+
                 # If YAML hasn't changed, it's just drift.
                 # If YAML ALSO changed, it's co-evolution (ambiguous intent).
                 kind = (
