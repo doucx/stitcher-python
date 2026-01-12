@@ -14,7 +14,7 @@ from stitcher.common.transaction import WriteFileOp, MoveFileOp
 
 
 @pytest.fixture
-def mock_context(tmp_path: Path) -> RefactorContext:
+def mock_context(tmp_path: Path) -> Mock:
     """Creates a mock RefactorContext with a mock graph."""
     mock_index = Mock(spec=IndexStore)
     mock_graph = MagicMock(spec=SemanticGraph)
@@ -40,7 +40,7 @@ def mock_context(tmp_path: Path) -> RefactorContext:
     return ctx
 
 
-def test_planner_merges_rename_operations_for_same_file(mock_context: RefactorContext):
+def test_planner_merges_rename_operations_for_same_file(mock_context: Mock):
     """
     CRITICAL: This test verifies that the Planner can merge multiple rename
     operations that affect the SAME file into a SINGLE WriteFileOp.
@@ -94,7 +94,7 @@ def test_planner_merges_rename_operations_for_same_file(mock_context: RefactorCo
     assert "def new_func(): pass" in final_content
 
 
-def test_planner_handles_move_and_rename_on_same_file(mock_context: RefactorContext):
+def test_planner_handles_move_and_rename_on_same_file(mock_context: Mock):
     """
     Verifies that a file move and symbol renames within that file are planned correctly,
     resulting in a MoveOp and a single WriteOp with merged content.
