@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "Capture: A 003_refactor_graph_to_analysis.py", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768222503.8295732, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "Capture: A graph.json, D graph.json, A __init__.py ... and 29 more files", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768222548.6619272, "duration_ms": 0}}
