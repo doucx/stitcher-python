@@ -2,6 +2,8 @@ from pathlib import Path
 from unittest.mock import create_autospec, MagicMock
 
 from stitcher.app.runners.check.runner import CheckRunner
+from stitcher.app.runners.check.resolver import CheckResolver
+from stitcher.app.runners.check.reporter import CheckReporter
 from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
 from stitcher.spec import (
     FingerprintStrategyProtocol,
@@ -9,16 +11,12 @@ from stitcher.spec import (
     ModuleDef,
     DifferProtocol,
 )
-from stitcher.app.runners.check.protocols import (
-    CheckResolverProtocol,
-    CheckReporterProtocol,
-)
 from stitcher.spec.interaction import InteractionContext
 from stitcher.analysis.schema import FileCheckResult as AnalysisResult, Violation
 from needle.pointer import L
 
 
-def test_check_runner_orchestrates_analysis_and_resolution():
+def test_check_runner_orchestrates_analysis_and_resolution(mocker):
     """
     验证 CheckRunner 正确地按顺序调用其依赖项：
     1. Engine (通过 analyze_batch)
@@ -26,15 +24,15 @@ def test_check_runner_orchestrates_analysis_and_resolution():
     3. Reporter
     """
     # 1. Arrange: 为所有依赖项创建 mock
-    mock_doc_manager = create_autospec(DocumentManagerProtocol, instance=True)
-    mock_sig_manager = create_autospec(SignatureManagerProtocol, instance=True)
-    mock_fingerprint_strategy = create_autospec(
+    mock_doc_manager = mocker.create_autospec(DocumentManagerProtocol, instance=True)
+    mock_sig_manager = mocker.create_autospec(SignatureManagerProtocol, instance=True)
+    mock_fingerprint_strategy = mocker.create_autospec(
         FingerprintStrategyProtocol, instance=True
     )
-    mock_index_store = create_autospec(IndexStoreProtocol, instance=True)
-    mock_differ = create_autospec(DifferProtocol, instance=True)
-    mock_resolver = create_autospec(CheckResolverProtocol, instance=True)
-    mock_reporter = create_autospec(CheckReporterProtocol, instance=True)
+    mock_index_store = mocker.create_autospec(IndexStoreProtocol, instance=True)
+    mock_differ = mocker.create_autospec(DifferProtocol, instance=True)
+    mock_resolver = mocker.create_autospec(CheckResolver, instance=True)
+    mock_reporter = mocker.create_autospec(CheckReporter, instance=True)
 
     # 配置 mock 模块
     mock_modules = [ModuleDef(file_path="src/main.py")]
@@ -98,20 +96,20 @@ def test_check_runner_orchestrates_analysis_and_resolution():
     assert report_success is True
 
 
-def test_check_runner_passes_relink_and_reconcile_flags_to_resolver():
+def test_check_runner_passes_relink_and_reconcile_flags_to_resolver(mocker):
     """
     确保来自 Runner 公共 API 的布尔标志被正确传递给解析器组件。
     """
     # Arrange
-    mock_resolver = create_autospec(CheckResolverProtocol)
+    mock_resolver = mocker.create_autospec(CheckResolver, instance=True)
     runner = CheckRunner(
-        doc_manager=create_autospec(DocumentManagerProtocol),
-        sig_manager=create_autospec(SignatureManagerProtocol),
-        fingerprint_strategy=create_autospec(FingerprintStrategyProtocol),
-        index_store=create_autospec(IndexStoreProtocol),
-        differ=create_autospec(DifferProtocol),
+        doc_manager=mocker.create_autospec(DocumentManagerProtocol, instance=True),
+        sig_manager=mocker.create_autospec(SignatureManagerProtocol, instance=True),
+        fingerprint_strategy=mocker.create_autospec(FingerprintStrategyProtocol, instance=True),
+        index_store=mocker.create_autospec(IndexStoreProtocol, instance=True),
+        differ=mocker.create_autospec(DifferProtocol, instance=True),
         resolver=mock_resolver,
-        reporter=create_autospec(CheckReporterProtocol),
+        reporter=mocker.create_autospec(CheckReporter, instance=True),
         root_path=Path("/tmp"),
     )
     # 使用新的 AnalysisResult

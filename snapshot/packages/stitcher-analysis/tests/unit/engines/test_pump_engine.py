@@ -1,4 +1,4 @@
-from unittest.mock import create_autospec
+from unittest.mock import create_autospec, PropertyMock, MagicMock
 
 import pytest
 from needle.pointer import L
@@ -10,13 +10,16 @@ from stitcher.analysis.schema import SymbolState
 
 
 @pytest.fixture
-def mock_differ() -> DifferProtocol:
-    return create_autospec(DifferProtocol, instance=True)
+def mock_differ(mocker) -> MagicMock:
+    return mocker.create_autospec(DifferProtocol, instance=True)
 
 
 @pytest.fixture
-def mock_subject() -> AnalysisSubject:
-    return create_autospec(AnalysisSubject, instance=True)
+def mock_subject(mocker) -> MagicMock:
+    subject = mocker.create_autospec(AnalysisSubject, instance=True)
+    # Configure file_path as a readable property
+    type(subject).file_path = PropertyMock(return_value="src/main.py")
+    return subject
 
 
 @pytest.fixture
@@ -72,7 +75,6 @@ def test_engine_detects_conflict_when_summaries_differ(
         baseline_yaml_content_hash=None,
     )
     mock_subject.get_all_symbol_states.return_value = {"func": state}
-    mock_subject.file_path = "src/main.py"
     mock_differ.generate_text_diff.return_value = "diff content"
 
     # Act

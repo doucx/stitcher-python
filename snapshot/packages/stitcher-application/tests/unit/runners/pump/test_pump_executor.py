@@ -1,4 +1,4 @@
-from unittest.mock import create_autospec, ANY
+from unittest.mock import create_autospec, ANY, MagicMock
 from pathlib import Path
 
 import pytest
@@ -18,9 +18,9 @@ from stitcher.common.transaction import TransactionManager
 
 
 @pytest.fixture
-def mock_doc_manager() -> DocumentManagerProtocol:
+def mock_doc_manager(mocker) -> MagicMock:
     # Configure flatten_module_docs to return a mock IR
-    mock = create_autospec(DocumentManagerProtocol, instance=True)
+    mock = mocker.create_autospec(DocumentManagerProtocol, instance=True)
     mock.flatten_module_docs.return_value = {
         "func_a": DocstringIR(summary="Source Doc A")
     }
@@ -29,8 +29,8 @@ def mock_doc_manager() -> DocumentManagerProtocol:
 
 
 @pytest.fixture
-def mock_sig_manager(tmp_path: Path) -> SignatureManagerProtocol:
-    mock = create_autospec(SignatureManagerProtocol, instance=True)
+def mock_sig_manager(mocker, tmp_path: Path) -> MagicMock:
+    mock = mocker.create_autospec(SignatureManagerProtocol, instance=True)
     # IMPORTANT: Return a real dict to avoid deepcopy issues with mocks.
     mock.load_composite_hashes.return_value = {}
     # Configure path generation to return a concrete Path
@@ -44,6 +44,7 @@ def mock_sig_manager(tmp_path: Path) -> SignatureManagerProtocol:
 @pytest.fixture
 def executor(
     tmp_path: Path,
+    mocker,
     mock_doc_manager: DocumentManagerProtocol,
     mock_sig_manager: SignatureManagerProtocol,
 ) -> PumpExecutor:
@@ -52,9 +53,9 @@ def executor(
         root_path=tmp_path,
         doc_manager=mock_doc_manager,
         sig_manager=mock_sig_manager,
-        transformer=create_autospec(LanguageTransformerProtocol, instance=True),
-        merger=create_autospec(DocstringMergerProtocol, instance=True),
-        fingerprint_strategy=create_autospec(
+        transformer=mocker.create_autospec(LanguageTransformerProtocol, instance=True),
+        merger=mocker.create_autospec(DocstringMergerProtocol, instance=True),
+        fingerprint_strategy=mocker.create_autospec(
             FingerprintStrategyProtocol, instance=True
         ),
     )
@@ -65,9 +66,9 @@ def sample_module() -> ModuleDef:
     return ModuleDef(file_path="src/main.py", functions=[FunctionDef(name="func_a")])
 
 
-def test_executor_hydrates_new_doc(executor: PumpExecutor, sample_module: ModuleDef):
+def test_executor_hydrates_new_doc(mocker, executor: PumpExecutor, sample_module: ModuleDef):
     """Test standard pumping of a new docstring without conflicts."""
-    mock_tm = create_autospec(TransactionManager, instance=True)
+    mock_tm = mocker.create_autospec(TransactionManager, instance=True)
 
     executor.execute([sample_module], decisions={}, tm=mock_tm, strip=False)
 
@@ -78,12 +79,13 @@ def test_executor_hydrates_new_doc(executor: PumpExecutor, sample_module: Module
 
 
 def test_executor_overwrite_and_strip(
+    mocker,
     executor: PumpExecutor,
     sample_module: ModuleDef,
     mock_doc_manager: DocumentManagerProtocol,
 ):
     """Test HYDRATE_OVERWRITE decision with stripping enabled."""
-    mock_tm = create_autospec(TransactionManager, instance=True)
+    mock_tm = mocker.create_autospec(TransactionManager, instance=True)
     decisions = {"func_a": ResolutionAction.HYDRATE_OVERWRITE}
 
     # Mock transformer strip call

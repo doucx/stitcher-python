@@ -12,10 +12,8 @@ from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProt
 from stitcher.spec.interaction import InteractionContext
 from stitcher.analysis.schema import FileCheckResult as AnalysisFileCheckResult
 
-from .protocols import (
-    CheckResolverProtocol,
-    CheckReporterProtocol,
-)
+from stitcher.app.runners.check.resolver import CheckResolver
+from stitcher.app.runners.check.reporter import CheckReporter
 from .subject import IndexCheckSubjectAdapter, ASTCheckSubjectAdapter
 from stitcher.analysis.engines.consistency.engine import create_consistency_engine
 
@@ -28,8 +26,8 @@ class CheckRunner:
         fingerprint_strategy: FingerprintStrategyProtocol,
         index_store: IndexStoreProtocol,
         differ: DifferProtocol,
-        resolver: CheckResolverProtocol,
-        reporter: CheckReporterProtocol,
+        resolver: CheckResolver,
+        reporter: CheckReporter,
         root_path: Path,
     ):
         self.doc_manager = doc_manager
