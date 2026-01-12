@@ -34,9 +34,9 @@ from .types import PumpResult, FileCheckResult, CoverageResult
 from stitcher.index.db import DatabaseManager
 from stitcher.index.store import IndexStore
 from stitcher.index.indexer import FileIndexer
-from stitcher.adapter.python import PythonAdapter
+from stitcher.lang.python import PythonAdapter
 from stitcher.workspace import Workspace
-from stitcher.adapter.python.docstring import (
+from stitcher.lang.python.docstring import (
     get_docstring_codec,
     get_docstring_serializer,
 )

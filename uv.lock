@@ -18,9 +18,8 @@ members = [
     "stitcher-common",
     "stitcher-config",
     "stitcher-index",
+    "stitcher-lang-python",
     "stitcher-python",
-    "stitcher-python-adapter",
-    "stitcher-python-analysis",
     "stitcher-refactor",
     "stitcher-spec",
     "stitcher-stubgen",
@@ -688,7 +687,7 @@ dependencies = [
     { name = "stitcher-common" },
     { name = "stitcher-config" },
     { name = "stitcher-index" },
-    { name = "stitcher-python-adapter" },
+    { name = "stitcher-lang-python" },
     { name = "stitcher-spec" },
     { name = "stitcher-stubgen" },
     { name = "stitcher-workspace" },
@@ -700,7 +699,7 @@ requires-dist = [
     { name = "stitcher-common", editable = "packages/stitcher-common" },
     { name = "stitcher-config", editable = "packages/stitcher-config" },
     { name = "stitcher-index", editable = "packages/stitcher-index" },
-    { name = "stitcher-python-adapter", editable = "packages/stitcher-python-adapter" },
+    { name = "stitcher-lang-python", editable = "packages/stitcher-lang-python" },
     { name = "stitcher-spec", editable = "packages/stitcher-spec" },
     { name = "stitcher-stubgen", editable = "packages/stitcher-stubgen" },
     { name = "stitcher-workspace", editable = "packages/stitcher-workspace" },
@@ -713,7 +712,7 @@ source = { editable = "packages/stitcher-cli" }
 dependencies = [
     { name = "pyneedle" },
     { name = "stitcher-application" },
-    { name = "stitcher-python-adapter" },
+    { name = "stitcher-lang-python" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "typer" },
 ]
@@ -722,7 +721,7 @@ dependencies = [
 requires-dist = [
     { name = "pyneedle", editable = "packages/pyneedle" },
     { name = "stitcher-application", editable = "packages/stitcher-application" },
-    { name = "stitcher-python-adapter", editable = "packages/stitcher-python-adapter" },
+    { name = "stitcher-lang-python", editable = "packages/stitcher-lang-python" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "typer" },
 ]
@@ -765,6 +764,25 @@ requires-dist = [
 ]
 
 [[package]]
+name = "stitcher-lang-python"
+version = "0.1.0"
+source = { editable = "packages/stitcher-lang-python" }
+dependencies = [
+    { name = "griffe" },
+    { name = "libcst" },
+    { name = "stitcher-common" },
+    { name = "stitcher-spec" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "griffe", specifier = ">=0.36.0" },
+    { name = "libcst", specifier = ">=1.1.0" },
+    { name = "stitcher-common", editable = "packages/stitcher-common" },
+    { name = "stitcher-spec", editable = "packages/stitcher-spec" },
+]
+
+[[package]]
 name = "stitcher-python"
 version = "0.1.0"
 source = { virtual = "." }
@@ -783,6 +801,7 @@ dev = [
     { name = "stitcher-application" },
     { name = "stitcher-cli" },
     { name = "stitcher-index" },
+    { name = "stitcher-lang-python" },
     { name = "stitcher-refactor" },
     { name = "stitcher-stubgen" },
     { name = "stitcher-test-utils" },
@@ -803,52 +822,13 @@ requires-dist = [
     { name = "stitcher-application", marker = "extra == 'dev'", editable = "packages/stitcher-application" },
     { name = "stitcher-cli", marker = "extra == 'dev'", editable = "packages/stitcher-cli" },
     { name = "stitcher-index", marker = "extra == 'dev'", editable = "packages/stitcher-index" },
+    { name = "stitcher-lang-python", marker = "extra == 'dev'", editable = "packages/stitcher-lang-python" },
     { name = "stitcher-refactor", marker = "extra == 'dev'", editable = "packages/stitcher-refactor" },
     { name = "stitcher-stubgen", marker = "extra == 'dev'", editable = "packages/stitcher-stubgen" },
     { name = "stitcher-test-utils", marker = "extra == 'dev'", editable = "packages/stitcher-test-utils" },
     { name = "stitcher-workspace", marker = "extra == 'dev'", editable = "packages/stitcher-workspace" },
 ]
 provides-extras = ["dev"]
-
-[[package]]
-name = "stitcher-python-adapter"
-version = "0.1.0"
-source = { editable = "packages/stitcher-python-adapter" }
-dependencies = [
-    { name = "griffe" },
-    { name = "libcst" },
-    { name = "stitcher-common" },
-    { name = "stitcher-index" },
-    { name = "stitcher-spec" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "griffe" },
-    { name = "libcst" },
-    { name = "stitcher-common", editable = "packages/stitcher-common" },
-    { name = "stitcher-index", editable = "packages/stitcher-index" },
-    { name = "stitcher-spec", editable = "packages/stitcher-spec" },
-]
-
-[[package]]
-name = "stitcher-python-analysis"
-version = "0.1.0"
-source = { editable = "packages/stitcher-python-analysis" }
-dependencies = [
-    { name = "griffe" },
-    { name = "libcst" },
-    { name = "stitcher-common" },
-    { name = "stitcher-spec" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "griffe" },
-    { name = "libcst" },
-    { name = "stitcher-common", editable = "packages/stitcher-common" },
-    { name = "stitcher-spec", editable = "packages/stitcher-spec" },
-]
 
 [[package]]
 name = "stitcher-refactor"
@@ -859,7 +839,7 @@ dependencies = [
     { name = "libcst" },
     { name = "stitcher-common" },
     { name = "stitcher-index" },
-    { name = "stitcher-python-analysis" },
+    { name = "stitcher-lang-python" },
     { name = "stitcher-spec" },
     { name = "stitcher-workspace" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
@@ -871,7 +851,7 @@ requires-dist = [
     { name = "libcst" },
     { name = "stitcher-common", editable = "packages/stitcher-common" },
     { name = "stitcher-index", editable = "packages/stitcher-index" },
-    { name = "stitcher-python-analysis", editable = "packages/stitcher-python-analysis" },
+    { name = "stitcher-lang-python", editable = "packages/stitcher-lang-python" },
     { name = "stitcher-spec", editable = "packages/stitcher-spec" },
     { name = "stitcher-workspace", editable = "packages/stitcher-workspace" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0.1" },
@@ -909,7 +889,7 @@ dependencies = [
     { name = "stitcher-application" },
     { name = "stitcher-common" },
     { name = "stitcher-index" },
-    { name = "stitcher-python-adapter" },
+    { name = "stitcher-lang-python" },
     { name = "stitcher-spec" },
     { name = "stitcher-workspace" },
     { name = "tomli-w" },
@@ -922,7 +902,7 @@ requires-dist = [
     { name = "stitcher-application", editable = "packages/stitcher-application" },
     { name = "stitcher-common", editable = "packages/stitcher-common" },
     { name = "stitcher-index", editable = "packages/stitcher-index" },
-    { name = "stitcher-python-adapter", editable = "packages/stitcher-python-adapter" },
+    { name = "stitcher-lang-python", editable = "packages/stitcher-lang-python" },
     { name = "stitcher-spec", editable = "packages/stitcher-spec" },
     { name = "stitcher-workspace", editable = "packages/stitcher-workspace" },
     { name = "tomli-w" },
