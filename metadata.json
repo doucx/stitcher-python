@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "Capture: M uv.lock", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768193688.993649, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[COMMIT] refactor: Stitcher 架构重构阶段一 - 协议标准化与下沉", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768193768.8552458, "duration_ms": 0}}
