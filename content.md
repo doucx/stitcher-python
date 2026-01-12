@@ -1,86 +1,83 @@
-由于我最近在修复路径处理逻辑时，在 `MoveFileOperation` 和 `MoveDirectoryOperation` 中引入了对 `ctx.workspace.root_path` 的显式访问，而现有的单元测试 Fixture `mock_context` 并没有模拟 `workspace` 属性，导致了 `AttributeError`。
+你的需求很明确。我将为你生成用于执行“阶段一：协议标准化与下沉”的 Stitcher 迁移脚本。
 
-我将生成一个计划来更新测试 Fixture，以匹配最新的 `RefactorContext` 契约。
-
-## [WIP] test: Fix mock context in refactor unit tests
-
-### 错误分析
-
-测试 `test_planner_handles_move_and_rename_on_same_file` 失败的原因是 `mock_context` Fixture 在创建 `RefactorContext` 的 Mock 对象时，没有提供 `workspace` 属性。由于 `RefactorContext` 现在是一个包含 `workspace` 的数据类，且我们在代码中通过 `ctx.workspace.root_path` 访问路径，缺少该属性会导致 Mock 对象抛出 `AttributeError`。
+## [WIP] feat: 创建阶段一协议下沉重构脚本
 
 ### 用户需求
-
-修复单元测试，确保测试环境与最新的代码逻辑契约一致。
+创建一个符合 `stitcher refactor apply` 规范的迁移脚本，按照重构路线图将核心协议和数据模型从应用层和实现层下沉到 `stitcher-spec` 包中。
 
 ### 评论
-
-这是一个典型的由于代码重构导致的测试套件“陈旧”问题。在修改核心逻辑（如路径解析）时，必须同步更新受影响的 Mock 对象。
+这是架构演进的关键一步。通过物理移动文件并利用 Stitcher 的语义重构能力，我们可以确保全库范围内的 FQN 引用（如导入语句）自动更新，从而实现真正的、确定性的解耦。
 
 ### 目标
-
-更新 `packages/stitcher-refactor/tests/unit/engine/test_planner_merging.py` 中的 `mock_context` Fixture，为其添加 `workspace` 模拟。
+1. 创建迁移脚本文件 `migrations/001_phase_1_sinking.py`。
+2. 在脚本中定义 `upgrade` 函数。
+3. 使用 `Move` 操作精确迁移 Interaction、Index、Registry 和 Persistence 四个核心模块。
 
 ### 基本原理
-
-在 `mock_context` 中创建一个 `MagicMock` 来模拟 `Workspace` 对象，并将其 `root_path` 属性指向测试用的 `tmp_path`。然后将这个 mock 赋值给 `ctx.workspace`。
+利用 Stitcher `Move` 操作的语义感知特性。当一个 `.py` 文件在源代码树中移动时，Stitcher 会根据其新旧物理位置自动计算出逻辑 FQN 的变更，并作为“副作用”自动触发全局的 `Rename` 逻辑，更新所有消费者代码中的 `import` 语句和调用点。同时，关联的 `.stitcher.yaml` 和签名文件也会被同步移动和更新。
 
 ### 标签
-
-#intent/fix #flow/ready #priority/high #comp/tests #concept/mocking #scope/dx #ai/instruct #task/domain/testing #task/object/refactor-unit-tests #task/action/fixture-update #task/state/begin
+#intent/tooling #flow/ready #priority/high #comp/build #concept/executor #scope/dx #ai/instruct #task/domain/refactor #task/object/migration-script #task/action/create #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: 更新 `test_planner_merging.py` 中的 Fixture
+#### Acts 1: 创建迁移脚本
 
-我将通过 `patch_file` 修正 `mock_context` 的定义。
+我们将创建一个独立的 Python 迁移脚本，它将作为 `stitcher refactor apply` 的输入。
 
 ~~~~~act
-patch_file
-packages/stitcher-refactor/tests/unit/engine/test_planner_merging.py
+write_file
+migrations/001_phase_1_sinking.py
 ~~~~~
-~~~~~python.old
-@pytest.fixture
-def mock_context(tmp_path: Path) -> RefactorContext:
-    """Creates a mock RefactorContext with a mock graph."""
-    mock_index = Mock(spec=IndexStore)
-    mock_graph = MagicMock(spec=SemanticGraph)
-    mock_graph.root_path = tmp_path
-    mock_graph.search_paths = [tmp_path]
+~~~~~python
+from pathlib import Path
+from stitcher.refactor.migration import MigrationSpec, Move
 
-    ctx = Mock(spec=RefactorContext)
-    ctx.graph = mock_graph
-    ctx.index_store = mock_index
-
-    # Mock SidecarManager to avoid AttributeError
-~~~~~
-~~~~~python.new
-@pytest.fixture
-def mock_context(tmp_path: Path) -> RefactorContext:
-    """Creates a mock RefactorContext with a mock graph."""
-    mock_index = Mock(spec=IndexStore)
-    mock_graph = MagicMock(spec=SemanticGraph)
-    mock_graph.root_path = tmp_path
-    mock_graph.search_paths = [tmp_path]
-
-    mock_workspace = MagicMock()
-    mock_workspace.root_path = tmp_path
-
-    ctx = Mock(spec=RefactorContext)
-    ctx.graph = mock_graph
-    ctx.index_store = mock_index
-    ctx.workspace = mock_workspace
-
-    # Mock SidecarManager to avoid AttributeError
+def upgrade(spec: MigrationSpec):
+    """
+    Stitcher 架构重构阶段一：协议标准化与下沉
+    
+    此脚本将核心协议和数据模型从各个功能包移动到核心协议包 stitcher-spec 中。
+    Stitcher 将自动处理由此产生的 FQN 变更并全局更新引用。
+    """
+    
+    # 1.1 迁移应用层交互协议 (InteractionHandler, InteractionContext)
+    # FQN 变更: stitcher.app.protocols -> stitcher.spec.interaction
+    spec.add(Move(
+        Path("packages/stitcher-application/src/stitcher/app/protocols.py"),
+        Path("packages/stitcher-spec/src/stitcher/spec/interaction.py")
+    ))
+    
+    # 1.2 迁移索引层数据模型 (FileRecord, SymbolRecord, ReferenceRecord)
+    # FQN 变更: stitcher.index.types -> stitcher.spec.index
+    spec.add(Move(
+        Path("packages/stitcher-index/src/stitcher/index/types.py"),
+        Path("packages/stitcher-spec/src/stitcher/spec/index.py")
+    ))
+    
+    # 1.3 迁移语言适配器协议 (LanguageAdapter)
+    # FQN 变更: stitcher.index.protocols -> stitcher.spec.registry
+    spec.add(Move(
+        Path("packages/stitcher-index/src/stitcher/index/protocols.py"),
+        Path("packages/stitcher-spec/src/stitcher/spec/registry.py")
+    ))
+    
+    # 1.4 迁移文档持久化协议 (DocumentAdapter)
+    # FQN 变更: stitcher.common.interfaces -> stitcher.spec.persistence
+    spec.add(Move(
+        Path("packages/stitcher-common/src/stitcher/common/interfaces.py"),
+        Path("packages/stitcher-spec/src/stitcher/spec/persistence.py")
+    ))
 ~~~~~
 
 ### 下一步建议
 
-修复 Fixture 后，请重新运行该测试模块以验证修复效果：
+1.  **预览变更**: 执行 `stitcher refactor apply migrations/001_phase_1_sinking.py --dry-run`。仔细审查输出的计划，确认所有 `import` 语句的重写是否符合预期。
+2.  **正式执行**: 确认无误后，移除 `--dry-run` 标志正式应用重构。
+3.  **同步配置**: 重构完成后，你需要手动更新各包的 `pyproject.toml` 中的 `dependencies`。特别是确保那些现在依赖下沉协议的包（如 `stitcher-application`）已经添加了 `stitcher-spec` 作为依赖。
+4.  **开始阶段二**: 完成物理移动和引用更新后，即可开始“阶段二：语言能力统一与合并”。
 
-```bash
-pytest packages/stitcher-refactor/tests/unit/engine/test_planner_merging.py
-```
 
-如果测试通过，我们可以继续进行其他的重构工作。此外，我建议检查其他包（如 `stitcher-application`）中是否存在类似的 `RefactorContext` Mock 逻辑，并进行同步更新。
+
