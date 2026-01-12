@@ -81,9 +81,14 @@ class CheckRunner:
                 
                 if violation.kind == L.check.file.untracked_with_details:
                     keys = violation.context.get("keys", [])
-                    target_dict[key].extend(keys)
+                    # Deduplicate while extending
+                    for k in keys:
+                        if k not in target_dict[key]:
+                            target_dict[key].append(k)
                 else:
-                    target_dict[key].append(violation.fqn)
+                    # Deduplicate single items
+                    if violation.fqn not in target_dict[key]:
+                        target_dict[key].append(violation.fqn)
 
             if violation.kind in INTERACTIVE_VIOLATIONS:
                 conflicts.append(
