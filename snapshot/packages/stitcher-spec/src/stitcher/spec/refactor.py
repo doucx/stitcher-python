@@ -21,7 +21,8 @@ class RefactoringStrategyProtocol(Protocol):
         self,
         source_code: str,
         usages: List[RefactorUsage],
-        new_name: str
+        old_name: str,
+        new_name: str,
     ) -> str:
         """
         Apply a rename operation to the source code.
@@ -29,9 +30,11 @@ class RefactoringStrategyProtocol(Protocol):
         Args:
             source_code: The original content of the file.
             usages: A list of locations in this file that refer to the symbol being renamed.
-            new_name: The new fully qualified name (FQN) or short name.
-                      The strategy is responsible for determining whether to use
-                      the short name or FQN based on the context of each usage.
+            old_name: The original fully qualified name (FQN) of the symbol.
+                      Useful for verification and context awareness (e.g. short name extraction).
+            new_name: The new fully qualified name (FQN). The strategy logic
+                      should determine if a short name or full name is appropriate
+                      for each insertion point.
 
         Returns:
             The modified source code.
