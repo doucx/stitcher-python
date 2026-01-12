@@ -39,25 +39,21 @@ def test_check_runner_orchestrates_analysis_and_resolution():
 
     # Configure mock return values
     mock_modules = [ModuleDef(file_path="src/main.py")]
-    
+
     # Mock Engine behavior: The engine is created internally, so we mock the analyze method
     # indirectly or via mocking the engine attribute after creation if we can't inject it easily.
-    # However, create_consistency_engine creates a concrete class. 
+    # However, create_consistency_engine creates a concrete class.
     # For unit testing the Runner logic *around* the engine, we can mock the engine instance on the runner.
-    
+
     mock_engine = MagicMock()
     mock_analysis_result = AnalysisResult(
         path="src/main.py",
         violations=[
-            Violation(
-                kind=L.check.state.signature_drift,
-                fqn="func",
-                context={}
-            )
-        ]
+            Violation(kind=L.check.state.signature_drift, fqn="func", context={})
+        ],
     )
     mock_engine.analyze.return_value = mock_analysis_result
-    
+
     mock_resolver.resolve_conflicts.return_value = True
     mock_reporter.report.return_value = True
 
@@ -77,7 +73,7 @@ def test_check_runner_orchestrates_analysis_and_resolution():
 
     # The public API of the runner is `analyze_batch`.
     results, conflicts = runner.analyze_batch(mock_modules)
-    
+
     # Verify translation results
     assert len(results) == 1
     assert results[0].path == "src/main.py"
@@ -92,9 +88,7 @@ def test_check_runner_orchestrates_analysis_and_resolution():
 
     # 3. Assert: Verify the interaction with mocks
     mock_engine.analyze.assert_called_once()
-    mock_resolver.auto_reconcile_docs.assert_called_once_with(
-        results, mock_modules
-    )
+    mock_resolver.auto_reconcile_docs.assert_called_once_with(results, mock_modules)
     mock_resolver.resolve_conflicts.assert_called_once_with(
         results, conflicts, force_relink=False, reconcile=False
     )

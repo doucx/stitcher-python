@@ -33,7 +33,9 @@ class IndexCheckSubjectAdapter(CheckSubject):
 
     @property
     def is_tracked(self) -> bool:
-        return (self._root_path / self._file_path).with_suffix(".stitcher.yaml").exists()
+        return (
+            (self._root_path / self._file_path).with_suffix(".stitcher.yaml").exists()
+        )
 
     def _is_public(self, fqn: str) -> bool:
         # Replicate public visibility logic from AST-based approach

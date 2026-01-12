@@ -78,7 +78,7 @@ class CheckRunner:
             if violation.kind in KIND_TO_LEGACY_MAP:
                 category, key = KIND_TO_LEGACY_MAP[violation.kind]
                 target_dict = getattr(legacy_result, category)
-                
+
                 if violation.kind == L.check.file.untracked_with_details:
                     keys = violation.context.get("keys", [])
                     target_dict[key].extend(keys)

@@ -20,7 +20,7 @@ class SignatureRule(AnalysisRule):
             # Legacy Compatibility: Even if not tracked in YAML, if we have a baseline,
             # we should check for drift. This supports workflows where init generated
             # signatures but no docs were created (e.g. empty docs).
-            
+
             # Skip if not in code (handled by ExistenceRule/Dangling)
             if not state.exists_in_code:
                 continue
