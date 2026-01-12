@@ -1,9 +1,12 @@
 import hashlib
 import logging
 from pathlib import Path
+import hashlib
+import logging
+from pathlib import Path
 from typing import Dict, Set, Any
 
-from .store import IndexStore
+from stitcher.spec import IndexStoreProtocol
 from stitcher.spec.index import FileRecord
 from stitcher.spec.registry import LanguageAdapter
 from .linker import Linker
@@ -12,11 +15,14 @@ log = logging.getLogger(__name__)
 
 
 class FileIndexer:
-    def __init__(self, root_path: Path, store: IndexStore):
+    def __init__(self, root_path: Path, store: IndexStoreProtocol):
         self.root_path = root_path
         self.store = store
         self.adapters: Dict[str, LanguageAdapter] = {}
-        self.linker = Linker(store.db)
+        # FIXME: Linker still depends on the concrete DB manager. This will be addressed
+        # in a subsequent refactoring task. For now, we assume the provided store
+        # has a 'db' attribute if it's the concrete IndexStore.
+        self.linker = Linker(getattr(store, "db", None))
 
     def register_adapter(self, extension: str, adapter: LanguageAdapter):
         self.adapters[extension] = adapter
