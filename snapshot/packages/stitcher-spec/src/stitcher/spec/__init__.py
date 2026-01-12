@@ -26,12 +26,11 @@ from .protocols import (
     DocstringParserProtocol,
     DocstringRendererProtocol,
     DocstringSerializerProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
     DifferProtocol,
     DocstringMergerProtocol,
 )
 from .storage import IndexStoreProtocol
+from .managers import DocumentManagerProtocol, SignatureManagerProtocol
 
 __all__ = [
     "DocstringIR",

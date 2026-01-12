@@ -6,11 +6,10 @@ from stitcher.spec import (
     ModuleDef,
     LanguageParserProtocol,
     FingerprintStrategyProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
     DifferProtocol,
     IndexStoreProtocol,
 )
+from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
 from stitcher.spec.interaction import InteractionHandler, InteractionContext
 from stitcher.app.types import FileCheckResult
 

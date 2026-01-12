@@ -6,8 +6,8 @@ from needle.pointer import L
 from stitcher.spec import (
     LanguageTransformerProtocol,
     ModuleDef,
-    DocumentManagerProtocol,
 )
+from stitcher.spec.managers import DocumentManagerProtocol
 from stitcher.common.transaction import TransactionManager
 
 

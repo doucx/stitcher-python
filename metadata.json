@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix(typing): 更新下游组件以使用服务协议", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768196488.4002929, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] refactor(spec): 将服务协议按领域划分到独立文件", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768196612.580531, "duration_ms": 0}}

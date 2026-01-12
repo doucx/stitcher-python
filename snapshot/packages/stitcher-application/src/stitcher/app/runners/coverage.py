@@ -3,7 +3,8 @@ from typing import List
 import typer
 
 
-from stitcher.spec import DocumentManagerProtocol, IndexStoreProtocol
+from stitcher.spec import IndexStoreProtocol
+from stitcher.spec.managers import DocumentManagerProtocol
 from stitcher.app.types import CoverageResult
 
 

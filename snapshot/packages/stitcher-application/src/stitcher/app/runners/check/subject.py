@@ -3,10 +3,9 @@ from stitcher.spec import (
     ModuleDef,
     Fingerprint,
     FingerprintStrategyProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
     IndexStoreProtocol,
 )
+from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
 from stitcher.spec.index import SymbolRecord
 from .protocols import SymbolState, CheckSubject
 

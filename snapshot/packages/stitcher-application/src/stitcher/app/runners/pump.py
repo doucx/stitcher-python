@@ -14,12 +14,11 @@ from stitcher.spec import (
     LanguageTransformerProtocol,
     FingerprintStrategyProtocol,
     DocstringIR,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
     DifferProtocol,
     DocstringMergerProtocol,
     IndexStoreProtocol,
 )
+from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
 from stitcher.config import StitcherConfig
 from stitcher.spec.interaction import InteractionHandler, InteractionContext
 from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
