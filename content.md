@@ -1,86 +1,123 @@
-由于我最近在修复路径处理逻辑时，在 `MoveFileOperation` 和 `MoveDirectoryOperation` 中引入了对 `ctx.workspace.root_path` 的显式访问，而现有的单元测试 Fixture `mock_context` 并没有模拟 `workspace` 属性，导致了 `AttributeError`。
+Excellent catch. This is a subtle but critical bug. You are correct: when a file is moved, the refactoring engine is correctly moving the associated sidecar files (like the signature file), but it is failing to update the *content* of those files. The Stitcher Uniform Resource Identifier (SURI), which acts as a key and contains the file path, becomes stale.
 
-我将生成一个计划来更新测试 Fixture，以匹配最新的 `RefactorContext` 契约。
+This breaks the "Holistic" principle of the refactoring engine, as the internal state is now inconsistent.
 
-## [WIP] test: Fix mock context in refactor unit tests
+Following your direction, I will enter TDD mode. I will create a new integration test that precisely reproduces this bug and is expected to fail. I will not implement the fix.
+
+## [WIP] test: Add failing test for SURI update on refactor move
 
 ### 错误分析
 
-测试 `test_planner_handles_move_and_rename_on_same_file` 失败的原因是 `mock_context` Fixture 在创建 `RefactorContext` 的 Mock 对象时，没有提供 `workspace` 属性。由于 `RefactorContext` 现在是一个包含 `workspace` 的数据类，且我们在代码中通过 `ctx.workspace.root_path` 访问路径，缺少该属性会导致 Mock 对象抛出 `AttributeError`。
+The current implementation of the `MoveFileOperation` correctly generates an intent to move the physical signature file (`.stitcher/signatures/.../file.json`). However, it lacks a corresponding intent to transform the *contents* of that JSON file. The keys within this JSON are SURIs (`py://path/to/file.py#symbol`), which contain the old file path. After a move, these keys should be updated to reflect the new file path, but they are not, leading to a state of internal inconsistency.
 
 ### 用户需求
 
-修复单元测试，确保测试环境与最新的代码逻辑契约一致。
+Create a new, failing integration test that verifies when a file is moved via `stitcher refactor apply`, the SURI keys within its corresponding signature file are correctly updated to the new path.
 
 ### 评论
 
-这是一个典型的由于代码重构导致的测试套件“陈旧”问题。在修改核心逻辑（如路径解析）时，必须同步更新受影响的 Mock 对象。
+This test is essential for ensuring the transactional integrity of the refactoring engine. Without it, a core promise of Stitcher—maintaining perfect synchronization between code and its metadata—is broken. Adhering to a strict TDD methodology here will guarantee that the subsequent fix is correct and prevents future regressions.
 
 ### 目标
 
-更新 `packages/stitcher-refactor/tests/unit/engine/test_planner_merging.py` 中的 `mock_context` Fixture，为其添加 `workspace` 模拟。
+1.  Create a new test file: `tests/integration/test_refactor_move_updates_suri_in_signatures.py`.
+2.  In this test, define a simple project with a single Python file containing a documented function.
+3.  Run `stitcher init` to generate the initial signature file and verify its contents, including the correct initial SURI.
+4.  Define a migration script that performs a `Move` operation on the Python file.
+5.  Run `stitcher refactor apply` with the migration script.
+6.  Assert that the new signature file exists at the correct location and, crucially, assert that its keys have been updated to the new SURI format. This final assertion is expected to fail.
 
 ### 基本原理
 
-在 `mock_context` 中创建一个 `MagicMock` 来模拟 `Workspace` 对象，并将其 `root_path` 属性指向测试用的 `tmp_path`。然后将这个 mock 赋值给 `ctx.workspace`。
+By using the `WorkspaceFactory` and `create_test_app` test utilities, I will construct a complete, isolated end-to-end test. The test will simulate a user's workflow from project initialization to refactoring. The final step will involve loading the JSON content of the moved signature file and directly inspecting its keys, which will expose the bug where the file path component of the SURI remains unchanged.
 
 ### 标签
 
-#intent/fix #flow/ready #priority/high #comp/tests #concept/mocking #scope/dx #ai/instruct #task/domain/testing #task/object/refactor-unit-tests #task/action/fixture-update #task/state/begin
+#intent/tooling #flow/ready #priority/high #comp/tests #comp/refactor #concept/suri #scope/dx #ai/instruct #task/domain/testing #task/object/suri-integrity #task/action/reproduce-bug #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 更新 `test_planner_merging.py` 中的 Fixture
+#### Acts 1: Create the new integration test file
 
-我将通过 `patch_file` 修正 `mock_context` 的定义。
+I will now create the test file. Based on your provided file tree, placing it in `tests/integration/` is the correct location.
 
 ~~~~~act
-patch_file
-packages/stitcher-refactor/tests/unit/engine/test_planner_merging.py
+write_file
+tests/integration/test_refactor_move_updates_suri_in_signatures.py
 ~~~~~
-~~~~~python.old
-@pytest.fixture
-def mock_context(tmp_path: Path) -> RefactorContext:
-    """Creates a mock RefactorContext with a mock graph."""
-    mock_index = Mock(spec=IndexStore)
-    mock_graph = MagicMock(spec=SemanticGraph)
-    mock_graph.root_path = tmp_path
-    mock_graph.search_paths = [tmp_path]
+~~~~~python
+import json
+from pathlib import Path
+from stitcher.test_utils import WorkspaceFactory, create_test_app
+from stitcher.refactor.migration import MigrationSpec, Move
 
-    ctx = Mock(spec=RefactorContext)
-    ctx.graph = mock_graph
-    ctx.index_store = mock_index
 
-    # Mock SidecarManager to avoid AttributeError
-~~~~~
-~~~~~python.new
-@pytest.fixture
-def mock_context(tmp_path: Path) -> RefactorContext:
-    """Creates a mock RefactorContext with a mock graph."""
-    mock_index = Mock(spec=IndexStore)
-    mock_graph = MagicMock(spec=SemanticGraph)
-    mock_graph.root_path = tmp_path
-    mock_graph.search_paths = [tmp_path]
+def test_move_file_operation_updates_suri_in_signatures(workspace_factory: WorkspaceFactory):
+    """
+    Verify that moving a file also updates the SURI keys in the signature file.
+    """
+    # --- Arrange ---
+    workspace_root = workspace_factory.with_config({
+        "scan_paths": ["src"]
+    }).with_source(
+        "src/my_app/logic.py",
+        """
+        def do_something():
+            \"\"\"This is a docstring.\"\"\"
+            pass
+        """
+    ).build()
 
-    mock_workspace = MagicMock()
-    mock_workspace.root_path = tmp_path
+    app = create_test_app(workspace_root)
 
-    ctx = Mock(spec=RefactorContext)
-    ctx.graph = mock_graph
-    ctx.index_store = mock_index
-    ctx.workspace = mock_workspace
+    # --- Act 1: Initialize the project to create signatures ---
+    app.run_init()
 
-    # Mock SidecarManager to avoid AttributeError
+    # --- Assert 1: Verify initial signature file and SURI key ---
+    old_sig_path = workspace_root / ".stitcher/signatures/src/my_app/logic.json"
+    new_sig_path = workspace_root / ".stitcher/signatures/src/my_app/core/logic.json"
+    old_suri = "py://src/my_app/logic.py#do_something"
+    new_suri = "py://src/my_app/core/logic.py#do_something"
+
+    assert old_sig_path.exists()
+    assert not new_sig_path.exists()
+    initial_data = json.loads(old_sig_path.read_text())
+    assert old_suri in initial_data
+    assert "baseline_code_structure_hash" in initial_data[old_suri]
+
+    # --- Arrange 2: Create the migration script ---
+    migration_script_content = """
+from pathlib import Path
+from stitcher.refactor.migration import MigrationSpec, Move
+
+def upgrade(spec: MigrationSpec):
+    spec.add(Move(
+        Path("src/my_app/logic.py"),
+        Path("src/my_app/core/logic.py")
+    ))
+"""
+    migration_script_path = workspace_root / "migration.py"
+    migration_script_path.write_text(migration_script_content)
+
+    # --- Act 2: Run the refactor operation ---
+    app.run_refactor_apply(migration_script_path, confirm_callback=lambda _: True)
+
+    # --- Assert 2: Verify the signature file was moved AND its content updated ---
+    assert not old_sig_path.exists(), "Old signature file should have been moved"
+    assert new_sig_path.exists(), "New signature file should exist at the new location"
+
+    final_data = json.loads(new_sig_path.read_text())
+
+    # This is the failing assertion. The key should now be the NEW suri.
+    assert old_suri not in final_data, "The old SURI key should not be present"
+    assert new_suri in final_data, "The SURI key should have been updated to the new path"
+
+    # Also verify the fingerprint data was preserved
+    assert "baseline_code_structure_hash" in final_data[new_suri]
 ~~~~~
 
 ### 下一步建议
 
-修复 Fixture 后，请重新运行该测试模块以验证修复效果：
-
-```bash
-pytest packages/stitcher-refactor/tests/unit/engine/test_planner_merging.py
-```
-
-如果测试通过，我们可以继续进行其他的重构工作。此外，我建议检查其他包（如 `stitcher-application`）中是否存在类似的 `RefactorContext` Mock 逻辑，并进行同步更新。
+The test case is now in place. The next step is to run the test suite. This new test, `test_move_file_operation_updates_suri_in_signatures`, should fail as expected, confirming the bug. Once it's "red," we can proceed with confidence to fix the underlying logic in the refactoring engine.
