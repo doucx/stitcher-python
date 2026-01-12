@@ -1,6 +1,6 @@
 from typing import List
 
-from stitcher.app.services import Differ
+from stitcher.common.services import Differ
 from stitcher.spec import DifferProtocol
 from stitcher.analysis.protocols import AnalysisSubject
 from stitcher.analysis.schema import FileCheckResult

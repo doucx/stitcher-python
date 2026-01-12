@@ -1,273 +1,140 @@
-感谢你提供如此精确的 `pyright` 和 `pytest` 错误报告。这清晰地表明我之前的计划存在缺陷，特别是在处理类型命名冲突和导入路径方面。
+分析完毕。你的 `pytest` 错误报告非常清晰，它揭示了一个比类型冲突更深层次的架构缺陷：**包之间的循环依赖**。
 
-我将立即生成一个修复计划来解决这些问题。
+我之前的计划在 `stitcher-analysis` 的 `engine.py` 中引入了 `from stitcher.app.services import Differ`，这违反了 HFEA 协议的**严格分层原则**。`analysis` 包作为更底层的能力提供者，绝对不能反向依赖于使用它的 `application` 包。
 
-## [WIP] fix: 修正 CheckRunner 集成中的类型冲突和循环导入
+同时，第二个 `ModuleNotFoundError` 表明我在删除 `analyzer.py` 后，忘记清理其对应的测试文件，这是一个计划完整性的失误。
+
+我将立即生成一个修正计划，从根本上解决这个架构问题。
+
+## [WIP] fix: 通过重定位 Differ 服务解决循环依赖
 
 ### 错误分析
 
-**1. 循环导入 (`ImportError`)**:
-`pytest` 报告的 `ImportError` 指出 `create_consistency_engine` 无法从 `stitcher.analysis.engines.consistency` 中导入，原因是“部分初始化的模块”。这是典型的由 `__init__.py` 文件（“barrel exports”）引起的脆弱导入链问题。当 `runner.py` 尝试通过 `...consistency.__init__` 导入时，该 `__init__.py` 文件又去导入 `.engine`，在复杂的依赖关系下可能形成循环。
-*   **解决方案**: 我们将绕过脆弱的 `__init__.py` 文件，直接从其源模块 `stitcher.analysis.engines.consistency.engine` 导入 `create_consistency_engine`。这可以明确地断开任何潜在的导入环路。
+**1. 循环依赖 (Circular Import)**:
+这是最严重的问题。`pytest` 的第一个错误回溯清晰地展示了依赖环路：
+`test_consistency_engine` -> `analysis.engine` -> `app.services.Differ` -> `app.core` -> `app.runner` -> `analysis.engine`
+这个环路使得 Python 的导入系统崩溃。根本原因在于 `Differ` 服务被错误地放置在了高层的 `application` 包中。`Differ` 本身是一个通用的、无状态的工具，它的正确位置应该是在 `stitcher-common` 包里，这样 `application` 和 `analysis`都可以安全地依赖它，而不会形成环路。
 
-**2. 类型冲突 (`pyright` errors)**:
-`pyright` 的错误是本次重构的核心障碍。问题根源在于我们现在有两个同名为 `FileCheckResult` 的类：
-*   **旧版**: `stitcher.app.types.FileCheckResult` (一个 dataclass，包含 `errors`, `warnings` 等字典)。
-*   **新版**: `stitcher.analysis.schema.results.FileCheckResult` (一个 dataclass，包含 `violations` 列表)。
-
-在 `CheckRunner` 的 `_translate_results` 方法中，我错误地使用了不明确的类型注解。Python 解析器将 `analysis_result: "FileCheckResult"` 注解解析为了本地（旧版）的 `FileCheckResult`，但实际传入的却是分析引擎返回的新版对象，导致类型不匹配。
-*   **解决方案**:
-    1.  在 `runner.py` 中，我们将为新版的 `FileCheckResult` 创建一个明确的导入别名，例如 `AnalysisFileCheckResult`。
-    2.  我们将使用这个别名来正确注解 `_translate_results` 方法的输入参数，从而解决类型检查错误。
-
-**3. 悬空导入 (`pyright` error)**:
-`core.py` 中的 `Import ".runners.check.analyzer" could not be resolved` 错误是我在删除 `analyzer.py` 文件后，忘记移除其对应的 `import` 语句导致的。
-*   **解决方案**: 删除该行 `import` 语句。
+**2. 孤立的测试文件 (Orphaned Test File)**:
+`pytest` 的第二个错误 `ModuleNotFoundError: No module named 'stitcher.app.runners.check.analyzer'` 发生的原因是：在我之前的计划中，我删除了源文件 `analyzer.py`，但遗漏了删除其对应的测试文件 `test_check_analyzer.py`。这个测试文件现在成了一个“孤儿”，试图导入一个不再存在的模块。
 
 ### 用户需求
 
-修复 `stitcher-application` 在集成 `stitcher-analysis` 后出现的 `ImportError` 和 `pyright` 类型检查错误，使代码能够正确运行并通过静态分析。
+修复因在 `stitcher-analysis` 中引入对 `stitcher-application` 的依赖而导致的循环导入错误，并清理因重构而产生的孤立测试文件。
 
 ### 评论
 
-这次修复是重构过程中的必要校准。它暴露了增量集成中常见的挑战：命名空间冲突和脆弱的导入模式。通过采用别名导入和直接模块导入等健壮的编程实践，我们可以构建一个更清晰、更有弹性的架构，为后续的重构扫清障碍。
+这是一个典型的架构重构中遇到的问题。它强调了服务和工具的归属权必须明确。将 `Differ` 这样的通用工具下沉到 `stitcher-common` 包，是实现“高内聚、低耦合”的正确实践。此举不仅能修复当前的循环依赖，还能使 `Differ` 服务在未来被其他新包复用，从而提升了代码库的整体健康度。
 
 ### 目标
 
-1.  修改 `stitcher.app.core`，移除对已删除的 `CheckAnalyzer` 的导入。
-2.  修改 `stitcher.app.runners.check.runner`：
-    *   修复导入路径，直接从 `.engine` 模块导入 `create_consistency_engine`。
-    *   通过别名导入解决 `FileCheckResult` 的命名冲突。
-    *   修正 `_translate_results` 方法的类型注解，使其通过 `pyright` 检查。
+1.  删除孤立的测试文件 `test_check_analyzer.py`。
+2.  将 `Differ` 服务的实现从 `stitcher-application` 物理移动到 `stitcher-common`。
+3.  更新 `stitcher-application` 和 `stitcher-analysis` 中的 `__init__.py` 文件和导入语句，以反映 `Differ` 的新位置。
+4.  确保 `ConsistencyEngine` 从 `stitcher-common` 导入 `Differ`，从而打破循环依赖。
 
 ### 基本原理
 
-我们将对两个关键文件进行精确的外科手术式修复。在 `core.py` 中，我们删除无效的导入。在 `runner.py` 中，我们调整导入语句以解决循环导入和类型命名冲突，并更新函数签名以反映正确的类型契约。这使得 `CheckRunner` 能够正确地接收来自 `analysis` 包的数据，并将其转换为 `application` 包中其他组件（如 `Resolver`）所期望的格式，从而恢复端到端链路的类型安全和可运行性。
+我们将执行一次“服务重定位”操作。首先，清理无效的测试文件。然后，将 `differ.py` 文件从 `app/services` 目录移动到 `common/services` 目录。接着，我们会像整理书架一样，更新 `app` 和 `common` 两个包的“目录”（`__init__.py`），移除旧的导出并添加新的导出。最后，我们回到问题的起点——`consistency/engine.py`，将其导入语句指向 `Differ` 在 `stitcher-common` 中的新家。这个过程会从物理上切断两个包之间不健康的依赖关系，使架构恢复到正确的单向依赖流。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/critical #comp/application #comp/analysis #concept/type-safety #scope/core #ai/instruct #task/domain/testing #task/object/check-command #task/action/bug-fix #task/state/continue
+#intent/fix #flow/ready #priority/critical #comp/application #comp/analysis #comp/common #concept/architecture #scope/core #ai/instruct #task/domain/testing #task/object/dependency-graph #task/action/refactor #task-state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修复 `core.py` 中的悬空导入
+#### Acts 1: 清理孤立的测试文件
 
-我们将移除对已删除的 `analyzer.py` 的引用。
+首先，我们删除已无用的 `test_check_analyzer.py`。
+
+~~~~~act
+delete_file
+packages/stitcher-application/tests/unit/runners/check/test_check_analyzer.py
+~~~~~
+
+#### Acts 2: 将 `Differ` 服务重定位到 `stitcher-common`
+
+现在，我们将 `Differ` 移动到正确的分层位置，并更新所有相关的导入和导出。
+
+首先，移动 `differ.py` 文件本身。
+
+~~~~~act
+move_file
+packages/stitcher-application/src/stitcher/app/services/differ.py
+packages/stitcher-common/src/stitcher/common/services/differ.py
+~~~~~
+
+接着，从 `stitcher-application` 的 `services` 导出中移除 `Differ`。
 
 ~~~~~act
 patch_file
-packages/stitcher-application/src/stitcher/app/core.py
+packages/stitcher-application/src/stitcher/app/services/__init__.py
 ~~~~~
 ~~~~~python.old
-from .runners import (
-    CheckRunner,
-    InitRunner,
-    PumpRunner,
-    TransformRunner,
-    CoverageRunner,
-    RefactorRunner,
-    IndexRunner,
-)
-from .runners.check.analyzer import CheckAnalyzer
-from .runners.check.resolver import CheckResolver
+from .doc_manager import DocumentManager
+from .signature_manager import SignatureManager
+from .scanner import ScannerService
+from .differ import Differ
+from .merger import DocstringMerger
+
+__all__ = [
+    "DocumentManager",
+    "SignatureManager",
+    "ScannerService",
+    "Differ",
+    "DocstringMerger",
+]
 ~~~~~
 ~~~~~python.new
-from .runners import (
-    CheckRunner,
-    InitRunner,
-    PumpRunner,
-    TransformRunner,
-    CoverageRunner,
-    RefactorRunner,
-    IndexRunner,
-)
-from .runners.check.resolver import CheckResolver
+from .doc_manager import DocumentManager
+from .signature_manager import SignatureManager
+from .scanner import ScannerService
+from .merger import DocstringMerger
+
+__all__ = [
+    "DocumentManager",
+    "SignatureManager",
+    "ScannerService",
+    "DocstringMerger",
+]
 ~~~~~
 
-#### Acts 2: 修复 `runner.py` 中的导入和类型注解
-
-这是解决核心问题的地方。我们将更新导入、添加别名并修正类型注解。
+然后，在 `stitcher-common` 的 `services` 中添加 `Differ` 的导出。
 
 ~~~~~act
 write_file
-packages/stitcher-application/src/stitcher/app/runners/check/runner.py
+packages/stitcher-common/src/stitcher/common/services/__init__.py
 ~~~~~
 ~~~~~python
-from typing import List, Tuple
-from pathlib import Path
+from .asset_path_resolver import AssetPathResolver
+from .differ import Differ
 
-from needle.pointer import L
-from stitcher.spec import (
-    ModuleDef,
-    FingerprintStrategyProtocol,
-    IndexStoreProtocol,
-    DifferProtocol,
-)
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
-from stitcher.spec.interaction import InteractionContext
-from stitcher.app.types import FileCheckResult
+__all__ = ["AssetPathResolver", "Differ"]
+~~~~~
 
-from .protocols import (
-    CheckResolverProtocol,
-    CheckReporterProtocol,
-)
-from .subject import IndexCheckSubjectAdapter, ASTCheckSubjectAdapter
-from stitcher.analysis.engines.consistency.engine import create_consistency_engine
-from stitcher.analysis.schema import (
-    FileCheckResult as AnalysisFileCheckResult,
-)
+最后，更新 `ConsistencyEngine` 的导入语句，使其从 `stitcher-common` 导入 `Differ`，从而打破循环依赖。
 
+~~~~~act
+patch_file
+packages/stitcher-analysis/src/stitcher/analysis/engines/consistency/engine.py
+~~~~~
+~~~~~python.old
+from typing import List
 
-class CheckRunner:
-    def __init__(
-        self,
-        doc_manager: DocumentManagerProtocol,
-        sig_manager: SignatureManagerProtocol,
-        fingerprint_strategy: FingerprintStrategyProtocol,
-        index_store: IndexStoreProtocol,
-        differ: DifferProtocol,
-        resolver: CheckResolverProtocol,
-        reporter: CheckReporterProtocol,
-        root_path: Path,
-    ):
-        # Keep services needed by adapter
-        self.doc_manager = doc_manager
-        self.sig_manager = sig_manager
-        self.fingerprint_strategy = fingerprint_strategy
-        self.index_store = index_store
-        self.root_path = root_path
+from stitcher.app.services import Differ
+from stitcher.spec import DifferProtocol
+~~~~~
+~~~~~python.new
+from typing import List
 
-        # Injected sub-components
-        self.engine = create_consistency_engine(differ=differ)
-        self.resolver = resolver
-        self.reporter = reporter
-
-    def _translate_results(
-        self, analysis_result: AnalysisFileCheckResult
-    ) -> Tuple[FileCheckResult, List[InteractionContext]]:
-        # This is the adapter logic. It translates the new, unified `FileCheckResult`
-        # from the analysis engine into the old structures expected by the resolver/reporter.
-
-        legacy_result = FileCheckResult(path=analysis_result.path)
-        conflicts: List[InteractionContext] = []
-
-        # Mapping from new Violation 'kind' to old result dict keys
-        KIND_TO_LEGACY_MAP = {
-            # Errors
-            str(L.check.issue.conflict): ("errors", "conflict"),
-            str(L.check.state.signature_drift): ("errors", "signature_drift"),
-            str(L.check.state.co_evolution): ("errors", "co_evolution"),
-            str(L.check.issue.extra): ("errors", "extra"),
-            str(L.check.issue.pending): ("errors", "pending"),
-            # Warnings
-            str(L.check.issue.missing): ("warnings", "missing"),
-            str(L.check.issue.redundant): ("warnings", "redundant"),
-            str(L.check.file.untracked): ("warnings", "untracked"),
-            str(L.check.file.untracked_with_details): ("warnings", "untracked_detailed"),
-            # Infos
-            str(L.check.state.doc_updated): ("infos", "doc_improvement"),
-        }
-
-        # Which violations trigger an interactive context
-        INTERACTIVE_VIOLATIONS = {
-            str(L.check.state.signature_drift),
-            str(L.check.state.co_evolution),
-            str(L.check.issue.extra),
-            str(L.check.issue.conflict),
-        }
-
-        for violation in analysis_result.violations:
-            kind_str = str(violation.kind)
-
-            # 1. Populate legacy result dictionaries
-            if kind_str in KIND_TO_LEGACY_MAP:
-                category, key = KIND_TO_LEGACY_MAP[kind_str]
-                target_dict = getattr(legacy_result, category)
-                target_dict[key].append(violation.fqn)
-
-            # 2. Create InteractionContext for resolvable conflicts
-            if kind_str in INTERACTIVE_VIOLATIONS:
-                conflicts.append(
-                    InteractionContext(
-                        file_path=legacy_result.path,
-                        fqn=violation.fqn,
-                        violation_type=violation.kind,
-                        signature_diff=violation.context.get("signature_diff"),
-                        doc_diff=violation.context.get("doc_diff"),
-                    )
-                )
-
-        return legacy_result, conflicts
-
-    def analyze_paths(
-        self, file_paths: List[str]
-    ) -> Tuple[List[FileCheckResult], List[InteractionContext]]:
-        all_results: List[FileCheckResult] = []
-        all_conflicts: List[InteractionContext] = []
-
-        for file_path in file_paths:
-            subject = IndexCheckSubjectAdapter(
-                file_path,
-                self.index_store,
-                self.doc_manager,
-                self.sig_manager,
-                self.root_path,
-            )
-            analysis_result = self.engine.analyze(subject)
-            legacy_result, conflicts = self._translate_results(analysis_result)
-            all_results.append(legacy_result)
-            all_conflicts.extend(conflicts)
-
-        return all_results, all_conflicts
-
-    def analyze_batch(
-        self, modules: List[ModuleDef]
-    ) -> Tuple[List[FileCheckResult], List[InteractionContext]]:
-        all_results: List[FileCheckResult] = []
-        all_conflicts: List[InteractionContext] = []
-
-        for module in modules:
-            subject = ASTCheckSubjectAdapter(
-                module,
-                self.doc_manager,
-                self.sig_manager,
-                self.fingerprint_strategy,
-                self.root_path,
-            )
-            analysis_result = self.engine.analyze(subject)
-            legacy_result, conflicts = self._translate_results(analysis_result)
-            all_results.append(legacy_result)
-            all_conflicts.extend(conflicts)
-
-        return all_results, all_conflicts
-
-    def auto_reconcile_docs(
-        self, results: List[FileCheckResult], modules: List[ModuleDef]
-    ):
-        self.resolver.auto_reconcile_docs(results, modules)
-
-    def resolve_conflicts(
-        self,
-        results: List[FileCheckResult],
-        conflicts: List[InteractionContext],
-        force_relink: bool = False,
-        reconcile: bool = False,
-    ) -> bool:
-        return self.resolver.resolve_conflicts(
-            results, conflicts, force_relink, reconcile
-        )
-
-    def reformat_all(self, modules: List[ModuleDef]):
-        self.resolver.reformat_all(modules)
-
-    def report(self, results: List[FileCheckResult]) -> bool:
-        return self.reporter.report(results)
+from stitcher.common.services import Differ
+from stitcher.spec import DifferProtocol
 ~~~~~
 
 ### 下一步建议
 
-我们已经解决了阻碍集成的核心技术问题。现在，我建议重新运行 `pyright` 和 `pytest`，以确认所有错误都已清除。
+我们已经从根本上解决了循环依赖问题，并清理了相关的测试文件。现在，整个架构的依赖关系是健康的。
 
-一旦验证通过，我们就可以安全地继续我们的重构路线图，下一步是**提取 Pump 逻辑**，将 `PumpAnalyzer` 迁移到 `stitcher-analysis` 包中。
+我建议再次运行 `pytest` 和 `pyright` 来验证修复的有效性。一旦通过，我们就可以继续进行**提取 Pump 逻辑**的任务。
