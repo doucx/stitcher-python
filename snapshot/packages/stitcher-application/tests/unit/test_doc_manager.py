@@ -17,6 +17,10 @@ class MockAdapter(DocumentAdapter):
         self.saved_path = path
         self.saved_data = data
 
+    def dump(self, data: dict) -> str:
+        # Not used in these tests, but required by the protocol
+        return ""
+
 
 @pytest.fixture
 def sample_module_ir():

@@ -30,9 +30,11 @@ def test_check_fails_gracefully_on_local_import(tmp_path, monkeypatch):
     # In Zero-IO mode, parsing happens in the Indexer via PythonAdapter
     # We need to find the correct parser instance to mock.
 
+    from stitcher.lang.python.adapter import PythonAdapter
+
     python_adapter = app.file_indexer.adapters[".py"]
-    # Verify we got the adapter (the key might vary if not registered as .py, but StitcherApp does register it as .py)
-    assert python_adapter is not None
+    # Verify we got the adapter and it's the concrete type we expect
+    assert isinstance(python_adapter, PythonAdapter)
 
     real_parse = python_adapter.parser.parse
 

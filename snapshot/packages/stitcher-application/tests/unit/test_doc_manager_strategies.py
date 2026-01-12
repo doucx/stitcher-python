@@ -56,11 +56,13 @@ class TestDocumentManagerStrategies:
         serialized_data = doc_manager._serialize_ir(sample_ir)
 
         # 3. Assert serialized format
+        assert isinstance(serialized_data, dict)
         assert serialized_data["Summary"] == "This is a summary."
         assert serialized_data["Extended"] == "This is an extended description."
         assert expected_params_key in serialized_data
         assert "Addon.Test" in serialized_data
         params = serialized_data[expected_params_key]
+        assert isinstance(params, dict)
         assert params["param1"] == "Description for param1."
         assert params["param2"] == "Description for param2."
 
@@ -75,6 +77,7 @@ class TestDocumentManagerStrategies:
         param_section = next(
             s for s in deserialized_ir.sections if s.kind == SectionKind.PARAMETERS
         )
+        assert isinstance(param_section.content, list)
         assert len(param_section.content) == 2
         # Note: Order is not guaranteed in dicts, so we check names
         param_names = {item.name for item in param_section.content}
