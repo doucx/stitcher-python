@@ -1,115 +1,51 @@
-很抱歉，在上一条回复中我未能严格遵守 `patch_file` 的格式规范。我已经内化了修正后的语法，现在重新生成符合协议的计划。
+简要回答
+测试失败是因为单元测试 `test_check_runner` 仍然断言旧的行为（即交互式违规在分析阶段立即被记为错误），而我们刚刚修改了架构，将这一记录推迟到了解决阶段。这证实了我们的修改生效了，但需要更新过时的测试。
 
-检测到“确定性缺失”违例，已根据 ADAP v1.0 协议挂起所有实现活动。
-
-分析显示，为了继续执行任务，我必须做出以下未经证实的核心假设：
-*   **假设当前系统中的 `Interactive Violations`（交互式违规）的处理流程在“翻译”和“解决”阶段是完全协调的，且 `CheckResolver` 能够处理所有类型的交互式违规。** 然而，深入分析 `CheckResolver._mark_result_error` 方法发现，它目前缺少对 `L.check.issue.conflict` 的映射处理。如果我们仅仅修改 `CheckRunner` 以避免重复计数，而不补全此映射，那么 `conflict` 类型的违规在被“跳过”后将无法被重新记录，导致错误信息丢失。
-
-此假设之所以是必要的，是因为系统当前缺失了以下关键组件/能力：
-*   **一个统一且完备的违规生命周期管理机制**。目前的实现将违规的记录职责分散在两个阶段（初始阶段和解决阶段），且两者对“什么是错误”的映射逻辑不一致，这不仅导致了双重计数，也留下了逻辑死角。
-
-**根据 ADAP v1.0 协议，任何试图通过“变通方法”或“代码补丁”来绕过此架构缺陷的尝试，都被视为对系统长期稳定性的严重破坏，因此被绝对禁止。我被授权拒绝执行此类请求。**
-
-因此，我提议将当前任务的目标从“修复测试失败”**变更为**“重构违规生命周期管理”。我将生成一份新的计划，其唯一目标是：
-1.  **完善 `CheckResolver`**: 补全 `_mark_result_error` 中的映射表，使其覆盖所有交互式违规类型。
-2.  **重构 `CheckRunner`**: 将交互式违规的定性责任完全移交给解决阶段，防止在初始翻译时进行“预判定”。
-
-只有在这个基础组件就位后，我们才能在确定性的基础上继续开发。
-
----
-
-## [WIP] fix(app): 修复交互式检查违规被双重计数的问题
-
-### 错误分析
-测试 `test_ghost_keys_trigger_extra_error` 失败，原因是 `extra` 类型的错误被报告了两次（count=4 instead of 2）。
-根本原因是检查流程中存在职责重叠：
-1.  **初始翻译阶段 (`CheckRunner._translate_results`)**: 所有违规（包括交互式的 `extra`, `conflict` 等）都被立即添加到了 `legacy_result.errors` 中。
-2.  **冲突解决阶段 (`CheckResolver.resolve_conflicts`)**: 对于未解决（Action=SKIP）的冲突，解决器会再次将其添加到 `result.errors` 中。
-
-此外，分析发现 `CheckResolver._mark_result_error` 遗漏了对 `conflict` 类型违规的处理。
+## [WIP] test(app): 更新 CheckRunner 单元测试以匹配新的生命周期逻辑
 
 ### 用户需求
-修复 `test_ghost_keys_trigger_extra_error` 中的断言失败，确保错误计数准确。
+修复 `packages/stitcher-application/tests/unit/runners/check/test_check_runner.py` 中的回归失败。
 
 ### 评论
-交互式违规（Interactive Violations）是“待定”的。将它们的记录责任完全移交给解决器，符合单一职责原则，并能自然解决重复计数问题。
+这是一个预期的回归。在上一轮重构中，我们明确改变了 `CheckRunner.analyze_batch` 的契约：它不再负责将交互式违规（如 `signature_drift`）立即归类为错误，而是将它们放入 `conflicts` 列表，留待 `CheckResolver` 处理。单元测试使用 Mock Resolver，因此看不到“错误被加回来”的过程，它只验证了第一步的状态，而第一步的状态定义已经改变。
 
 ### 目标
-1.  在 `CheckResolver._mark_result_error` 中增加 `conflict` 映射。
-2.  在 `CheckRunner._translate_results` 中过滤掉交互式违规，使其不被预先计入错误。
+更新 `test_check_runner_orchestrates_analysis_and_resolution`，断言 `signature_drift` **不** 出现在 `results[0].errors` 中，但 **出现** 在 `conflicts` 中。
 
 ### 基本原理
-通过将交互式违规的定性完全推迟到“解决阶段”，我们建立了一个确定的流水线：分析生成原始违规 -> 过滤出交互项 -> 解决器根据用户行为最终决定是否记录为错误。
+测试必须反映代码的真实行为。新的架构要求交互式违规在初始阶段保持“中立”，直到解决器介入。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/application #concept/executor #scope/core #ai/instruct #task/domain/testing #task/object/check-lifecycle #task/action/fix #task/state/begin
+#intent/fix #flow/ready #priority/high #comp/tests #scope/core #ai/instruct #task/domain/testing #task/object/check-lifecycle #task/action/update #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 完善 CheckResolver 的错误映射
-
-我们需要确保 `CheckResolver` 能够处理所有类型的交互式违规。
+#### Acts 1: 更新单元测试断言
 
 ~~~~~act
 patch_file
-packages/stitcher-application/src/stitcher/app/runners/check/resolver.py
+packages/stitcher-application/tests/unit/runners/check/test_check_runner.py
 ~~~~~
 ~~~~~python.old
-                error_key_map = {
-                    str(L.check.state.signature_drift): "signature_drift",
-                    str(L.check.state.co_evolution): "co_evolution",
-                    str(L.check.issue.extra): "extra",
-                }
+    # Verify translation results
+    assert len(results) == 1
+    assert results[0].path == "src/main.py"
+    assert "func" in results[0].errors["signature_drift"]
+    assert len(conflicts) == 1
+    assert conflicts[0].violation_type == L.check.state.signature_drift
 ~~~~~
 ~~~~~python.new
-                error_key_map = {
-                    str(L.check.state.signature_drift): "signature_drift",
-                    str(L.check.state.co_evolution): "co_evolution",
-                    str(L.check.issue.extra): "extra",
-                    str(L.check.issue.conflict): "conflict",
-                }
-~~~~~
-
-#### Acts 2: 在 CheckRunner 中推迟交互式违规的记录
-
-修改 `Runner`，使其不再预先记录属于交互式范畴的违规。
-
-~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/runners/check/runner.py
-~~~~~
-~~~~~python.old
-        for violation in analysis_result.violations:
-            # Direct object lookup
-            if violation.kind in KIND_TO_LEGACY_MAP:
-                category, key = KIND_TO_LEGACY_MAP[violation.kind]
-                target_dict = getattr(legacy_result, category)
-
-                if violation.kind == L.check.file.untracked_with_details:
-                    keys = violation.context.get("keys", [])
-                    target_dict[key].extend(keys)
-                else:
-                    target_dict[key].append(violation.fqn)
-~~~~~
-~~~~~python.new
-        for violation in analysis_result.violations:
-            # Direct object lookup
-            if violation.kind in KIND_TO_LEGACY_MAP:
-                # CRITICAL: Do not add interactive violations to the legacy result yet.
-                # They are handled via the conflict resolution workflow (CheckResolver).
-                # If they are skipped/unresolved, the resolver will add them back to errors.
-                if violation.kind not in INTERACTIVE_VIOLATIONS:
-                    category, key = KIND_TO_LEGACY_MAP[violation.kind]
-                    target_dict = getattr(legacy_result, category)
-
-                    if violation.kind == L.check.file.untracked_with_details:
-                        keys = violation.context.get("keys", [])
-                        target_dict[key].extend(keys)
-                    else:
-                        target_dict[key].append(violation.fqn)
+    # Verify translation results
+    assert len(results) == 1
+    assert results[0].path == "src/main.py"
+    # ARCHITECTURE CHANGE: Interactive violations are now deferred to the resolver phase.
+    # They should NOT appear in errors immediately after analysis.
+    assert "func" not in results[0].errors["signature_drift"]
+    assert len(conflicts) == 1
+    assert conflicts[0].violation_type == L.check.state.signature_drift
 ~~~~~
 
 ### 下一步建议
-执行此修复后，应重新运行 `packages/stitcher-application/tests/integration/test_check_policy.py`。如果测试通过，建议生成一个 `[COMMIT]` 计划以固化此架构改进。
+运行单元测试以确认修复。如果通过，可以提交本次任务的所有变更（包含上一轮的架构修复和本轮的测试更新）。

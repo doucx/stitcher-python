@@ -77,7 +77,9 @@ def test_check_runner_orchestrates_analysis_and_resolution():
     # Verify translation results
     assert len(results) == 1
     assert results[0].path == "src/main.py"
-    assert "func" in results[0].errors["signature_drift"]
+    # ARCHITECTURE CHANGE: Interactive violations are now deferred to the resolver phase.
+    # They should NOT appear in errors immediately after analysis.
+    assert "func" not in results[0].errors["signature_drift"]
     assert len(conflicts) == 1
     assert conflicts[0].violation_type == L.check.state.signature_drift
 
