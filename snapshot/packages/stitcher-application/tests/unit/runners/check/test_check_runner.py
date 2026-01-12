@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import create_autospec, MagicMock
+from unittest.mock import MagicMock
 
 from stitcher.app.runners.check.runner import CheckRunner
 from stitcher.app.runners.check.resolver import CheckResolver
@@ -69,12 +69,12 @@ def test_check_runner_orchestrates_analysis_and_resolution(mocker):
     # 3. Assert: 验证结果
     assert len(results) == 1
     assert results[0].path == "src/main.py"
-    
+
     # 验证违反项是否正确识别
     assert len(results[0].violations) == 1
     assert results[0].violations[0].kind == L.check.state.signature_drift
-    assert results[0].error_count == 1 # signature_drift 默认是 error
-    
+    assert results[0].error_count == 1  # signature_drift 默认是 error
+
     # 验证交互冲突是否正确提取
     assert len(conflicts) == 1
     assert conflicts[0].violation_type == L.check.state.signature_drift
@@ -105,7 +105,9 @@ def test_check_runner_passes_relink_and_reconcile_flags_to_resolver(mocker):
     runner = CheckRunner(
         doc_manager=mocker.create_autospec(DocumentManagerProtocol, instance=True),
         sig_manager=mocker.create_autospec(SignatureManagerProtocol, instance=True),
-        fingerprint_strategy=mocker.create_autospec(FingerprintStrategyProtocol, instance=True),
+        fingerprint_strategy=mocker.create_autospec(
+            FingerprintStrategyProtocol, instance=True
+        ),
         index_store=mocker.create_autospec(IndexStoreProtocol, instance=True),
         differ=mocker.create_autospec(DifferProtocol, instance=True),
         resolver=mock_resolver,

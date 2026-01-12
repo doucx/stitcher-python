@@ -1,4 +1,4 @@
-from unittest.mock import create_autospec, PropertyMock, MagicMock
+from unittest.mock import PropertyMock, MagicMock
 
 import pytest
 from needle.pointer import L

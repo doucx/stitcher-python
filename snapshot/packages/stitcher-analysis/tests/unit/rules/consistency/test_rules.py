@@ -1,5 +1,4 @@
 import pytest
-import pytest
 from unittest.mock import Mock
 from typing import Optional
 from needle.pointer import L

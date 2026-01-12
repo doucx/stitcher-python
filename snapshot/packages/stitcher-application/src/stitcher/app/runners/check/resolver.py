@@ -15,7 +15,7 @@ from stitcher.spec import (
 from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
 from stitcher.spec.interaction import InteractionHandler, InteractionContext
 from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
-from stitcher.analysis.schema import FileCheckResult, Violation
+from stitcher.analysis.schema import FileCheckResult
 
 
 class CheckResolver:
@@ -62,13 +62,9 @@ class CheckResolver:
             if not module_def:
                 continue
 
-            stored_hashes = self.sig_manager.load_composite_hashes(
-                module_def.file_path
-            )
+            stored_hashes = self.sig_manager.load_composite_hashes(module_def.file_path)
             new_hashes = copy.deepcopy(stored_hashes)
-            current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
-                module_def
-            )
+            current_yaml_map = self.doc_manager.compute_yaml_content_hashes(module_def)
 
             for violation in doc_update_violations:
                 fqn = violation.fqn
@@ -80,9 +76,7 @@ class CheckResolver:
                         del new_hashes[fqn]["baseline_yaml_content_hash"]
 
             if new_hashes != stored_hashes:
-                self.sig_manager.save_composite_hashes(
-                    module_def.file_path, new_hashes
-                )
+                self.sig_manager.save_composite_hashes(module_def.file_path, new_hashes)
 
     def resolve_conflicts(
         self,

@@ -3,7 +3,7 @@ from collections import defaultdict
 
 from stitcher.common import bus
 from needle.pointer import L
-from stitcher.analysis.schema import FileCheckResult, Violation
+from stitcher.analysis.schema import FileCheckResult
 
 
 class CheckReporter:

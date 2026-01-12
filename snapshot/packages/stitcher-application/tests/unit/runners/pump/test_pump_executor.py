@@ -1,4 +1,4 @@
-from unittest.mock import create_autospec, ANY, MagicMock
+from unittest.mock import ANY, MagicMock
 from pathlib import Path
 
 import pytest
@@ -66,7 +66,9 @@ def sample_module() -> ModuleDef:
     return ModuleDef(file_path="src/main.py", functions=[FunctionDef(name="func_a")])
 
 
-def test_executor_hydrates_new_doc(mocker, executor: PumpExecutor, sample_module: ModuleDef):
+def test_executor_hydrates_new_doc(
+    mocker, executor: PumpExecutor, sample_module: ModuleDef
+):
     """Test standard pumping of a new docstring without conflicts."""
     mock_tm = mocker.create_autospec(TransactionManager, instance=True)
 
