@@ -50,30 +50,23 @@ class CheckRunner:
     def _translate_results(
         self, analysis_result: AnalysisFileCheckResult
     ) -> Tuple[FileCheckResult, List[InteractionContext]]:
-        # This is the adapter logic. It translates the new, unified `FileCheckResult`
-        # from the analysis engine into the old structures expected by the resolver/reporter.
-
         legacy_result = FileCheckResult(path=analysis_result.path)
         conflicts: List[InteractionContext] = []
 
         # Mapping from new Violation 'kind' to old result dict keys
         KIND_TO_LEGACY_MAP = {
-            # Errors
             str(L.check.issue.conflict): ("errors", "conflict"),
             str(L.check.state.signature_drift): ("errors", "signature_drift"),
             str(L.check.state.co_evolution): ("errors", "co_evolution"),
             str(L.check.issue.extra): ("errors", "extra"),
             str(L.check.issue.pending): ("errors", "pending"),
-            # Warnings
             str(L.check.issue.missing): ("warnings", "missing"),
             str(L.check.issue.redundant): ("warnings", "redundant"),
             str(L.check.file.untracked): ("warnings", "untracked"),
             str(L.check.file.untracked_with_details): ("warnings", "untracked_detailed"),
-            # Infos
             str(L.check.state.doc_updated): ("infos", "doc_improvement"),
         }
 
-        # Which violations trigger an interactive context
         INTERACTIVE_VIOLATIONS = {
             str(L.check.state.signature_drift),
             str(L.check.state.co_evolution),
@@ -81,23 +74,20 @@ class CheckRunner:
             str(L.check.issue.conflict),
         }
 
+        print(f"DEBUG: Processing {len(analysis_result.violations)} violations for {analysis_result.path}")
         for violation in analysis_result.violations:
             kind_str = str(violation.kind)
+            print(f"DEBUG: Violation kind={kind_str} fqn={violation.fqn}")
 
-            # 1. Populate legacy result dictionaries
             if kind_str in KIND_TO_LEGACY_MAP:
                 category, key = KIND_TO_LEGACY_MAP[kind_str]
                 target_dict = getattr(legacy_result, category)
-
-                # Special handling for untracked_with_details:
-                # The reporter expects a list of symbol keys, which are passed in context['keys'].
                 if kind_str == str(L.check.file.untracked_with_details):
                     keys = violation.context.get("keys", [])
                     target_dict[key].extend(keys)
                 else:
                     target_dict[key].append(violation.fqn)
 
-            # 2. Create InteractionContext for resolvable conflicts
             if kind_str in INTERACTIVE_VIOLATIONS:
                 conflicts.append(
                     InteractionContext(
@@ -117,6 +107,7 @@ class CheckRunner:
         all_results: List[FileCheckResult] = []
         all_conflicts: List[InteractionContext] = []
 
+        print(f"DEBUG: analyze_paths called with {file_paths}")
         for file_path in file_paths:
             subject = IndexCheckSubjectAdapter(
                 file_path,
