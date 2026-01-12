@@ -5,8 +5,8 @@
     "baseline_yaml_content_hash": "107d9d8ce7f48e351911bdc4c4aa8d442967c10b114179df109ff56a3e7c8f43"
   },
   "py://packages/stitcher-refactor/src/stitcher/refactor/engine/graph.py#SemanticGraph.__init__": {
-    "baseline_code_signature_text": "def __init__(self, workspace: Workspace, index_store: IndexStore):",
-    "baseline_code_structure_hash": "ff4d5b5e1497bd4432fa7e4c4511f6736a7ab179385ff4aa84cc221dadfa3fa7"
+    "baseline_code_signature_text": "def __init__(self, workspace: Workspace, index_store: IndexStoreProtocol):",
+    "baseline_code_structure_hash": "924f5530e2b54428c51436720ee5b1c41d2ea4ae703b53aaaa40eafecd60cbd4"
   },
   "py://packages/stitcher-refactor/src/stitcher/refactor/engine/graph.py#SemanticGraph._griffe_loader": {},
   "py://packages/stitcher-refactor/src/stitcher/refactor/engine/graph.py#SemanticGraph._modules": {},

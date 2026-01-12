@@ -5,8 +5,8 @@
     "baseline_yaml_content_hash": "356ab574f0b4092d68d3bc296caab0ce3de8cc6ab4f1ecab682fd390d751acc9"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter.__init__": {
-    "baseline_code_signature_text": "def __init__(self, module_def: ModuleDef, doc_manager: DocumentManager, sig_manager: SignatureManager, fingerprint_strategy: FingerprintStrategyProtocol):",
-    "baseline_code_structure_hash": "2785c0f84f12960e54ed363e3b50961475abdea0c457f5f125d9408946aaa048"
+    "baseline_code_signature_text": "def __init__(self, module_def: ModuleDef, doc_manager: DocumentManagerProtocol, sig_manager: SignatureManagerProtocol, fingerprint_strategy: FingerprintStrategyProtocol):",
+    "baseline_code_structure_hash": "1060877eb18702589d46e79523078f2505d0b5b6d319c2289f14860022ac434e"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#ASTCheckSubjectAdapter._compute_fingerprints": {
     "baseline_code_signature_text": "def _compute_fingerprints(self) -> Dict[str, Fingerprint]:",
@@ -30,8 +30,8 @@
     "baseline_code_structure_hash": "2d58ecb2c30492b92b72c1e76df294fc27becfd22fe1a306f752cd98d42b3f99"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter.__init__": {
-    "baseline_code_signature_text": "def __init__(self, file_path: str, index_store: IndexStore, doc_manager: DocumentManager, sig_manager: SignatureManager):",
-    "baseline_code_structure_hash": "ae6239348ffa6a4dec3190dd0fb75f1b9dc632258c15104c8104d576d2196b03"
+    "baseline_code_signature_text": "def __init__(self, file_path: str, index_store: IndexStoreProtocol, doc_manager: DocumentManagerProtocol, sig_manager: SignatureManagerProtocol):",
+    "baseline_code_structure_hash": "ea830dc4cadb9282ca3bd247ae4faaab49af73bbc81eabcb01babc92834d23c3"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter._doc_manager": {},
   "py://packages/stitcher-application/src/stitcher/app/runners/check/subject.py#IndexCheckSubjectAdapter._file_path": {},

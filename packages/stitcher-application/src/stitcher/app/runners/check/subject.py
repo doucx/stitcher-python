@@ -3,10 +3,9 @@ from stitcher.spec import (
     ModuleDef,
     Fingerprint,
     FingerprintStrategyProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
+    IndexStoreProtocol,
 )
-from stitcher.index.store import IndexStore
+from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
 from stitcher.spec.index import SymbolRecord
 from .protocols import SymbolState, CheckSubject
 
@@ -15,7 +14,7 @@ class IndexCheckSubjectAdapter(CheckSubject):
     def __init__(
         self,
         file_path: str,
-        index_store: IndexStore,
+        index_store: IndexStoreProtocol,
         doc_manager: DocumentManagerProtocol,
         sig_manager: SignatureManagerProtocol,
     ):

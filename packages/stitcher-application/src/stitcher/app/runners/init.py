@@ -7,9 +7,8 @@ from stitcher.spec import (
     Fingerprint,
     ModuleDef,
     FingerprintStrategyProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
 )
+from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
 
 
 class InitRunner:

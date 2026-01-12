@@ -4,8 +4,8 @@
     "baseline_code_structure_hash": "2c9d7163f28330dc5e1c14fa5300d8b3725c6d953ff8552efa180f159a6d83e6"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/init.py#InitRunner.__init__": {
-    "baseline_code_signature_text": "def __init__(self, root_path: Path, doc_manager: DocumentManager, sig_manager: SignatureManager, fingerprint_strategy: FingerprintStrategyProtocol):",
-    "baseline_code_structure_hash": "2ff6f18aac36507c127b252247a2ae14087466883d694d1bb8414a9fdd7cff0d"
+    "baseline_code_signature_text": "def __init__(self, root_path: Path, doc_manager: DocumentManagerProtocol, sig_manager: SignatureManagerProtocol, fingerprint_strategy: FingerprintStrategyProtocol):",
+    "baseline_code_structure_hash": "d7b4f00b49149d0e5e4ebf41c93537710b6dc1b9093f10363f71c431961f4e8e"
   },
   "py://packages/stitcher-application/src/stitcher/app/runners/init.py#InitRunner._compute_fingerprints": {
     "baseline_code_signature_text": "def _compute_fingerprints(self, module: ModuleDef) -> Dict[str, Fingerprint]:",
