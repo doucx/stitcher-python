@@ -45,11 +45,21 @@ def analyzer(
     )
 
 
-def test_analyzer_no_changes(analyzer: PumpAnalyzer, mock_doc_manager: DocumentManagerProtocol, mock_index_store: IndexStoreProtocol):
-    """Verify analyzer returns no conflicts if hydrate dry_run is successful."""
+def test_analyzer_no_changes(analyzer: PumpAnalyzer, mock_doc_manager: DocumentManagerProtocol, mock_index_store: IndexStoreProtocol, mock_sig_manager: SignatureManagerProtocol):
+    """Verify analyzer returns no conflicts if a dirty doc is resolved by hydrate."""
     module = ModuleDef(file_path="src/main.py")
-    mock_index_store.get_symbols_by_file_path.return_value = []
+    
+    # Arrange: Simulate a dirty docstring to trigger the hydrate_module call
+    mock_symbol = MagicMock()
+    mock_symbol.logical_path = "func"
+    mock_symbol.docstring_hash = "new_hash"
+    mock_index_store.get_symbols_by_file_path.return_value = [mock_symbol]
+    mock_sig_manager.load_composite_hashes.return_value = {} # Baseline is empty
+
+    # Arrange: Configure hydrate_module to report success (no conflicts)
     mock_doc_manager.hydrate_module.return_value = {"success": True, "conflicts": []}
+    mock_doc_manager.flatten_module_docs.return_value = {"func": DocstringIR(summary="New doc")}
+
 
     conflicts = analyzer.analyze([module])
 

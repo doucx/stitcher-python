@@ -27,13 +27,22 @@ def mock_doc_manager() -> DocumentManagerProtocol:
 
 
 @pytest.fixture
+def mock_sig_manager() -> SignatureManagerProtocol:
+    mock = create_autospec(SignatureManagerProtocol, instance=True)
+    # IMPORTANT: Return a real dict to avoid deepcopy issues with mocks.
+    mock.load_composite_hashes.return_value = {}
+    return mock
+
+
+@pytest.fixture
 def executor(
     mock_doc_manager: DocumentManagerProtocol,
+    mock_sig_manager: SignatureManagerProtocol,
 ) -> PumpExecutor:
     return PumpExecutor(
         root_path=MagicMock(),
         doc_manager=mock_doc_manager,
-        sig_manager=create_autospec(SignatureManagerProtocol, instance=True),
+        sig_manager=mock_sig_manager,
         transformer=create_autospec(LanguageTransformerProtocol, instance=True),
         merger=create_autospec(DocstringMergerProtocol, instance=True),
         fingerprint_strategy=create_autospec(FingerprintStrategyProtocol, instance=True),

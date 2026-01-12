@@ -1,100 +1,104 @@
-## [WIP] fix(tests): 解决单元测试文件导入冲突并修复 PumpExecutor 的 Mock 语法错误
+## [WIP] 我将生成补丁来修复这两个问题。
+
+好的，分析这些测试失败的原因非常清晰。它们指向了我代码中两个不同但相关的逻辑错误。
 
 ### 错误分析
 
-1.  **文件名冲突**: Pytest 报告 `import file mismatch` 错误，因为在 `packages/stitcher-application/tests/unit/runners/` 下，`check` 和 `pump` 目录中都存在 `test_analyzer.py` 和 `test_runner.py` 文件。测试模块名在全局范围内必须是唯一的。
-2.  **语法错误**: `packages/stitcher-application/tests/unit/runners/pump/test_executor.py` 中的一行代码尝试对一个属性链（`executor.root_path / "src/main.py".read_text.return_value`）进行赋值，这是无效的 Python 语法。
+1.  **`test_analyzer_no_changes` 失败原因: 错误的乐观路径假设**
+    -   `PumpAnalyzer.analyze()` 的逻辑是：首先检查哪些文件中的 docstring 是“脏的”（即与基线哈希不匹配），然后**只对这些脏文件**调用 `doc_manager.hydrate_module()` 进行冲突分析。
+    -   在 `test_analyzer_no_changes` 测试中，我没有为 `mock_index_store` 或 `mock_sig_manager` 提供任何数据。这导致 `_get_dirty_source_docs()` 内部逻辑认为**没有任何文件是脏的**。
+    -   因此，`doc_manager.hydrate_module()` 从未被调用，导致 `assert_called_once()` 失败。
+    -   **解决方案**: 我需要模拟一个“脏文档”的场景，让 `_get_dirty_source_docs` 返回一个非空字典，从而触发 `hydrate_module` 的调用。
 
-### 用户需求
+2.  **`test_executor_*` 失败原因: `deepcopy` 与 Mock 对象的兼容性问题**
+    -   `PumpExecutor.execute()` 在开始时会调用 `copy.deepcopy(stored_hashes)`。`stored_hashes` 是从 `sig_manager.load_composite_hashes()` 返回的。
+    -   在测试中，`sig_manager` 是一个 `create_autospec(SignatureManagerProtocol, instance=True)` 创建的 Mock 对象。它的 `load_composite_hashes` 方法返回的是一个**新的 `MagicMock` 对象**，而不是一个普通的字典。
+    -   `copy.deepcopy` 无法序列化（pickle）`unittest.mock` 内部的一些对象（如 `_abc._abc_data`），这导致了 `TypeError: cannot pickle '_abc._abc_data' object`。
+    -   **解决方案**: 在测试设置中，我们必须确保 `mock_sig_manager.load_composite_hashes` 返回的是一个**真实的、可被深拷贝的数据结构**（例如，一个普通的字典），而不是一个 Mock 对象。
 
-要求修复这些错误，并使用 `move_file` 为文件创建唯一的名称。
+### 修复计划
 
-### 目标
-
-1.  将 `check` 和 `pump` 单元测试文件重命名以解决命名空间冲突。
-2.  修复 `test_pump_executor.py` 中的 Mocking 语法，改用正确的方式来模拟文件读取。
-
-### 基本原理
-
-为了解决 Pytest 的导入冲突，我们将为每个测试文件添加一个反映其逻辑角色的前缀（例如 `check_` 或 `pump_`）。对于语法错误，我们将使用 `MagicMock` 和 `configure_mock` 方法来安全地模拟文件路径对象上的方法调用。
-
-### 标签
-
-#intent/fix #flow/ready #priority/critical #comp/tests #scope/dx #ai/instruct #task/domain/testing #task/object/unit-tests #task/action/refactor #task/state/continue
-
----
-
-### Script
-
-#### Acts 1: 重命名 Check 相关的测试文件
-
-为 `check` 目录下的测试文件添加 `check_` 前缀。
+我将生成补丁来修复这两个问题。
 
 ~~~~~act
-move_file
-packages/stitcher-application/tests/unit/runners/check/test_analyzer.py
-packages/stitcher-application/tests/unit/runners/check/test_check_analyzer.py
-~~~~~
-
-~~~~~act
-move_file
-packages/stitcher-application/tests/unit/runners/check/test_runner.py
-packages/stitcher-application/tests/unit/runners/check/test_check_runner.py
-~~~~~
-
-#### Acts 2: 重命名 Pump 相关的测试文件
-
-为 `pump` 目录下的测试文件添加 `pump_` 前缀。
-
-~~~~~act
-move_file
-packages/stitcher-application/tests/unit/runners/pump/test_analyzer.py
+patch_file
 packages/stitcher-application/tests/unit/runners/pump/test_pump_analyzer.py
 ~~~~~
+~~~~~python.old
+def test_analyzer_no_changes(analyzer: PumpAnalyzer, mock_doc_manager: DocumentManagerProtocol, mock_index_store: IndexStoreProtocol):
+    """Verify analyzer returns no conflicts if hydrate dry_run is successful."""
+    module = ModuleDef(file_path="src/main.py")
+    mock_index_store.get_symbols_by_file_path.return_value = []
+    mock_doc_manager.hydrate_module.return_value = {"success": True, "conflicts": []}
 
-~~~~~act
-move_file
-packages/stitcher-application/tests/unit/runners/pump/test_executor.py
-packages/stitcher-application/tests/unit/runners/pump/test_pump_executor.py
+    conflicts = analyzer.analyze([module])
+
+    assert not conflicts
+    mock_doc_manager.hydrate_module.assert_called_once()
 ~~~~~
+~~~~~python.new
+def test_analyzer_no_changes(analyzer: PumpAnalyzer, mock_doc_manager: DocumentManagerProtocol, mock_index_store: IndexStoreProtocol, mock_sig_manager: SignatureManagerProtocol):
+    """Verify analyzer returns no conflicts if a dirty doc is resolved by hydrate."""
+    module = ModuleDef(file_path="src/main.py")
+    
+    # Arrange: Simulate a dirty docstring to trigger the hydrate_module call
+    mock_symbol = MagicMock()
+    mock_symbol.logical_path = "func"
+    mock_symbol.docstring_hash = "new_hash"
+    mock_index_store.get_symbols_by_file_path.return_value = [mock_symbol]
+    mock_sig_manager.load_composite_hashes.return_value = {} # Baseline is empty
 
-~~~~~act
-move_file
-packages/stitcher-application/tests/unit/runners/pump/test_runner.py
-packages/stitcher-application/tests/unit/runners/pump/test_pump_runner.py
+    # Arrange: Configure hydrate_module to report success (no conflicts)
+    mock_doc_manager.hydrate_module.return_value = {"success": True, "conflicts": []}
+    mock_doc_manager.flatten_module_docs.return_value = {"func": DocstringIR(summary="New doc")}
+
+
+    conflicts = analyzer.analyze([module])
+
+    assert not conflicts
+    mock_doc_manager.hydrate_module.assert_called_once()
 ~~~~~
-
-#### Acts 3: 修复 PumpExecutor 的 Mocking 语法错误
-
-修复 `test_pump_executor.py` 中的语法错误。正确的做法是使用 `MagicMock` 来模拟 `Path` 对象的 `read_text` 方法。
 
 ~~~~~act
 patch_file
 packages/stitcher-application/tests/unit/runners/pump/test_pump_executor.py
 ~~~~~
 ~~~~~python.old
-    # Mock transformer strip call
-    executor.transformer.strip.return_value = "stripped content"
-    
-    # Mock read_text for the source file
-    executor.root_path / "src/main.py".read_text.return_value = "original content"
-
-    executor.execute([sample_module], decisions=decisions, tm=mock_tm, strip=True)
+@pytest.fixture
+def executor(
+    mock_doc_manager: DocumentManagerProtocol,
+) -> PumpExecutor:
+    return PumpExecutor(
+        root_path=MagicMock(),
+        doc_manager=mock_doc_manager,
+        sig_manager=create_autospec(SignatureManagerProtocol, instance=True),
+        transformer=create_autospec(LanguageTransformerProtocol, instance=True),
+        merger=create_autospec(DocstringMergerProtocol, instance=True),
+        fingerprint_strategy=create_autospec(FingerprintStrategyProtocol, instance=True),
+    )
 ~~~~~
 ~~~~~python.new
-    # Mock transformer strip call
-    executor.transformer.strip.return_value = "stripped content"
-    
-    # Mock Path.read_text for the source file read in _execute_strip_jobs
-    source_path = executor.root_path / "src/main.py"
-    source_path.read_text.return_value = "original content"
+@pytest.fixture
+def mock_sig_manager() -> SignatureManagerProtocol:
+    mock = create_autospec(SignatureManagerProtocol, instance=True)
+    # IMPORTANT: Return a real dict to avoid deepcopy issues with mocks.
+    mock.load_composite_hashes.return_value = {}
+    return mock
 
-    executor.execute([sample_module], decisions=decisions, tm=mock_tm, strip=True)
+
+@pytest.fixture
+def executor(
+    mock_doc_manager: DocumentManagerProtocol,
+    mock_sig_manager: SignatureManagerProtocol,
+) -> PumpExecutor:
+    return PumpExecutor(
+        root_path=MagicMock(),
+        doc_manager=mock_doc_manager,
+        sig_manager=mock_sig_manager,
+        transformer=create_autospec(LanguageTransformerProtocol, instance=True),
+        merger=create_autospec(DocstringMergerProtocol, instance=True),
+        fingerprint_strategy=create_autospec(FingerprintStrategyProtocol, instance=True),
+    )
 ~~~~~
 
-### 下一步建议
-
-现在命名冲突和语法错误已经修复，Pytest 应该能够正确收集并运行这些单元测试。下一步，我建议：
-
-1.  **运行测试**: 验证所有 `pump` 单元测试是否成功通过。
-2.  **继续重构**: 如果测试成功，继续执行原计划的下一步：为 `InitRunner` 和 `TransformRunner` 添加单元测试。
+这些修复确保了 `PumpAnalyzer` 的测试能正确触发其核心逻辑，并解决了 `PumpExecutor` 测试中由 `deepcopy` 和 Mock 对象不兼容引起的技术问题。现在，所有测试应该都能通过。
