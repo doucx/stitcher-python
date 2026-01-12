@@ -1,671 +1,184 @@
-好的，我们开始执行“彻底重构 `CheckReporter`”这一优先任务。
+这是由于我们在之前的 Act 中对 `CheckRunner` 及其数据模型进行了激进的重构，但测试用例仍然停留在旧的“字典模式”导致的。
 
-为了实现这一目标，我们需要从数据产生的源头 (`stitcher-analysis`) 到数据消费的终端 (`CheckReporter`)，贯穿整个调用链，将数据结构升级为现代的、基于 `Violation` 对象的模式，并彻底拆除遗留的、基于字典的兼容层。
+根据 **ADAP v1.0** 协议，我们现在是在执行“彻底消除兼容层”的过程，测试用例必须同步升级到新的 `Violation` 对象模型。
 
-这是一个系统性的重构，将涉及 `stitcher-analysis` 和 `stitcher-application` 两个包。
+## [WIP] test(app): 升级 CheckRunner 单元测试以适配新的 Violation 模型
 
-## [WIP] refactor(app): 将 CheckReporter 重构为直接消费 Violation 对象
+### 错误分析
+
+测试 `test_check_runner.py` 失败的根本原因是：测试代码在 Arrange 阶段混合使用了 `stitcher.app.types.FileCheckResult`（旧字典模型）和 `stitcher.analysis.schema.FileCheckResult`（新对象模型）。在 Assert 阶段，测试代码尝试访问 `.errors` 属性，而这个属性在重构后的 `CheckRunner` 返回的对象中已经不复存在。
 
 ### 用户需求
 
-根据上一阶段的架构债务分析，`CheckReporter` 目前依赖一个陈旧的、基于字典的 `FileCheckResult` 数据结构。这迫使 `CheckRunner` 维护一个复杂的 `_translate_results` 方法，将现代的 `Violation` 对象降级为旧格式，从而产生了不必要的兼容性开销和技术债务。
-
-我们需要重构整个 `check` 命令的数据流，使其从头到尾都使用 `stitcher.analysis.schema` 中定义的、基于 `Violation` 对象的 `FileCheckResult`。
+更新 `packages/stitcher-application/tests/unit/runners/check/test_check_runner.py`，移除对旧 `FileCheckResult` 的引用，并根据新的 `Violation` 列表逻辑重写断言。
 
 ### 评论
 
-这是一个关键的“正本清源”步骤。通过本次重构，我们将：
-1.  **消除兼容层**: 彻底移除 `CheckRunner` 中臃肿的 `_translate_results` 方法。
-2.  **提升类型安全**: 让 `CheckReporter` 和 `CheckResolver` 直接与类型化的 `Violation` 对象交互，而不是脆弱的字符串键。
-3.  **简化逻辑**: `Reporter` 的逻辑将从操作字典转变为操作对象列表，代码更清晰、更健壮。
-4.  **遵循 HFEA 原则**: 根除架构异味，确保数据模型在系统内部流转时保持其“本体论正确性”。
+这是一个必要的“测试回归”，确保我们的测试套件与最新的架构契约保持一致。在这次更新中，我们将完全转向基于 `SemanticPointer` 的断言。
 
 ### 目标
 
-1.  **增强 `analysis` 层的 `FileCheckResult`**: 为其添加必要的辅助属性（如 `error_count`, `warning_count`），使其能独立承担报告所需的数据计算。
-2.  **重构 `CheckResolver`**: 修改其内部逻辑，使其能够直接操作新的 `FileCheckResult` 对象，将已解决的 `Violation` 从 `violations` 列表移至 `reconciled` 列表。
-3.  **重写 `CheckReporter`**: 使其完全基于新的 `FileCheckResult` 和 `Violation` 对象进行报告渲染。
-4.  **重构 `CheckRunner`**: 拆除 `_translate_results` 转换逻辑，让 `analysis` 引擎产生的 `FileCheckResult` 对象无缝流经 `Resolver` 并最终抵达 `Reporter`。
-
-### 基本原理
-
-我们将采用自底向上的策略：
-1.  首先，强化数据模型 (`FileCheckResult` in `analysis`)，赋予其更强的自描述能力。
-2.  其次，改造数据处理层 (`CheckResolver`) 和数据消费层 (`CheckReporter`)，使其适应新的数据模型。
-3.  最后，改造数据编排层 (`CheckRunner`)，打通整个数据链路，移除旧的适配器逻辑。
-
-这种方法确保了每一步修改都有坚实的基础，最终实现整个 `check` 功能数据流的现代化和纯净化。
+1.  从测试文件中移除对 `stitcher.app.types.FileCheckResult` 的导入和使用。
+2.  将所有 mock 的结果对象统一为 `stitcher.analysis.schema.FileCheckResult` (别名为 `AnalysisResult`)。
+3.  更新断言，通过检查 `violations` 列表或 `error_count` 属性来验证分析结果，而不是访问已删除的 `errors` 字典。
 
 ### 标签
 
-#intent/refine #flow/ready #priority/high #comp/app #comp/analysis #concept/ui #scope/core #scope/dx #ai/instruct #task/domain/testing #task/object/reporter #task/action/refactor #task/state/begin
+#intent/tooling #flow/ready #priority/high #comp/tests #concept/state #scope/dx #ai/instruct #task/domain/testing #task/object/test-check-runner #task/action/fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 增强 `stitcher.analysis.schema.results.FileCheckResult`
+#### Acts 1: 更新 `test_check_runner.py`
 
-我们将为 `FileCheckResult` 添加分类和计数的属性，使其能够自我描述其内部状态，从而简化上游消费者的逻辑。
-
-~~~~~act
-patch_file
-packages/stitcher-analysis/src/stitcher/analysis/schema/results.py
-~~~~~
-~~~~~python.old
-from dataclasses import dataclass, field
-from typing import List
-
-from .violation import Violation
-
-
-@dataclass
-class FileCheckResult:
-    path: str
-
-    # All findings (errors, warnings, infos)
-    violations: List[Violation] = field(default_factory=list)
-
-    # Records of actions taken during auto-reconciliation
-    # Reconciled items are also fundamentally Violations that were resolved.
-    reconciled: List[Violation] = field(default_factory=list)
-
-    @property
-    def is_clean(self) -> bool:
-        return len(self.violations) == 0
-~~~~~
-~~~~~python.new
-from dataclasses import dataclass, field
-from typing import List, Dict, Set
-
-from needle.pointer import L, SemanticPointer
-from .violation import Violation
-
-
-@dataclass
-class FileCheckResult:
-    path: str
-
-    # All findings (errors, warnings, infos)
-    violations: List[Violation] = field(default_factory=list)
-
-    # Records of actions taken during auto-reconciliation
-    # Reconciled items are also fundamentally Violations that were resolved.
-    reconciled: List[Violation] = field(default_factory=list)
-
-    # --- Severity Mapping ---
-    _ERROR_KINDS: Set[SemanticPointer] = field(
-        default_factory=lambda: {
-            L.check.issue.conflict,
-            L.check.state.signature_drift,
-            L.check.state.co_evolution,
-            L.check.issue.extra,
-            L.check.issue.pending,
-        },
-        init=False,
-        repr=False,
-    )
-
-    _WARNING_KINDS: Set[SemanticPointer] = field(
-        default_factory=lambda: {
-            L.check.issue.missing,
-            L.check.issue.redundant,
-            L.check.file.untracked,
-            L.check.file.untracked_with_details,
-        },
-        init=False,
-        repr=False,
-    )
-
-    # --- Computed Properties ---
-    @property
-    def error_violations(self) -> List[Violation]:
-        return [v for v in self.violations if v.kind in self._ERROR_KINDS]
-
-    @property
-    def warning_violations(self) -> List[Violation]:
-        return [v for v in self.violations if v.kind in self._WARNING_KINDS]
-
-    @property
-    def info_violations(self) -> List[Violation]:
-        error_and_warning_kinds = self._ERROR_KINDS | self._WARNING_KINDS
-        return [v for v in self.violations if v.kind not in error_and_warning_kinds]
-
-    @property
-    def error_count(self) -> int:
-        return len(self.error_violations)
-
-    @property
-    def warning_count(self) -> int:
-        return len(self.warning_violations)
-
-    @property
-    def is_clean(self) -> bool:
-        return len(self.violations) == 0
-~~~~~
-
-#### Acts 2: 重构 `CheckResolver` 以适配新的 `FileCheckResult`
-
-`CheckResolver` 是交互式冲突解决的核心。我们必须修改它，使其不再操作旧的字典式 `FileCheckResult`，而是直接修改新的、基于 `Violation` 列表的 `FileCheckResult`。
+我们将重构测试用例，使其完全适配新的 `Violation` 驱动的架构。
 
 ~~~~~act
 write_file
-packages/stitcher-application/src/stitcher/app/runners/check/resolver.py
+packages/stitcher-application/tests/unit/runners/check/test_check_runner.py
 ~~~~~
 ~~~~~python
-import copy
 from pathlib import Path
-from collections import defaultdict
-from typing import List, Dict
+from unittest.mock import create_autospec, MagicMock
 
-from stitcher.common import bus
-from needle.pointer import L, SemanticPointer
-from stitcher.spec import (
-    ModuleDef,
-    ResolutionAction,
-    Fingerprint,
-    LanguageParserProtocol,
-    FingerprintStrategyProtocol,
-)
+from stitcher.app.runners.check.runner import CheckRunner
 from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
-from stitcher.spec.interaction import InteractionHandler, InteractionContext
-from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
-from stitcher.analysis.schema import FileCheckResult, Violation
-
-
-class CheckResolver:
-    def __init__(
-        self,
-        root_path: Path,
-        parser: LanguageParserProtocol,
-        doc_manager: DocumentManagerProtocol,
-        sig_manager: SignatureManagerProtocol,
-        interaction_handler: InteractionHandler | None,
-        fingerprint_strategy: FingerprintStrategyProtocol,
-    ):
-        self.root_path = root_path
-        self.parser = parser
-        self.doc_manager = doc_manager
-        self.sig_manager = sig_manager
-        self.interaction_handler = interaction_handler
-        self.fingerprint_strategy = fingerprint_strategy
-
-    def _compute_fingerprints(self, module: ModuleDef) -> Dict[str, Fingerprint]:
-        # Helper duplicated here for simplicity in applying updates,
-        # ideally this logic belongs to a shared utility or service.
-        fingerprints: Dict[str, Fingerprint] = {}
-        for func in module.functions:
-            fingerprints[func.name] = self.fingerprint_strategy.compute(func)
-        for cls in module.classes:
-            for method in cls.methods:
-                fqn = f"{cls.name}.{method.name}"
-                fingerprints[fqn] = self.fingerprint_strategy.compute(method)
-        return fingerprints
-
-    def auto_reconcile_docs(
-        self, results: List[FileCheckResult], modules: List[ModuleDef]
-    ):
-        for res in results:
-            # Find all "doc_updated" violations and update baselines
-            doc_update_violations = [
-                v for v in res.info_violations if v.kind == L.check.state.doc_updated
-            ]
-            if not doc_update_violations:
-                continue
-
-            module_def = next((m for m in modules if m.file_path == res.path), None)
-            if not module_def:
-                continue
-
-            stored_hashes = self.sig_manager.load_composite_hashes(
-                module_def.file_path
-            )
-            new_hashes = copy.deepcopy(stored_hashes)
-            current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
-                module_def
-            )
-
-            for violation in doc_update_violations:
-                fqn = violation.fqn
-                if fqn in new_hashes:
-                    new_yaml_hash = current_yaml_map.get(fqn)
-                    if new_yaml_hash is not None:
-                        new_hashes[fqn]["baseline_yaml_content_hash"] = new_yaml_hash
-                    elif "baseline_yaml_content_hash" in new_hashes[fqn]:
-                        del new_hashes[fqn]["baseline_yaml_content_hash"]
-
-            if new_hashes != stored_hashes:
-                self.sig_manager.save_composite_hashes(
-                    module_def.file_path, new_hashes
-                )
-
-    def resolve_conflicts(
-        self,
-        results: List[FileCheckResult],
-        conflicts: List[InteractionContext],
-        force_relink: bool = False,
-        reconcile: bool = False,
-    ) -> bool:
-        if not conflicts:
-            return True
-
-        if self.interaction_handler:
-            return self._resolve_interactive(results, conflicts)
-        else:
-            return self._resolve_noop(results, conflicts, force_relink, reconcile)
-
-    def _resolve_interactive(
-        self, results: List[FileCheckResult], conflicts: List[InteractionContext]
-    ) -> bool:
-        assert self.interaction_handler is not None
-
-        chosen_actions = self.interaction_handler.process_interactive_session(conflicts)
-        resolutions_by_file = defaultdict(list)
-        unresolved_contexts: List[InteractionContext] = []
-
-        for i, context in enumerate(conflicts):
-            action = chosen_actions[i]
-            if action in (
-                ResolutionAction.RELINK,
-                ResolutionAction.RECONCILE,
-                ResolutionAction.HYDRATE_OVERWRITE,
-                ResolutionAction.HYDRATE_KEEP_EXISTING,
-                ResolutionAction.PURGE_DOC,
-            ):
-                resolutions_by_file[context.file_path].append((context, action))
-            elif action == ResolutionAction.SKIP:
-                unresolved_contexts.append(context)
-            elif action == ResolutionAction.ABORT:
-                bus.warning(L.strip.run.aborted)
-                return False
-
-        self._apply_resolutions(dict(resolutions_by_file))
-        self._update_results(results, dict(resolutions_by_file))
-
-        # Unresolved conflicts are kept in the violations list, so no action needed.
-        return True
-
-    def _resolve_noop(
-        self,
-        results: List[FileCheckResult],
-        conflicts: List[InteractionContext],
-        force_relink: bool,
-        reconcile: bool,
-    ) -> bool:
-        handler = NoOpInteractionHandler(force_relink, reconcile)
-        chosen_actions = handler.process_interactive_session(conflicts)
-        resolutions_by_file = defaultdict(list)
-
-        for i, context in enumerate(conflicts):
-            action = chosen_actions[i]
-            if action != ResolutionAction.SKIP:
-                resolutions_by_file[context.file_path].append((context, action))
-
-        self._apply_resolutions(dict(resolutions_by_file))
-        self._update_results(results, dict(resolutions_by_file))
-        return True
-
-    def _update_results(
-        self,
-        results: List[FileCheckResult],
-        resolutions: Dict[str, List[tuple[InteractionContext, ResolutionAction]]],
-    ):
-        for res in results:
-            if res.path not in resolutions:
-                continue
-
-            resolved_fqns_by_kind: Dict[SemanticPointer, set] = defaultdict(set)
-            for context, _ in resolutions[res.path]:
-                resolved_fqns_by_kind[context.violation_type].add(context.fqn)
-
-            # Filter out violations that have been resolved and move them to reconciled
-            remaining_violations = []
-            for violation in res.violations:
-                resolved_fqns = resolved_fqns_by_kind.get(violation.kind, set())
-                if violation.fqn in resolved_fqns:
-                    res.reconciled.append(violation)
-                else:
-                    remaining_violations.append(violation)
-            res.violations = remaining_violations
-
-    def _apply_resolutions(
-        self, resolutions: dict[str, list[tuple[InteractionContext, ResolutionAction]]]
-    ):
-        sig_updates_by_file = defaultdict(list)
-        purges_by_file = defaultdict(list)
-
-        for file_path, context_actions in resolutions.items():
-            for context, action in context_actions:
-                if action in [ResolutionAction.RELINK, ResolutionAction.RECONCILE]:
-                    sig_updates_by_file[file_path].append((context.fqn, action))
-                elif action == ResolutionAction.PURGE_DOC:
-                    purges_by_file[file_path].append(context.fqn)
-
-        # Apply signature updates
-        for file_path, fqn_actions in sig_updates_by_file.items():
-            stored_hashes = self.sig_manager.load_composite_hashes(file_path)
-            new_hashes = copy.deepcopy(stored_hashes)
-
-            full_module_def = self.parser.parse(
-                (self.root_path / file_path).read_text("utf-8"), file_path
-            )
-            computed_fingerprints = self._compute_fingerprints(full_module_def)
-            current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
-                full_module_def
-            )
-
-            for fqn, action in fqn_actions:
-                if fqn in new_hashes:
-                    fp = new_hashes[fqn]
-                    current_fp = computed_fingerprints.get(fqn, Fingerprint())
-                    current_code_hash = current_fp.get("current_code_structure_hash")
-
-                    if action == ResolutionAction.RELINK:
-                        if current_code_hash:
-                            fp["baseline_code_structure_hash"] = str(current_code_hash)
-                    elif action == ResolutionAction.RECONCILE:
-                        if current_code_hash:
-                            fp["baseline_code_structure_hash"] = str(current_code_hash)
-                        if fqn in current_yaml_map:
-                            fp["baseline_yaml_content_hash"] = str(
-                                current_yaml_map[fqn]
-                            )
-
-            if new_hashes != stored_hashes:
-                self.sig_manager.save_composite_hashes(file_path, new_hashes)
-
-        # Apply doc purges
-        for file_path, fqns_to_purge in purges_by_file.items():
-            module_def = ModuleDef(file_path=file_path)
-            docs = self.doc_manager.load_docs_for_module(module_def)
-            original_len = len(docs)
-
-            for fqn in fqns_to_purge:
-                if fqn in docs:
-                    del docs[fqn]
-
-            if len(docs) < original_len:
-                doc_path = (self.root_path / file_path).with_suffix(".stitcher.yaml")
-                if not docs:
-                    if doc_path.exists():
-                        doc_path.unlink()
-                else:
-                    final_data = {
-                        k: self.doc_manager.serialize_ir(v) for k, v in docs.items()
-                    }
-                    content = self.doc_manager.dump_data(final_data)
-                    doc_path.write_text(content, encoding="utf-8")
-
-    def reformat_all(self, modules: List[ModuleDef]):
-        bus.info(L.check.run.reformatting)
-        for module in modules:
-            self.doc_manager.reformat_docs_for_module(module)
-            self.sig_manager.reformat_hashes_for_file(module.file_path)
-~~~~~
-
-#### Acts 3: 重写 `CheckReporter`
-
-现在，我们将 `CheckReporter` 的实现完全切换到新的数据模型上，使其逻辑更清晰、更健壮。
-
-~~~~~act
-write_file
-packages/stitcher-application/src/stitcher/app/runners/check/reporter.py
-~~~~~
-~~~~~python
-from typing import List
-from collections import defaultdict
-
-from stitcher.common import bus
-from needle.pointer import L
-from stitcher.analysis.schema import FileCheckResult, Violation
-
-
-class CheckReporter:
-    def report(self, results: List[FileCheckResult]) -> bool:
-        global_failed_files = 0
-        global_warnings_files = 0
-
-        for res in results:
-            # 1. Info / Success Messages (Auto-reconciled doc updates)
-            for info_violation in res.info_violations:
-                if info_violation.kind == L.check.state.doc_updated:
-                    bus.info(L.check.state.doc_updated, key=info_violation.fqn)
-
-            if res.is_clean and not res.reconciled:
-                continue
-
-            # 2. Reconciled Actions (User-driven or flag-driven resolutions)
-            if res.reconciled:
-                # Group reconciled violations by kind for clear reporting
-                reconciled_by_kind = defaultdict(list)
-                for v in res.reconciled:
-                    reconciled_by_kind[v.kind].append(v.fqn)
-
-                # Map kind to success message
-                reconcile_message_map = {
-                    L.check.state.signature_drift: L.check.state.relinked,
-                    L.check.state.co_evolution: L.check.state.reconciled,
-                    L.check.issue.conflict: L.check.state.reconciled,
-                    L.check.issue.extra: L.check.state.purged,
-                }
-                for kind, fqns in reconciled_by_kind.items():
-                    message_id = reconcile_message_map.get(kind)
-                    if message_id:
-                        for fqn in sorted(fqns):
-                            bus.success(message_id, key=fqn, path=res.path)
-
-            # 3. File Level Status
-            if res.error_count > 0:
-                global_failed_files += 1
-                bus.error(L.check.file.fail, path=res.path, count=res.error_count)
-            elif res.warning_count > 0:
-                global_warnings_files += 1
-                bus.warning(L.check.file.warn, path=res.path, count=res.warning_count)
-
-            # 4. Detailed Issues
-            self._report_issues(res)
-
-        # 5. Global Summary
-        if global_failed_files > 0:
-            bus.error(L.check.run.fail, count=global_failed_files)
-            return False
-        if global_warnings_files > 0:
-            bus.success(L.check.run.success_with_warnings, count=global_warnings_files)
-        else:
-            bus.success(L.check.run.success)
-        return True
-
-    def _report_issues(self, res: FileCheckResult) -> None:
-        # Group all remaining violations by their kind
-        violations_by_kind = defaultdict(list)
-        for v in res.violations:
-            violations_by_kind[v.kind].append(v)
-
-        # Define the order and message for reporting
-        REPORTING_ORDER = [
-            # Errors
-            L.check.issue.extra,
-            L.check.state.signature_drift,
-            L.check.state.co_evolution,
-            L.check.issue.conflict,
-            L.check.issue.pending,
-            # Warnings
-            L.check.issue.missing,
-            L.check.issue.redundant,
-            L.check.file.untracked_with_details,
-            L.check.file.untracked,
-        ]
-
-        for kind in REPORTING_ORDER:
-            if kind not in violations_by_kind:
-                continue
-
-            violations = violations_by_kind[kind]
-            # Special handling for untracked files
-            if kind == L.check.file.untracked_with_details:
-                violation = violations[0]  # There should only be one
-                keys = violation.context.get("keys", [])
-                bus.warning(kind, path=res.path, count=len(keys))
-                for key in sorted(keys):
-                    bus.warning(L.check.issue.untracked_missing_key, key=key)
-            elif kind == L.check.file.untracked:
-                bus.warning(kind, path=res.path)
-            else:
-                # Standard symbol-based violations
-                level = "error" if kind in res._ERROR_KINDS else "warning"
-                bus_func = getattr(bus, level)
-                for v in sorted(violations, key=lambda v: v.fqn):
-                    bus_func(v.kind, key=v.fqn)
-~~~~~
-
-#### Acts 4: 重构 `CheckRunner` 以移除兼容层
-
-最后，我们重构 `CheckRunner`，拆除 `_translate_results` 方法，让 `AnalysisFileCheckResult` 对象在整个流程中畅通无阻。
-
-~~~~~act
-write_file
-packages/stitcher-application/src/stitcher/app/runners/check/runner.py
-~~~~~
-~~~~~python
-from typing import List, Tuple
-from pathlib import Path
-
-from needle.pointer import L
 from stitcher.spec import (
-    ModuleDef,
     FingerprintStrategyProtocol,
     IndexStoreProtocol,
+    ModuleDef,
     DifferProtocol,
 )
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
-from stitcher.spec.interaction import InteractionContext
-from stitcher.analysis.schema import FileCheckResult as AnalysisFileCheckResult
-
-from .protocols import (
+from stitcher.app.runners.check.protocols import (
     CheckResolverProtocol,
     CheckReporterProtocol,
 )
-from .subject import IndexCheckSubjectAdapter, ASTCheckSubjectAdapter
-from stitcher.analysis.engines.consistency.engine import create_consistency_engine
+from stitcher.spec.interaction import InteractionContext
+from stitcher.analysis.schema import FileCheckResult as AnalysisResult, Violation
+from needle.pointer import L
 
 
-class CheckRunner:
-    def __init__(
-        self,
-        doc_manager: DocumentManagerProtocol,
-        sig_manager: SignatureManagerProtocol,
-        fingerprint_strategy: FingerprintStrategyProtocol,
-        index_store: IndexStoreProtocol,
-        differ: DifferProtocol,
-        resolver: CheckResolverProtocol,
-        reporter: CheckReporterProtocol,
-        root_path: Path,
-    ):
-        self.doc_manager = doc_manager
-        self.sig_manager = sig_manager
-        self.fingerprint_strategy = fingerprint_strategy
-        self.index_store = index_store
-        self.root_path = root_path
+def test_check_runner_orchestrates_analysis_and_resolution():
+    """
+    验证 CheckRunner 正确地按顺序调用其依赖项：
+    1. Engine (通过 analyze_batch)
+    2. Resolver (auto_reconcile, 然后 resolve_conflicts)
+    3. Reporter
+    """
+    # 1. Arrange: 为所有依赖项创建 mock
+    mock_doc_manager = create_autospec(DocumentManagerProtocol, instance=True)
+    mock_sig_manager = create_autospec(SignatureManagerProtocol, instance=True)
+    mock_fingerprint_strategy = create_autospec(
+        FingerprintStrategyProtocol, instance=True
+    )
+    mock_index_store = create_autospec(IndexStoreProtocol, instance=True)
+    mock_differ = create_autospec(DifferProtocol, instance=True)
+    mock_resolver = create_autospec(CheckResolverProtocol, instance=True)
+    mock_reporter = create_autospec(CheckReporterProtocol, instance=True)
 
-        self.engine = create_consistency_engine(differ=differ)
-        self.resolver = resolver
-        self.reporter = reporter
+    # 配置 mock 模块
+    mock_modules = [ModuleDef(file_path="src/main.py")]
 
-    def _extract_conflicts(
-        self, analysis_result: AnalysisFileCheckResult
-    ) -> List[InteractionContext]:
-        conflicts: List[InteractionContext] = []
+    # Mock Engine 行为
+    mock_engine = MagicMock()
+    mock_analysis_result = AnalysisResult(
+        path="src/main.py",
+        violations=[
+            Violation(kind=L.check.state.signature_drift, fqn="func", context={})
+        ],
+    )
+    mock_engine.analyze.return_value = mock_analysis_result
 
-        INTERACTIVE_VIOLATIONS = {
-            L.check.state.signature_drift,
-            L.check.state.co_evolution,
-            L.check.issue.extra,
-            L.check.issue.conflict,
-        }
+    mock_resolver.resolve_conflicts.return_value = True
+    mock_reporter.report.return_value = True
 
-        for violation in analysis_result.violations:
-            if violation.kind in INTERACTIVE_VIOLATIONS:
-                conflicts.append(
-                    InteractionContext(
-                        file_path=analysis_result.path,
-                        fqn=violation.fqn,
-                        violation_type=violation.kind,
-                        signature_diff=violation.context.get("signature_diff"),
-                        doc_diff=violation.context.get("doc_diff"),
-                    )
-                )
-        return conflicts
+    # 2. Act: 实例化 runner 并注入 mock engine
+    runner = CheckRunner(
+        doc_manager=mock_doc_manager,
+        sig_manager=mock_sig_manager,
+        fingerprint_strategy=mock_fingerprint_strategy,
+        index_store=mock_index_store,
+        differ=mock_differ,
+        resolver=mock_resolver,
+        reporter=mock_reporter,
+        root_path=Path("/tmp"),
+    )
+    runner.engine = mock_engine
 
-    def analyze_paths(
-        self, file_paths: List[str]
-    ) -> Tuple[List[AnalysisFileCheckResult], List[InteractionContext]]:
-        all_results: List[AnalysisFileCheckResult] = []
-        all_conflicts: List[InteractionContext] = []
+    # 执行分析
+    results, conflicts = runner.analyze_batch(mock_modules)
 
-        for file_path in file_paths:
-            subject = IndexCheckSubjectAdapter(
-                file_path,
-                self.index_store,
-                self.doc_manager,
-                self.sig_manager,
-                self.root_path,
-            )
-            analysis_result = self.engine.analyze(subject)
-            conflicts = self._extract_conflicts(analysis_result)
-            all_results.append(analysis_result)
-            all_conflicts.extend(conflicts)
+    # 3. Assert: 验证结果
+    assert len(results) == 1
+    assert results[0].path == "src/main.py"
+    
+    # 验证违反项是否正确识别
+    assert len(results[0].violations) == 1
+    assert results[0].violations[0].kind == L.check.state.signature_drift
+    assert results[0].error_count == 1 # signature_drift 默认是 error
+    
+    # 验证交互冲突是否正确提取
+    assert len(conflicts) == 1
+    assert conflicts[0].violation_type == L.check.state.signature_drift
 
-        return all_results, all_conflicts
+    # 继续执行工作流
+    runner.auto_reconcile_docs(results, mock_modules)
+    resolution_success = runner.resolve_conflicts(results, conflicts)
+    report_success = runner.report(results)
 
-    def analyze_batch(
-        self, modules: List[ModuleDef]
-    ) -> Tuple[List[AnalysisFileCheckResult], List[InteractionContext]]:
-        all_results: List[AnalysisFileCheckResult] = []
-        all_conflicts: List[InteractionContext] = []
+    # 验证与 mock 的交互
+    mock_engine.analyze.assert_called_once()
+    mock_resolver.auto_reconcile_docs.assert_called_once_with(results, mock_modules)
+    mock_resolver.resolve_conflicts.assert_called_once_with(
+        results, conflicts, force_relink=False, reconcile=False
+    )
+    mock_reporter.report.assert_called_once_with(results)
 
-        for module in modules:
-            subject = ASTCheckSubjectAdapter(
-                module,
-                self.doc_manager,
-                self.sig_manager,
-                self.fingerprint_strategy,
-                self.root_path,
-            )
-            analysis_result = self.engine.analyze(subject)
-            conflicts = self._extract_conflicts(analysis_result)
-            all_results.append(analysis_result)
-            all_conflicts.extend(conflicts)
+    assert resolution_success is True
+    assert report_success is True
 
-        return all_results, all_conflicts
 
-    def auto_reconcile_docs(
-        self, results: List[AnalysisFileCheckResult], modules: List[ModuleDef]
-    ):
-        self.resolver.auto_reconcile_docs(results, modules)
-
-    def resolve_conflicts(
-        self,
-        results: List[AnalysisFileCheckResult],
-        conflicts: List[InteractionContext],
-        force_relink: bool = False,
-        reconcile: bool = False,
-    ) -> bool:
-        return self.resolver.resolve_conflicts(
-            results, conflicts, force_relink, reconcile
+def test_check_runner_passes_relink_and_reconcile_flags_to_resolver():
+    """
+    确保来自 Runner 公共 API 的布尔标志被正确传递给解析器组件。
+    """
+    # Arrange
+    mock_resolver = create_autospec(CheckResolverProtocol)
+    runner = CheckRunner(
+        doc_manager=create_autospec(DocumentManagerProtocol),
+        sig_manager=create_autospec(SignatureManagerProtocol),
+        fingerprint_strategy=create_autospec(FingerprintStrategyProtocol),
+        index_store=create_autospec(IndexStoreProtocol),
+        differ=create_autospec(DifferProtocol),
+        resolver=mock_resolver,
+        reporter=create_autospec(CheckReporterProtocol),
+        root_path=Path("/tmp"),
+    )
+    # 使用新的 AnalysisResult
+    mock_results = [AnalysisResult(path="src/main.py")]
+    mock_conflicts = [
+        InteractionContext(
+            file_path="src/main.py",
+            fqn="func",
+            violation_type=L.check.state.signature_drift,
         )
+    ]
 
-    def reformat_all(self, modules: List[ModuleDef]):
-        self.resolver.reformat_all(modules)
+    # Act
+    runner.resolve_conflicts(
+        mock_results, mock_conflicts, force_relink=True, reconcile=True
+    )
 
-    def report(self, results: List[AnalysisFileCheckResult]) -> bool:
-        return self.reporter.report(results)
+    # Assert
+    mock_resolver.resolve_conflicts.assert_called_once_with(
+        mock_results, mock_conflicts, force_relink=True, reconcile=True
+    )
 ~~~~~
 
 ### 下一步建议
 
-我们已经成功地将 `check` 命令的核心数据流现代化。然而，架构中仍然存在一些遗留的定义：
+测试用例更新后，你应该再次运行测试以确认修复。如果通过，接下来的工作是：
 
-1.  **`stitcher.app.types.FileCheckResult`**: 这个旧的、基于字典的 `FileCheckResult` 依然存在，尽管它现在只被 `CheckRunner` 的测试用例（可能）和一些未触及的旧逻辑间接引用。
-2.  **`stitcher.app.runners.check.protocols.py`**: 其中定义的 `SymbolState` 和 `CheckSubject` 协议现在完全是 `stitcher.analysis` 中对应协议的“影子副本”。
-
-我建议下一步将这些遗留定义彻底清除，让 `stitcher-application` 完全依赖 `stitcher-analysis` 提供的 Schema 和 Protocol，完成架构的最终统一。
+1.  **清理遗留包引用**: 检查 `packages/stitcher-application/src/stitcher/app/types.py`，如果 `FileCheckResult` 已经不再被任何生产代码使用，应该将其删除，以彻底清除架构中旧时代的痕迹。
+2.  **协议同步**: 移除 `packages/stitcher-application/src/stitcher/app/runners/check/protocols.py` 中重复的 `CheckSubject` 协议定义，改为引用 `stitcher.analysis.protocols.AnalysisSubject`。
