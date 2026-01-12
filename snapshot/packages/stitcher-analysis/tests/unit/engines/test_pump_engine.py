@@ -28,7 +28,7 @@ def engine(mock_differ: DifferProtocol) -> PumpEngine:
 
 
 def test_engine_no_conflicts_when_summaries_match(
-    engine: PumpEngine, mock_subject: AnalysisSubject
+    engine: PumpEngine, mock_subject: Any
 ):
     """Verify engine returns no conflicts if source and YAML docs match."""
     # Arrange: Symbol exists in both, summaries are identical
@@ -56,7 +56,7 @@ def test_engine_no_conflicts_when_summaries_match(
 
 
 def test_engine_detects_conflict_when_summaries_differ(
-    engine: PumpEngine, mock_subject: AnalysisSubject, mock_differ: DifferProtocol
+    engine: PumpEngine, mock_subject: Any, mock_differ: Any
 ):
     """Verify engine returns InteractionContext when summaries differ."""
     # Arrange: Symbol exists in both, summaries are different

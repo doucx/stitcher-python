@@ -89,7 +89,7 @@ def test_executor_overwrite_and_strip(
     decisions = {"func_a": ResolutionAction.HYDRATE_OVERWRITE}
 
     # Mock transformer strip call
-    executor.transformer.strip.return_value = "stripped content"
+    executor.transformer.strip.return_value = "stripped content"  # type: ignore[reportAttributeAccessIssue]
 
     # We need to mock read_text on the real Path object that will be constructed
     source_path = executor.root_path / "src/main.py"
@@ -107,5 +107,5 @@ def test_executor_overwrite_and_strip(
     # Assert signature is written
     mock_tm.add_write.assert_any_call(".stitcher/signatures/src/main.json", ANY)
     # Assert source file is stripped and written back
-    executor.transformer.strip.assert_called_once()
+    executor.transformer.strip.assert_called_once()  # type: ignore[reportAttributeAccessIssue]
     mock_tm.add_write.assert_any_call("src/main.py", "stripped content")
