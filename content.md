@@ -1,113 +1,67 @@
-分析显示，`pyright` 报错的主要原因是 `stitcher-spec` 的 `__init__.py` 尚未导出新定义的协议，导致 `stitcher-application` 无法正确识别这些符号。此外，`StitcherApp.run_index_build` 的返回类型与实现不一致，需要修正。
+好的，既然测试已通过且类型检查错误已修复，我们现在将这些变更作为“阶段三”的第一个逻辑单元进行提交。
 
-## [WIP] fix: 导出核心协议并修正核心应用返回类型
-
-### 错误分析
-1.  **导出缺失**: 在 `packages/stitcher-spec/src/stitcher/spec/protocols.py` 中定义的协议没有在 `stitcher/spec/__init__.py` 中通过 `__all__` 导出，导致下游包通过 `from stitcher.spec import ...` 引用时失败。
-2.  **类型不匹配**: `StitcherApp.run_index_build` 在 `core.py` 中被声明为返回 `bool`，但它直接返回了 `index_runner.run_build` 的结果，而后者返回的是包含统计信息的 `Dict[str, Any]`。
+## [COMMIT] refactor(app): 核心服务协议化并更新各 Runner 依赖
 
 ### 用户需求
-修正 `pyright` 类型检查错误，确保新定义的协议可以被外部包引用，并保持 `StitcherApp` 方法签名的正确性。
-
-### 评论
-这是协议化重构后的必要收尾工作。在大型项目中，`__init__.py` 作为包的“大门”，必须严格管理其导出符号，以维持清晰的 API 边界。
+完成核心服务（DocumentManager, SignatureManager, Differ, DocstringMerger）的抽象化，使 `stitcher-application` 中的业务逻辑不再依赖于具体实现。
 
 ### 目标
-1.  更新 `packages/stitcher-spec/src/stitcher/spec/__init__.py`，导出 `DocumentManagerProtocol` 等四个新协议。
-2.  修正 `packages/stitcher-application/src/stitcher/app/core.py` 中的 `run_index_build` 方法，使其根据 `stats["success"]` 返回布尔值。
+1.  提交 `stitcher-spec` 中新增的协议定义及导出设置。
+2.  提交 `stitcher-application` 中各 Runner（Check, Pump, Init, Transform, Coverage）对协议的引用。
+3.  提交 `StitcherApp` 中关于索引构建返回类型的修正。
 
 ### 基本原理
--   **符号可见性**: 在 Python 中，通过 `__init__.py` 显式导出符号是定义公共 API 的最佳实践。
--   **类型一致性**: 确保方法的实际返回值符合其 `-> bool` 的类型契约。
+通过在 `stitcher-spec` 中定义协议，我们实现了代码库的“契约先行”。这不仅为后续的解耦打下了基础，还极大地增强了各模块的独立测试能力，使我们能够使用标准 Mock 对象代替复杂的领域服务实例。
 
 ### 标签
-#intent/fix #flow/ready #priority/high
+#intent/refine #flow/done #priority/medium
 #comp/interfaces #comp/runtime
-#concept/architecture
+#concept/architecture #scope/core
 #ai/instruct
-#task/domain/architecture
-#task/object/type-safety
-#task/action/fix-exports
-#task/state/continue
+#task/domain/architecture #task/object/service-abstraction #task/action/define-protocols
+#task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 在 stitcher-spec 中导出服务协议
+#### Acts 1: 提交代码变更
+
+我们将所有涉及协议定义、导出以及 Runner 更新的文件添加到暂存区并提交。
 
 ~~~~~act
-patch_file
+git_add
+packages/stitcher-spec/src/stitcher/spec/protocols.py
 packages/stitcher-spec/src/stitcher/spec/__init__.py
-~~~~~
-~~~~~python.old
-    FingerprintStrategyProtocol,
-    StubGeneratorProtocol,
-    DocstringParserProtocol,
-    DocstringRendererProtocol,
-    DocstringSerializerProtocol,
-)
-
-__all__ = [
-    "DocstringIR",
-    "DocstringSection",
-    "DocstringItem",
-    "SectionKind",
-    "LanguageParserProtocol",
-    "LanguageTransformerProtocol",
-    "FingerprintStrategyProtocol",
-    "StubGeneratorProtocol",
-    "DocstringParserProtocol",
-    "DocstringRendererProtocol",
-    "DocstringSerializerProtocol",
-    "Fingerprint",
-~~~~~
-~~~~~python.new
-    FingerprintStrategyProtocol,
-    StubGeneratorProtocol,
-    DocstringParserProtocol,
-    DocstringRendererProtocol,
-    DocstringSerializerProtocol,
-    DocumentManagerProtocol,
-    SignatureManagerProtocol,
-    DifferProtocol,
-    DocstringMergerProtocol,
-)
-
-__all__ = [
-    "DocstringIR",
-    "DocstringSection",
-    "DocstringItem",
-    "SectionKind",
-    "LanguageParserProtocol",
-    "LanguageTransformerProtocol",
-    "FingerprintStrategyProtocol",
-    "StubGeneratorProtocol",
-    "DocstringParserProtocol",
-    "DocstringRendererProtocol",
-    "DocstringSerializerProtocol",
-    "DocumentManagerProtocol",
-    "SignatureManagerProtocol",
-    "DifferProtocol",
-    "DocstringMergerProtocol",
-    "Fingerprint",
-~~~~~
-
-#### Acts 2: 修正 core.py 中的返回类型错误
-
-~~~~~act
-patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/runner.py
+packages/stitcher-application/src/stitcher/app/runners/check/resolver.py
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
+packages/stitcher-application/src/stitcher/app/runners/pump.py
+packages/stitcher-application/src/stitcher/app/runners/init.py
+packages/stitcher-application/src/stitcher/app/runners/transform.py
+packages/stitcher-application/src/stitcher/app/runners/coverage.py
 packages/stitcher-application/src/stitcher/app/core.py
 ~~~~~
-~~~~~python.old
-    def run_index_build(self) -> bool:
-        return self.index_runner.run_build(self.workspace)
+
+~~~~~act
+git_commit
 ~~~~~
-~~~~~python.new
-    def run_index_build(self) -> bool:
-        stats = self.index_runner.run_build(self.workspace)
-        return stats.get("success", False)
+~~~~~text
+refactor(app): abstract core services into protocols and update runners
+
+Completed the abstraction of core domain services into formal protocols to achieve dependency inversion and better decoupling within the monorepo.
+
+Changes:
+- Defined `DocumentManagerProtocol`, `SignatureManagerProtocol`, `DifferProtocol`, and `DocstringMergerProtocol` in `stitcher-spec`.
+- Exported new protocols from `stitcher.spec` entry point for downstream consumption.
+- Updated all application Runners (`CheckRunner`, `PumpRunner`, `InitRunner`, `TransformRunner`, `CoverageRunner`) to depend on these protocols rather than concrete service implementations.
+- Refactored sub-components of the Check runner (Resolver, Subject adapters) to adhere to the new protocol-based signatures.
+- Fixed a type mismatch in `StitcherApp.run_index_build` where a Dict was being returned instead of the declared bool.
+
+This refactor enables easier mocking of core services in unit tests and prepares the architecture for potential alternative implementations of document and signature management.
 ~~~~~
 
 ### 下一步建议
-导出完成后，`pyright` 的错误应该会消失。建议重新运行类型检查以验证结果。如果通过，我们将继续对 `ScannerService` 进行协议化，或者开始对子组件（如 `CheckAnalyzer`）进行深度清理。
+我们已经完成了核心服务协议的第一阶段。下一步建议：
+1.  **清理 `CheckAnalyzer`**: 虽然 `CheckRunner` 已经解耦，但内部的 `CheckAnalyzer` 可能仍在 `__init__` 中保留具体类型的注解。
+2.  **Scanner 抽象化**: `ScannerService` 目前还在 `app.services` 中且涉及 `Config` 对象，可以考虑将其核心逻辑（扫描、插件处理）也进行协议化，以彻底完成 `StitcherApp` 的依赖倒置。
