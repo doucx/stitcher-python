@@ -1,78 +1,47 @@
-好的，我们继续协议净化的工作，现在专注于 `IndexStoreProtocol`。
+根据分析，将 `Linker` 的职责下沉到 `IndexStore` 是最符合依赖倒置原则的方案。
 
-当前 `IndexStoreProtocol` 只定义了读操作，这使得依赖它的 Runner (如 `CheckRunner`) 得以解耦。然而，负责写操作的核心组件 `FileIndexer` 仍然直接依赖于具体的 `IndexStore` 类，这使得索引过程与 SQLite 实现紧密耦合。
+**分析结论**:
+1.  **领域归属**: “链接（Linking）”本质上是索引数据的一致性维护操作。具体的存储后端（如 SQLite）最知道如何高效地执行这种批量更新（如使用 SQL JOIN 更新）。因此，这是 `IndexStore` 的一种固有能力，而非外部逻辑。
+2.  **解耦收益**: 将链接逻辑隐藏在 `IndexStoreProtocol` 之后，`FileIndexer` 就不再需要知道“链接器”的存在，也不需要持有数据库连接。这使得我们可以在单元测试中轻松 Mock 掉整个存储层，而无需模拟复杂的 SQL 链接过程。
 
-我们的目标是扩展 `IndexStoreProtocol`，使其包含索引写入和同步所需的全部接口，然后将 `FileIndexer` 的依赖从具体类切换到此协议，从而完成整个索引子系统的依赖倒置。
+**实施方案**:
+1.  **协议层**: 在 `IndexStoreProtocol` 中增加 `resolve_missing_links()` 方法。
+2.  **实现层**: 在 `IndexStore` 中实现该方法，由它在内部调用 `Linker`（或直接执行 SQL）。
+3.  **调用层**: 修改 `FileIndexer`，移除 `Linker` 属性，改为调用 `self.store.resolve_missing_links()`。
 
-## [WIP] refactor: 扩展 IndexStoreProtocol 以包含写和同步操作
+## [WIP] refactor: 将 Linker 职责下沉至 IndexStore 以实现完全解耦
 
 ### 用户需求
-用户要求继续净化 `IndexStore` 相关的协议。目前的 `IndexStoreProtocol` 仅覆盖了数据读取的场景，而索引的写入/更新逻辑 (`FileIndexer`) 仍然紧密耦合于具体的 `IndexStore` SQLite 实现。需要将 `FileIndexer` 的依赖也切换到协议上，以实现完全的抽象。
+目前 `FileIndexer` 直接实例化并使用 `Linker`，这导致它必须访问底层的 `DatabaseManager` (通过 `getattr(store, "db")` 这种临时 hack)。用户希望消除这种对实现细节的依赖，将链接逻辑抽象为 `IndexStore` 的一部分。
 
 ### 评论
-这是完成“阶段三：核心服务抽象化”的关键一步。将 `FileIndexer` 与具体的数据库实现解耦，将带来巨大的收益：首先，它使得测试复杂的索引逻辑成为可能，我们可以用一个内存中的 Mock Store 来代替真实的数据库进行单元测试，极大地提高了测试速度和隔离性；其次，它为未来替换索引后端（例如，使用其他数据库或文件格式）提供了架构上的可能性。
+这是一个非常清晰的重构。通过这次修改，`FileIndexer` 将变成一个纯粹的编排器：它读取文件 -> 解析 -> 传给 Store -> 要求 Store 整理数据。它不再关心数据是如何存储或如何建立关联的。这使得 `FileIndexer` 变得极易测试且完全符合 DIP 原则。
 
 ### 目标
-1.  **扩展 `IndexStoreProtocol`**: 在 `stitcher-spec/src/stitcher/spec/storage.py` 中，为 `IndexStoreProtocol` 添加索引器所需的写、同步和元数据管理方法。
-2.  **重构 `FileIndexer`**: 修改 `stitcher-index/src/stitcher/index/indexer.py`，使其 `__init__` 方法的 `store` 参数类型注解从具体的 `IndexStore` 更改为 `IndexStoreProtocol`。
-3.  **确保兼容性**: 验证 `StitcherApp` (`core.py`) 中 `FileIndexer` 的实例化代码依然有效，因为具体的 `IndexStore` 实例满足扩展后的协议。
+1.  **更新 Protocol**: 在 `IndexStoreProtocol` 中添加 `resolve_missing_links` 接口。
+2.  **增强 Store**: 在 `IndexStore` 中实现该接口，封装 `Linker` 的调用。
+3.  **净化 Indexer**: 从 `FileIndexer` 中彻底移除 `Linker` 和 `DatabaseManager` 的痕迹。
 
 ### 基本原理
-此重构严格遵循依赖倒置原则（DIP）。高层策略（`FileIndexer` 的索引逻辑）不应依赖于底层细节（`IndexStore` 的 SQLite 实现），两者都应依赖于抽象 (`IndexStoreProtocol`)。通过扩展协议来满足 `FileIndexer` 的契约，我们完成了这一倒置，使得索引的核心逻辑与数据库实现完全分离。
+**单一职责原则 (SRP)** 和 **高内聚**: 数据的一致性维护（链接）应与数据存储紧密结合。
+**依赖倒置原则 (DIP)**: `FileIndexer` 只应依赖于抽象的存储能力，而不是具体的 SQL 维护工具。
 
 ### 标签
-#intent/refine #flow/ready #priority/high #comp/interfaces #comp/index #scope/core #ai/instruct #task/domain/architecture #task/object/protocols #task/action/purify #task/state/continue
+#intent/refine #flow/ready #priority/high #comp/interfaces #comp/index #scope/core #ai/instruct #task/domain/architecture #task/object/linker #task/action/absorb #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 扩展 IndexStoreProtocol
+#### Acts 1: 更新 IndexStoreProtocol
 
-我们将向 `stitcher-spec` 中的 `IndexStoreProtocol` 添加 `FileIndexer` 所需的方法，使其成为一个完整的存储抽象。
+在协议中增加链接能力。
 
 ~~~~~act
 patch_file
 packages/stitcher-spec/src/stitcher/spec/storage.py
 ~~~~~
 ~~~~~python.old
-from typing import Protocol, List, Optional, Tuple
-
-from .index import SymbolRecord, ReferenceRecord
-
-
-class IndexStoreProtocol(Protocol):
-    def get_symbols_by_file_path(self, file_path: str) -> List[SymbolRecord]: ...
-
-    def find_symbol_by_fqn(
-        self, target_fqn: str
-    ) -> Optional[Tuple[SymbolRecord, str]]: ...
-
-    def find_references(self, target_fqn: str) -> List[Tuple[ReferenceRecord, str]]: ...
-~~~~~
-~~~~~python.new
-from typing import Protocol, List, Optional, Tuple
-
-from .index import FileRecord, SymbolRecord, ReferenceRecord
-
-
-class IndexStoreProtocol(Protocol):
-    # --- Read Operations ---
-    def get_symbols_by_file_path(self, file_path: str) -> List[SymbolRecord]: ...
-
-    def find_symbol_by_fqn(
-        self, target_fqn: str
-    ) -> Optional[Tuple[SymbolRecord, str]]: ...
-
-    def find_references(self, target_fqn: str) -> List[Tuple[ReferenceRecord, str]]: ...
-
-    def get_all_files_metadata(self) -> List[FileRecord]: ...
-
-    # --- Write/Sync Operations ---
-    def sync_file(
-        self, path: str, content_hash: str, mtime: float, size: int
-    ) -> Tuple[int, bool]: ...
-
     def update_analysis(
         self,
         file_id: int,
@@ -82,41 +51,68 @@ class IndexStoreProtocol(Protocol):
 
     def delete_file(self, file_id: int) -> None: ...
 ~~~~~
+~~~~~python.new
+    def update_analysis(
+        self,
+        file_id: int,
+        symbols: List[SymbolRecord],
+        references: List[ReferenceRecord],
+    ) -> None: ...
 
-#### Acts 2: 更新 FileIndexer 的依赖
+    def delete_file(self, file_id: int) -> None: ...
 
-现在，我们将 `FileIndexer` 对具体 `IndexStore` 类的依赖，切换为对 `IndexStoreProtocol` 协议的依赖。
+    def resolve_missing_links(self) -> None: ...
+~~~~~
+
+#### Acts 2: 在 IndexStore 中实现链接逻辑
+
+我们将 `Linker` 作为 `IndexStore` 的内部实现细节使用。
+
+~~~~~act
+patch_file
+packages/stitcher-index/src/stitcher/index/store.py
+~~~~~
+~~~~~python.old
+from typing import Optional, List, Tuple
+from .db import DatabaseManager
+from stitcher.spec.index import FileRecord, SymbolRecord, ReferenceRecord
+
+
+class IndexStore:
+    def __init__(self, db_manager: DatabaseManager):
+        self.db = db_manager
+
+    def sync_file(
+        self, path: str, content_hash: str, mtime: float, size: int
+~~~~~
+~~~~~python.new
+from typing import Optional, List, Tuple
+from .db import DatabaseManager
+from .linker import Linker
+from stitcher.spec.index import FileRecord, SymbolRecord, ReferenceRecord
+
+
+class IndexStore:
+    def __init__(self, db_manager: DatabaseManager):
+        self.db = db_manager
+        self._linker = Linker(db_manager)
+
+    def resolve_missing_links(self) -> None:
+        self._linker.link()
+
+    def sync_file(
+        self, path: str, content_hash: str, mtime: float, size: int
+~~~~~
+
+#### Acts 3: 净化 FileIndexer
+
+移除 `Linker` 的实例化和 Hack 代码，改用 `store` 的方法。
 
 ~~~~~act
 patch_file
 packages/stitcher-index/src/stitcher/index/indexer.py
 ~~~~~
 ~~~~~python.old
-from typing import Dict, Set, Any
-
-from .store import IndexStore
-from stitcher.spec.index import FileRecord
-from stitcher.spec.registry import LanguageAdapter
-from .linker import Linker
-
-log = logging.getLogger(__name__)
-
-
-class FileIndexer:
-    def __init__(self, root_path: Path, store: IndexStore):
-        self.root_path = root_path
-        self.store = store
-        self.adapters: Dict[str, LanguageAdapter] = {}
-        self.linker = Linker(store.db)
-
-    def register_adapter(self, extension: str, adapter: LanguageAdapter):
-~~~~~
-~~~~~python.new
-import hashlib
-import logging
-from pathlib import Path
-from typing import Dict, Set, Any
-
 from stitcher.spec import IndexStoreProtocol
 from stitcher.spec.index import FileRecord
 from stitcher.spec.registry import LanguageAdapter
@@ -136,9 +132,60 @@ class FileIndexer:
         self.linker = Linker(getattr(store, "db", None))
 
     def register_adapter(self, extension: str, adapter: LanguageAdapter):
+        self.adapters[extension] = adapter
+
+    def index_files(self, discovered_paths: Set[str]) -> Dict[str, Any]:
+        stats: Dict[str, Any] = {
+~~~~~
+~~~~~python.new
+from stitcher.spec import IndexStoreProtocol
+from stitcher.spec.index import FileRecord
+from stitcher.spec.registry import LanguageAdapter
+
+log = logging.getLogger(__name__)
+
+
+class FileIndexer:
+    def __init__(self, root_path: Path, store: IndexStoreProtocol):
+        self.root_path = root_path
+        self.store = store
+        self.adapters: Dict[str, LanguageAdapter] = {}
+
+    def register_adapter(self, extension: str, adapter: LanguageAdapter):
+        self.adapters[extension] = adapter
+
+    def index_files(self, discovered_paths: Set[str]) -> Dict[str, Any]:
+        stats: Dict[str, Any] = {
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-index/src/stitcher/index/indexer.py
+~~~~~
+~~~~~python.old
+                stats["errors"] += 1
+                stats["error_details"].append((str(abs_path), str(e)))
+
+        # --- Linking ---
+        self.linker.link()
+        return stats
+
+    def _process_file_content(
+        self, file_id: int, abs_path: Path, content_bytes: bytes
+    ) -> None:
+~~~~~
+~~~~~python.new
+                stats["errors"] += 1
+                stats["error_details"].append((str(abs_path), str(e)))
+
+        # --- Linking ---
+        self.store.resolve_missing_links()
+        return stats
+
+    def _process_file_content(
+        self, file_id: int, abs_path: Path, content_bytes: bytes
+    ) -> None:
 ~~~~~
 
 ### 下一步建议
-我们已经成功地将 `FileIndexer` 的依赖切换到了协议。然而，在实现过程中我们发现了一个新的依赖泄漏：`FileIndexer` 内部的 `Linker` 组件仍然直接依赖于 `DatabaseManager`。
-
-下一步，我们应该将 `Linker` 的逻辑也抽象出来，或者将其功能合并到 `IndexStoreProtocol` 中（例如，添加一个 `store.link_unresolved()` 方法），从而彻底消除 `stitcher-index` 内部对数据库连接对象的直接依赖。
+现在 `FileIndexer` 已经完全与 SQLite 解耦。接下来的工作是解决“组合根”问题，即 Runner 内部硬编码实例化子组件的问题（如 `CheckRunner` 内部的 `CheckAnalyzer` 和 `CheckResolver`），将其改为通过构造函数注入或工厂模式创建。这将完成服务抽象化的最后一块拼图。

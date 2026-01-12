@@ -9,7 +9,6 @@ from typing import Dict, Set, Any
 from stitcher.spec import IndexStoreProtocol
 from stitcher.spec.index import FileRecord
 from stitcher.spec.registry import LanguageAdapter
-from .linker import Linker
 
 log = logging.getLogger(__name__)
 
@@ -19,10 +18,6 @@ class FileIndexer:
         self.root_path = root_path
         self.store = store
         self.adapters: Dict[str, LanguageAdapter] = {}
-        # FIXME: Linker still depends on the concrete DB manager. This will be addressed
-        # in a subsequent refactoring task. For now, we assume the provided store
-        # has a 'db' attribute if it's the concrete IndexStore.
-        self.linker = Linker(getattr(store, "db", None))
 
     def register_adapter(self, extension: str, adapter: LanguageAdapter):
         self.adapters[extension] = adapter
@@ -100,7 +95,7 @@ class FileIndexer:
                 stats["error_details"].append((str(abs_path), str(e)))
 
         # --- Linking ---
-        self.linker.link()
+        self.store.resolve_missing_links()
         return stats
 
     def _process_file_content(
