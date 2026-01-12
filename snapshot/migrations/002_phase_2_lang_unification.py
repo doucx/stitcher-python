@@ -1,42 +1,3 @@
-好的，我将为你创建用于阶段二（语言能力统一）的 Stitcher 迁移脚本。
-
-该脚本将严格遵循路线图 2.2 节的定义，将 `stitcher-python-adapter` 和 `stitcher-python-analysis` 中的核心功能模块迁移至新的 `stitcher-lang-python` 包中，并利用 Stitcher 的语义重构能力自动处理引用更新。
-
-[简要回答]
-好的，我将创建一个名为 `migrations/002_phase_2_lang_unification.py` 的迁移脚本，其中定义了将解析、索引、转换及文档处理等核心能力从旧包迁移至 `stitcher-lang-python` 的操作。
-
-## [WIP] feat: 创建阶段二语言能力统一的迁移脚本
-
-### 用户需求
-创建一个 Stitcher 迁移脚本，用于执行架构重构路线图阶段二的任务：将 `stitcher-python-adapter` 和 `stitcher-python-analysis` 的代码按功能垂直切分并迁移到统一的 `stitcher-lang-python` 包中。
-
-### 评论
-这个脚本是自动执行大规模代码重组的关键。通过使用 `stitcher refactor`，我们不仅移动了文件，更重要的是让 Stitcher 自动维护了代码间的引用关系（Import 路径）和文档关联（Sidecars），避免了手动迁移可能导致的“链接腐烂”问题。
-
-### 目标
-生成 `migrations/002_phase_2_lang_unification.py` 文件，包含以下迁移逻辑：
-1.  **解析能力**: 迁移 Griffe 和 CST 解析器。
-2.  **索引能力**: 迁移 Index Adapter、数据模型和 Visitors。
-3.  **转换能力**: 迁移 Transformer Facade 和具体的 CST Transformers。
-4.  **文档能力**: 整体迁移 docstring 处理模块。
-
-### 基本原理
-利用 `stitcher.refactor.migration` 提供的 `Move` 和 `MoveDir` 原语定义迁移意图。这些操作是事务性的，能够在执行时自动计算出 FQN（完全限定名）的变更，并更新整个 Monorepo 中的引用。
-
-### 标签
-#intent/tooling #flow/ready #priority/high #comp/build #concept/refactor #scope/dx #ai/instruct #task/domain/language-support #task/object/migration-script #task/action/create #task/state/continue
-
----
-
-### Script
-
-#### Acts 1: 创建迁移脚本
-
-~~~~~act
-write_file
-migrations/002_phase_2_lang_unification.py
-~~~~~
-~~~~~python
 from pathlib import Path
 from stitcher.refactor.migration import MigrationSpec, Move, MoveDir
 
@@ -120,13 +81,3 @@ def upgrade(spec: MigrationSpec):
         Path("packages/stitcher-python-adapter/src/stitcher/adapter/python/docstring"),
         Path("packages/stitcher-lang-python/src/stitcher/lang/python/docstring")
     ))
-~~~~~
-
-### 下一步建议
-
-1.  **执行迁移**: 在确认 `packages/stitcher-lang-python` 目录骨架已存在的情况下，运行以下命令执行迁移：
-    ```bash
-    stitcher refactor apply migrations/002_phase_2_lang_unification.py
-    ```
-2.  **清理旧包**: 迁移完成后，检查 `stitcher-python-adapter` 和 `stitcher-python-analysis` 中剩余的文件（如 `uri.py`, `fingerprint.py`, `scope.py` 等）。如果这些文件也需要保留，请补充迁移操作；否则，在确认无用后可以安全删除这两个旧包。
-3.  **运行测试**: 运行 `uv run pytest` 以确保迁移后的代码逻辑（特别是导入路径）依然正确。
