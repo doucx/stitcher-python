@@ -105,10 +105,12 @@ class IRBuildingVisitor(cst.CSTVisitor):
                     )
             elif isinstance(target, (cst.Tuple, cst.List)):
                 for element in target.elements:
-                    if isinstance(element, cst.Element):
-                        process_target(element.value)
+                    # In LibCST, elements of Tuple/List are wrappers (Element or StarredElement).
+                    # Both have a .value attribute containing the actual expression.
+                    process_target(element.value)
             elif isinstance(target, cst.StarredElement):
-                # Handle *y in [x, *y] = ...
+                # This handles cases where StarredElement might be passed directly 
+                # (though usually it's handled by the parent container's loop).
                 process_target(target.value)
 
         process_target(target_node)

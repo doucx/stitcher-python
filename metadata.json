@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] test(lang-python): 增加星号解包赋值的 IR 解析测试", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768305465.3569958, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix(lang-python): 修正解析器以支持赋值中的星号解包", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768305554.3431067, "duration_ms": 0}}
