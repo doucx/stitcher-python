@@ -1,892 +1,784 @@
-简要回答
-执行 SURI 全局化架构重构的阶段 3：手术式替换 (The Great Switch)。
+好的，收到了 `rg SignatureManagerProtocol` 的结果。这表明虽然我在代码中删除了 `SignatureManager` 的实现类，但 `SignatureManagerProtocol` 仍然存在于 `stitcher-spec` 中，并且被大量测试和部分尚未迁移的业务代码（Check子系统）引用。
 
-## [WIP] feat: 切换至 LockFileManager 并移除 SignatureManager
+我必须先完成业务代码的迁移，然后再去清理协议定义和测试。如果现在就删除协议，所有的引用都会报错，导致无法继续进行“手术式替换”。
+
+**策略调整**:
+我们将继续执行原计划的 Check 子系统重写。在重写的过程中，我们会自然地将 `SignatureManagerProtocol` 替换为 `LockManagerProtocol`。只有当所有的业务代码都迁移完毕后，我们才会最后去删除 `SignatureManagerProtocol` 的定义并修复测试。
+
+## [WIP] feat: 迁移 Check 子系统至 LockFileManager
 
 ### 用户需求
-1.  **移除旧组件**: 删除 `SignatureManager` 及其相关引用。
-2.  **核心重构**: 修改 `StitcherApp` 以注入 `LockFileManager`, `PythonURIGenerator` 和 `Workspace`。
-3.  **Runner 适配**: 重写 `InitRunner`, `PumpRunner`, 和 `CheckRunner` (及其辅助类 `Subject`, `Resolver`, `Executor`)，使其逻辑从操作分散的签名文件转变为操作包级 `stitcher.lock` 文件。
+1.  **重写 `SubjectAdapter`**: 修改 `IndexCheckSubjectAdapter` 和 `ASTCheckSubjectAdapter`，使其不再依赖 `SignatureManager`，而是通过 `LockFileManager` 加载数据，并通过 `URIGenerator` 生成 SURI 进行查找。
+2.  **重写 `CheckResolver`**: 修改冲突解决逻辑，从更新分散的签名文件变为更新集中的 Lock 数据。
+3.  **重写 `CheckRunner`**: 更新其构造函数和调用链，注入新的管理器。
 
 ### 评论
-这是本次重构中工作量最大、风险最高的一步。我们将彻底改变系统读写指纹的方式。原本基于文件路径的隐式查找将被基于 SURI 和 Workspace 坐标的显式查找所取代。这一步完成后，系统的 IO 模式将发生质变。
+Check 子系统是系统中逻辑最复杂的部分，因为它不仅要读取数据，还要进行多维度的比对（Code vs Doc vs Baseline）。这里的关键是将“读取 Baseline”的操作从 `load_composite_hashes(file_path)` 转换为 `lock_manager.load(pkg_root).get(suri)`。这需要 `SubjectAdapter` 能够计算出正确的 SURI。
 
 ### 目标
-1.  更新 `LockFileManager` 以支持序列化字符串输出（适配事务写入）。
-2.  删除 `SignatureManager`。
-3.  重构 `StitcherApp`。
-4.  重写 `InitRunner`。
-5.  重写 `PumpRunner` 及 `PumpExecutor`。
-6.  重写 `CheckRunner` 及 `CheckResolver`, `SubjectAdapter`。
+1.  重写 `stitcher-application/src/stitcher/app/runners/check/subject.py`。
+2.  重写 `stitcher-application/src/stitcher/app/runners/check/resolver.py`。
+3.  重写 `stitcher-application/src/stitcher/app/runners/check/runner.py`。
 
 ### 基本原理
--   **包级聚合**: 所有 Runner 现在必须先通过 `workspace.find_owning_package()` 找到操作对象所属的包根目录，然后加载对应的 Lock 文件。
--   **SURI 查找**: 在 `Check` 阶段，不再通过文件路径拼接 JSON 路径，而是直接通过 `uri_gen` 生成 SURI（或从 Index 获取 SURI），在 Lock 数据中进行 O(1) 查找。
--   **事务性 Lock**: `PumpRunner` 在写入时，将序列化后的 Lock 内容放入 `TransactionManager`，保持操作的事务性。
+-   **SURI 是连接点**: 在 Check 过程中，每一个被检查的符号（无论是来自 AST 还是 Index）都必须先被转换为全局唯一的 SURI。这个 SURI 是从 Lock 文件中检索 Baseline 指纹的唯一 Key。
+-   **Lock 上下文**: `SubjectAdapter` 需要知道当前文件属于哪个包（Package Root），以便从正确的 `stitcher.lock` 中获取数据。这需要注入 `Workspace`。
 
 ### 标签
-#intent/refactor #flow/ready #priority/critical #comp/application #comp/runtime #concept/state #scope/core #ai/instruct #task/domain/storage #task/object/suri-lockfile #task/action/phase-3-switch #task/state/continue
+#intent/refactor #flow/ready #priority/critical #comp/application #comp/check #concept/state #scope/core #ai/instruct #task/domain/storage #task/object/suri-lockfile #task/action/check-subsystem-migration #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 增强 `LockFileManager` 并清理旧组件
+#### Acts 1: 重写 `SubjectAdapter` (`stitcher-application`)
 
-首先，我们为 `LockFileManager` 添加 `serialize` 方法，以便 Runner 可以获取内容字符串进行事务写入。然后删除旧的 `SignatureManager`。
-
-~~~~~act
-patch_file
-packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/lock_manager.py
-~~~~~
-~~~~~python.old
-        with lock_path.open("w", encoding="utf-8") as f:
-            json.dump(lock_content, f, indent=2, sort_keys=True)
-            f.write("\n")  # Ensure trailing newline
-~~~~~
-~~~~~python.new
-        with lock_path.open("w", encoding="utf-8") as f:
-            json.dump(lock_content, f, indent=2, sort_keys=True)
-            f.write("\n")  # Ensure trailing newline
-
-    def serialize(self, data: Dict[str, Fingerprint]) -> str:
-        """
-        Serializes the fingerprint data to a formatted JSON string representing
-        the stitcher.lock content.
-        """
-        serializable_data = {
-            suri: fp.to_dict() for suri, fp in data.items()
-        }
-
-        lock_content = {
-            "version": "1.0",
-            "fingerprints": serializable_data,
-        }
-        
-        return json.dumps(lock_content, indent=2, sort_keys=True) + "\n"
-~~~~~
-
-~~~~~act
-delete_file
-packages/stitcher-application/src/stitcher/app/services/signature_manager.py
-~~~~~
+这是 Check 逻辑的数据源适配器。我们需要将它对 `SignatureManager` 的依赖替换为对 `LockManager`, `URIGenerator` 和 `Workspace` 的依赖。
 
 ~~~~~act
 patch_file
-packages/stitcher-application/src/stitcher/app/services/__init__.py
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
 ~~~~~
 ~~~~~python.old
-from .doc_manager import DocumentManager
-from .signature_manager import SignatureManager
-from .scanner import ScannerService
-from .merger import DocstringMerger
-
-__all__ = [
-    "DocumentManager",
-    "SignatureManager",
-    "ScannerService",
-    "DocstringMerger",
-]
-~~~~~
-~~~~~python.new
-from .doc_manager import DocumentManager
-from .scanner import ScannerService
-from .merger import DocstringMerger
-
-__all__ = [
-    "DocumentManager",
-    "ScannerService",
-    "DocstringMerger",
-]
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-spec/src/stitcher/spec/managers.py
-~~~~~
-~~~~~python.old
-    def dump_raw_data_to_string(self, data: Dict[str, Any]) -> str: ...
-
-
-class SignatureManagerProtocol(Protocol):
-    def load_composite_hashes(self, file_path: str) -> Dict[str, Fingerprint]: ...
-
-    def save_composite_hashes(
-        self, file_path: str, hashes: Dict[str, Fingerprint]
-    ) -> None: ...
-
-    def reformat_hashes_for_file(self, file_path: str) -> bool: ...
-
-    # Used by PumpRunner for centralized serialization
-    def serialize_hashes(
-        self, file_path: str, hashes: Dict[str, Fingerprint]
-    ) -> str: ...
-
-    def get_signature_path(self, file_path: str) -> Path: ...
-~~~~~
-~~~~~python.new
-    def dump_raw_data_to_string(self, data: Dict[str, Any]) -> str: ...
-~~~~~
-
-#### Acts 2: 重构 `StitcherApp` (`stitcher-application`)
-
-更新核心应用类，注入新依赖。
-
-~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
-~~~~~
-~~~~~python.old
-from stitcher.stubgen import StubgenService
-from stitcher.config import load_config_from_path, StitcherConfig
-from stitcher.app.services import (
-    DocumentManager,
-    SignatureManager,
-    ScannerService,
-    DocstringMerger,
-)
-from stitcher.common.services import Differ
-from stitcher.spec.interaction import InteractionHandler
-from .runners import (
-    CheckRunner,
-    InitRunner,
-    PumpRunner,
-    TransformRunner,
-    CoverageRunner,
-    RefactorRunner,
-    IndexRunner,
-)
-from .runners.check.resolver import CheckResolver
-from .runners.check.reporter import CheckReporter
-from .runners.pump.executor import PumpExecutor
-from stitcher.analysis.engines import create_pump_engine
-from stitcher.common.transaction import TransactionManager
-from typing import Callable
-from stitcher.analysis.schema import FileCheckResult
-from .types import PumpResult, CoverageResult
-from stitcher.index.db import DatabaseManager
-from stitcher.index.store import IndexStore
-from stitcher.index.indexer import FileIndexer
-from stitcher.lang.python import PythonAdapter
-from stitcher.workspace import Workspace
-from stitcher.lang.python.docstring import (
-    get_docstring_codec,
-    get_docstring_serializer,
-)
-from stitcher.spec.interaction import InteractionContext
-
-
-class StitcherApp:
-    def __init__(
-        self,
-        root_path: Path,
-        parser: LanguageParserProtocol,
-        transformer: LanguageTransformerProtocol,
-        fingerprint_strategy: FingerprintStrategyProtocol,
-        interaction_handler: Optional[InteractionHandler] = None,
-    ):
-        self.root_path = root_path
-        self.workspace = Workspace(root_path)
-        self.fingerprint_strategy = fingerprint_strategy
-        # 1. Core Services
-        self.doc_manager = DocumentManager(root_path)
-        self.sig_manager = SignatureManager(root_path)
-        self.scanner = ScannerService(root_path, parser)
-        self.differ = Differ()
-        self.merger = DocstringMerger()
-        self.stubgen_service = StubgenService(
-            root_path, self.scanner, self.doc_manager, transformer
-        )
-
-        # 2. Indexing Subsystem (Must be initialized before runners that use it)
-~~~~~
-~~~~~python.new
-from stitcher.stubgen import StubgenService
-from stitcher.config import load_config_from_path, StitcherConfig
-from stitcher.app.services import (
-    DocumentManager,
-    ScannerService,
-    DocstringMerger,
-)
-from stitcher.common.services import Differ
-from stitcher.spec.interaction import InteractionHandler
-from .runners import (
-    CheckRunner,
-    InitRunner,
-    PumpRunner,
-    TransformRunner,
-    CoverageRunner,
-    RefactorRunner,
-    IndexRunner,
-)
-from .runners.check.resolver import CheckResolver
-from .runners.check.reporter import CheckReporter
-from .runners.pump.executor import PumpExecutor
-from stitcher.analysis.engines import create_pump_engine
-from stitcher.common.transaction import TransactionManager
-from typing import Callable
-from stitcher.analysis.schema import FileCheckResult
-from .types import PumpResult, CoverageResult
-from stitcher.index.db import DatabaseManager
-from stitcher.index.store import IndexStore
-from stitcher.index.indexer import FileIndexer
-from stitcher.lang.python import PythonAdapter
-from stitcher.workspace import Workspace
-from stitcher.lang.python.docstring import (
-    get_docstring_codec,
-    get_docstring_serializer,
-)
-from stitcher.spec.interaction import InteractionContext
-from stitcher.lang.sidecar import LockFileManager
-from stitcher.lang.python import PythonURIGenerator
-
-
-class StitcherApp:
-    def __init__(
-        self,
-        root_path: Path,
-        parser: LanguageParserProtocol,
-        transformer: LanguageTransformerProtocol,
-        fingerprint_strategy: FingerprintStrategyProtocol,
-        interaction_handler: Optional[InteractionHandler] = None,
-    ):
-        self.root_path = root_path
-        self.workspace = Workspace(root_path)
-        self.fingerprint_strategy = fingerprint_strategy
-        # 1. Core Services
-        self.doc_manager = DocumentManager(root_path)
-        self.lock_manager = LockFileManager()
-        self.uri_generator = PythonURIGenerator()
-        self.scanner = ScannerService(root_path, parser)
-        self.differ = Differ()
-        self.merger = DocstringMerger()
-        self.stubgen_service = StubgenService(
-            root_path, self.scanner, self.doc_manager, transformer
-        )
-
-        # 2. Indexing Subsystem (Must be initialized before runners that use it)
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/core.py
-~~~~~
-~~~~~python.old
-        # 3. Runners (Command Handlers)
-        check_resolver = CheckResolver(
-            root_path,
-            parser,
-            self.doc_manager,
-            self.sig_manager,
-            interaction_handler,
-            self.fingerprint_strategy,
-        )
-        check_reporter = CheckReporter()
-        self.check_runner = CheckRunner(
-            self.doc_manager,
-            self.sig_manager,
-            self.fingerprint_strategy,
-            self.index_store,
-            differ=self.differ,
-            resolver=check_resolver,
-            reporter=check_reporter,
-            root_path=self.root_path,
-        )
-
-        pump_engine = create_pump_engine(differ=self.differ)
-        pump_executor = PumpExecutor(
-            root_path,
-            self.doc_manager,
-            self.sig_manager,
-            transformer,
-            self.merger,
-            self.fingerprint_strategy,
-        )
-        self.pump_runner = PumpRunner(
-            pump_engine=pump_engine,
-            executor=pump_executor,
-            interaction_handler=interaction_handler,
-            # Pass dependencies needed for subject creation
-            doc_manager=self.doc_manager,
-            sig_manager=self.sig_manager,
-            fingerprint_strategy=self.fingerprint_strategy,
-        )
-
-        self.init_runner = InitRunner(
-            root_path,
-            self.doc_manager,
-            self.sig_manager,
-            fingerprint_strategy=self.fingerprint_strategy,
-        )
-~~~~~
-~~~~~python.new
-        # 3. Runners (Command Handlers)
-        check_resolver = CheckResolver(
-            root_path,
-            self.workspace,
-            parser,
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            interaction_handler,
-            self.fingerprint_strategy,
-        )
-        check_reporter = CheckReporter()
-        self.check_runner = CheckRunner(
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            self.fingerprint_strategy,
-            self.index_store,
-            self.workspace,
-            differ=self.differ,
-            resolver=check_resolver,
-            reporter=check_reporter,
-            root_path=self.root_path,
-        )
-
-        pump_engine = create_pump_engine(differ=self.differ)
-        pump_executor = PumpExecutor(
-            root_path,
-            self.workspace,
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            transformer,
-            self.merger,
-            self.fingerprint_strategy,
-        )
-        self.pump_runner = PumpRunner(
-            pump_engine=pump_engine,
-            executor=pump_executor,
-            interaction_handler=interaction_handler,
-            # Pass dependencies needed for subject creation
-            doc_manager=self.doc_manager,
-            lock_manager=self.lock_manager,
-            uri_generator=self.uri_generator,
-            workspace=self.workspace,
-            fingerprint_strategy=self.fingerprint_strategy,
-        )
-
-        self.init_runner = InitRunner(
-            root_path,
-            self.workspace,
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            fingerprint_strategy=self.fingerprint_strategy,
-        )
-~~~~~
-
-#### Acts 3: 重写 `InitRunner`
-
-将 `InitRunner` 转换为包级 Lock 操作。
-
-~~~~~act
-write_file
-packages/stitcher-application/src/stitcher/app/runners/init.py
-~~~~~
-~~~~~python
-from typing import List, Dict
+from typing import Dict, Optional
 from pathlib import Path
-from collections import defaultdict
-
-from stitcher.common import bus
-from needle.pointer import L
 from stitcher.spec import (
+    ModuleDef,
     Fingerprint,
-    ModuleDef,
     FingerprintStrategyProtocol,
-    LockManagerProtocol,
-    URIGeneratorProtocol,
-)
-from stitcher.spec.managers import DocumentManagerProtocol
-from stitcher.workspace import Workspace
-
-
-class InitRunner:
-    def __init__(
-        self,
-        root_path: Path,
-        workspace: Workspace,
-        doc_manager: DocumentManagerProtocol,
-        lock_manager: LockManagerProtocol,
-        uri_generator: URIGeneratorProtocol,
-        fingerprint_strategy: FingerprintStrategyProtocol,
-    ):
-        self.root_path = root_path
-        self.workspace = workspace
-        self.doc_manager = doc_manager
-        self.lock_manager = lock_manager
-        self.uri_generator = uri_generator
-        self.fingerprint_strategy = fingerprint_strategy
-
-    def _compute_fingerprints(self, module: ModuleDef) -> Dict[str, Fingerprint]:
-        fingerprints: Dict[str, Fingerprint] = {}
-        for func in module.functions:
-            fingerprints[func.name] = self.fingerprint_strategy.compute(func)
-        for cls in module.classes:
-            # Include the class itself
-            fingerprints[cls.name] = self.fingerprint_strategy.compute(cls)
-            for method in cls.methods:
-                fqn = f"{cls.name}.{method.name}"
-                fingerprints[fqn] = self.fingerprint_strategy.compute(method)
-        return fingerprints
-
-    def run_batch(self, modules: List[ModuleDef]) -> List[Path]:
-        created_files: List[Path] = []
-        
-        # 1. Group modules by their owning package (lock file boundary)
-        # This reduces I/O by loading each lock file only once per batch.
-        grouped_modules: Dict[Path, List[ModuleDef]] = defaultdict(list)
-        for module in modules:
-            if not module.file_path:
-                continue
-            abs_path = self.root_path / module.file_path
-            pkg_root = self.workspace.find_owning_package(abs_path)
-            grouped_modules[pkg_root].append(module)
-
-        # 2. Process each group
-        for pkg_root, pkg_modules in grouped_modules.items():
-            # Load existing lock or create empty
-            lock_data = self.lock_manager.load(pkg_root)
-            lock_updated = False
-
-            for module in pkg_modules:
-                output_path = self.doc_manager.save_docs_for_module(module)
-                
-                # Compute logical/relative paths for SURI generation
-                module_abs_path = self.root_path / module.file_path
-                module_ws_rel = self.workspace.to_workspace_relative(module_abs_path)
-
-                computed_fingerprints = self._compute_fingerprints(module)
-                yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
-
-                all_fqns = set(computed_fingerprints.keys()) | set(yaml_hashes.keys())
-
-                for fqn in all_fqns:
-                    # Get the base computed fingerprint (code structure, sig text, etc.)
-                    fp = computed_fingerprints.get(fqn, Fingerprint())
-
-                    # Convert 'current' keys to 'baseline' keys for storage
-                    if "current_code_structure_hash" in fp:
-                        fp["baseline_code_structure_hash"] = fp[
-                            "current_code_structure_hash"
-                        ]
-                        del fp["current_code_structure_hash"]
-
-                    if "current_code_signature_text" in fp:
-                        fp["baseline_code_signature_text"] = fp[
-                            "current_code_signature_text"
-                        ]
-                        del fp["current_code_signature_text"]
-
-                    if fqn in yaml_hashes:
-                        fp["baseline_yaml_content_hash"] = yaml_hashes[fqn]
-
-                    # Generate global SURI
-                    suri = self.uri_generator.generate_symbol_uri(module_ws_rel, fqn)
-                    lock_data[suri] = fp
-                    lock_updated = True
-
-                if output_path and output_path.name:
-                    relative_path = output_path.relative_to(self.root_path)
-                    bus.success(L.init.file.created, path=relative_path)
-                    created_files.append(output_path)
-            
-            # Save lock file for the package
-            if lock_updated:
-                self.lock_manager.save(pkg_root, lock_data)
-
-        return created_files
-~~~~~
-
-#### Acts 4: 重写 `PumpExecutor` 和 `PumpRunner`
-
-适配 `PumpRunner` 以支持包级 Lock 事务。
-
-~~~~~act
-write_file
-packages/stitcher-application/src/stitcher/app/runners/pump/executor.py
-~~~~~
-~~~~~python
-import copy
-from pathlib import Path
-from typing import Dict, List
-from collections import defaultdict
-
-from stitcher.common import bus
-from needle.pointer import L
-from stitcher.spec import (
-    ModuleDef,
-    ResolutionAction,
-    Fingerprint,
-    FunctionExecutionPlan,
-    LanguageTransformerProtocol,
-    FingerprintStrategyProtocol,
-    DocstringIR,
-    DocstringMergerProtocol,
-    LockManagerProtocol,
-    URIGeneratorProtocol,
-)
-from stitcher.spec.managers import DocumentManagerProtocol
-from stitcher.app.types import PumpResult
-from stitcher.common.transaction import TransactionManager
-from stitcher.workspace import Workspace
-
-
-class PumpExecutor:
-    def __init__(
-        self,
-        root_path: Path,
-        workspace: Workspace,
-        doc_manager: DocumentManagerProtocol,
-        lock_manager: LockManagerProtocol,
-        uri_generator: URIGeneratorProtocol,
-        transformer: LanguageTransformerProtocol,
-        merger: DocstringMergerProtocol,
-        fingerprint_strategy: FingerprintStrategyProtocol,
-    ):
-        self.root_path = root_path
-        self.workspace = workspace
-        self.doc_manager = doc_manager
-        self.lock_manager = lock_manager
-        self.uri_generator = uri_generator
-        self.transformer = transformer
-        self.merger = merger
-        self.fingerprint_strategy = fingerprint_strategy
-
-    def _compute_fingerprints(self, module: ModuleDef) -> Dict[str, Fingerprint]:
-        fingerprints: Dict[str, Fingerprint] = {}
-        for func in module.functions:
-            fingerprints[func.name] = self.fingerprint_strategy.compute(func)
-        for cls in module.classes:
-            fingerprints[cls.name] = self.fingerprint_strategy.compute(cls)
-            for method in cls.methods:
-                fqn = f"{cls.name}.{method.name}"
-                fingerprints[fqn] = self.fingerprint_strategy.compute(method)
-        return fingerprints
-
-    def _generate_execution_plan(
-        self,
-        module: ModuleDef,
-        decisions: Dict[str, ResolutionAction],
-        strip_requested: bool,
-        source_docs: Dict[str, DocstringIR],
-    ) -> Dict[str, FunctionExecutionPlan]:
-        plan: Dict[str, FunctionExecutionPlan] = {}
-        for fqn in module.get_all_fqns():
-            decision = decisions.get(fqn)
-            has_source_doc = fqn in source_docs
-            exec_plan = FunctionExecutionPlan(fqn=fqn)
-            if decision != ResolutionAction.SKIP:
-                exec_plan.update_code_fingerprint = True
-                if decision == ResolutionAction.HYDRATE_OVERWRITE or (
-                    decision is None and has_source_doc
-                ):
-                    exec_plan.hydrate_yaml = True
-                    exec_plan.update_doc_fingerprint = True
-                if strip_requested and (
-                    decision == ResolutionAction.HYDRATE_OVERWRITE
-                    or decision == ResolutionAction.HYDRATE_KEEP_EXISTING
-                    or (decision is None and has_source_doc)
-                ):
-                    exec_plan.strip_source_docstring = True
-            plan[fqn] = exec_plan
-        return plan
-
-    def execute(
-        self,
-        modules: List[ModuleDef],
-        decisions: Dict[str, ResolutionAction],
-        tm: TransactionManager,
-        strip: bool,
-    ) -> PumpResult:
-        strip_jobs = defaultdict(list)
-        redundant_files_list: List[Path] = []
-        total_updated_keys = 0
-        total_reconciled_keys = 0
-        unresolved_conflicts_count = 0
-
-        # Group modules by package for Lock file batching
-        grouped_modules: Dict[Path, List[ModuleDef]] = defaultdict(list)
-        for module in modules:
-            if not module.file_path:
-                continue
-            abs_path = self.root_path / module.file_path
-            pkg_root = self.workspace.find_owning_package(abs_path)
-            grouped_modules[pkg_root].append(module)
-
-        for pkg_root, pkg_modules in grouped_modules.items():
-            # Load Lock Data once per package
-            current_lock_data = self.lock_manager.load(pkg_root)
-            new_lock_data = copy.deepcopy(current_lock_data)
-            lock_updated = False
-
-            for module in pkg_modules:
-                source_docs = self.doc_manager.flatten_module_docs(module)
-                file_plan = self._generate_execution_plan(
-                    module, decisions, strip, source_docs
-                )
-                current_yaml_docs = self.doc_manager.load_docs_for_module(module)
-                current_fingerprints = self._compute_fingerprints(module)
-
-                new_yaml_docs = current_yaml_docs.copy()
-                
-                module_abs_path = self.root_path / module.file_path
-                module_ws_rel = self.workspace.to_workspace_relative(module_abs_path)
-
-                file_had_updates, file_has_errors, file_has_redundancy = False, False, False
-                updated_keys_in_file, reconciled_keys_in_file = [], []
-
-                for fqn, plan in file_plan.items():
-                    if fqn in decisions and decisions[fqn] == ResolutionAction.SKIP:
-                        unresolved_conflicts_count += 1
-                        file_has_errors = True
-                        bus.error(L.pump.error.conflict, path=module.file_path, key=fqn)
-                        continue
-
-                    if plan.hydrate_yaml and fqn in source_docs:
-                        src_ir, existing_ir = source_docs[fqn], new_yaml_docs.get(fqn)
-                        merged_ir = self.merger.merge(existing_ir, src_ir)
-                        if existing_ir != merged_ir:
-                            new_yaml_docs[fqn] = merged_ir
-                            updated_keys_in_file.append(fqn)
-                            file_had_updates = True
-
-                    # Generate SURI for lock lookup
-                    suri = self.uri_generator.generate_symbol_uri(module_ws_rel, fqn)
-                    fp = new_lock_data.get(suri) or Fingerprint()
-                    
-                    fqn_was_updated = False
-                    if plan.update_code_fingerprint:
-                        current_fp = current_fingerprints.get(fqn, Fingerprint())
-                        if "current_code_structure_hash" in current_fp:
-                            fp["baseline_code_structure_hash"] = current_fp[
-                                "current_code_structure_hash"
-                            ]
-                        if "current_code_signature_text" in current_fp:
-                            fp["baseline_code_signature_text"] = current_fp[
-                                "current_code_signature_text"
-                            ]
-                        fqn_was_updated = True
-
-                    if plan.update_doc_fingerprint and fqn in source_docs:
-                        ir_to_save = new_yaml_docs.get(fqn)
-                        if ir_to_save:
-                            fp["baseline_yaml_content_hash"] = (
-                                self.doc_manager.compute_ir_hash(ir_to_save)
-                            )
-                            fqn_was_updated = True
-
-                    if fqn_was_updated:
-                        new_lock_data[suri] = fp
-                        lock_updated = True
-
-                    if (
-                        fqn in decisions
-                        and decisions[fqn] == ResolutionAction.HYDRATE_KEEP_EXISTING
-                    ):
-                        reconciled_keys_in_file.append(fqn)
-                    if plan.strip_source_docstring:
-                        strip_jobs[module.file_path].append(fqn)
-                    if fqn in source_docs and not plan.strip_source_docstring:
-                        file_has_redundancy = True
-
-                if not file_has_errors:
-                    if file_had_updates:
-                        raw_data = self.doc_manager.load_raw_data(module.file_path)
-                        for fqn, ir in new_yaml_docs.items():
-                            raw_data[fqn] = self.doc_manager.serialize_ir(ir)
-
-                        doc_path = (self.root_path / module.file_path).with_suffix(
-                            ".stitcher.yaml"
-                        )
-                        yaml_content = self.doc_manager.dump_raw_data_to_string(raw_data)
-                        tm.add_write(
-                            str(doc_path.relative_to(self.root_path)), yaml_content
-                        )
-
-                    if file_has_redundancy:
-                        redundant_files_list.append(self.root_path / module.file_path)
-
-                if updated_keys_in_file:
-                    total_updated_keys += len(updated_keys_in_file)
-                    bus.success(
-                        L.pump.file.success,
-                        path=module.file_path,
-                        count=len(updated_keys_in_file),
-                    )
-                if reconciled_keys_in_file:
-                    total_reconciled_keys += len(reconciled_keys_in_file)
-                    bus.info(
-                        L.pump.info.reconciled,
-                        path=module.file_path,
-                        count=len(reconciled_keys_in_file),
-                    )
-
-            if lock_updated:
-                # To maintain transactionality, we write to the lock file via TM
-                # using the serialize() method we added to LockFileManager
-                lock_content = self.lock_manager.serialize(new_lock_data)
-                lock_path = pkg_root / self.lock_manager.LOCK_FILE_NAME
-                tm.add_write(str(lock_path.relative_to(self.root_path)), lock_content)
-
-        if strip_jobs:
-            self._execute_strip_jobs(strip_jobs, tm)
-
-        if unresolved_conflicts_count > 0:
-            bus.error(L.pump.run.conflict, count=unresolved_conflicts_count)
-            return PumpResult(success=False)
-
-        has_activity = (total_updated_keys > 0) or strip_jobs
-        if not has_activity:
-            bus.info(L.pump.run.no_changes)
-        else:
-            bus.success(L.pump.run.complete, count=total_updated_keys)
-        return PumpResult(success=True, redundant_files=redundant_files_list)
-
-    def _execute_strip_jobs(
-        self, strip_jobs: Dict[str, List[str]], tm: TransactionManager
-    ):
-        total_stripped_files = 0
-        for file_path, whitelist in strip_jobs.items():
-            source_path = self.root_path / file_path
-            if not whitelist:
-                continue
-            try:
-                original_content = source_path.read_text("utf-8")
-                stripped_content = self.transformer.strip(
-                    original_content, whitelist=whitelist
-                )
-                if original_content != stripped_content:
-                    relative_path = source_path.relative_to(self.root_path)
-                    tm.add_write(str(relative_path), stripped_content)
-                    bus.success(L.strip.file.success, path=relative_path)
-                    total_stripped_files += 1
-            except Exception as e:
-                bus.error(L.error.generic, error=e)
-
-        if total_stripped_files > 0:
-            bus.success(L.strip.run.complete, count=total_stripped_files)
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-application/src/stitcher/app/runners/pump/runner.py
-~~~~~
-~~~~~python.old
-from stitcher.spec import (
-    ModuleDef,
-    ResolutionAction,
-    FingerprintStrategyProtocol,
+    IndexStoreProtocol,
 )
 from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
-from stitcher.spec.interaction import InteractionHandler
-from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
-from stitcher.app.types import PumpResult
-from stitcher.config import StitcherConfig
-from stitcher.common.transaction import TransactionManager
-from stitcher.analysis.engines import PumpEngine
-from .protocols import PumpExecutorProtocol
-from ..check.subject import ASTCheckSubjectAdapter
+from stitcher.spec.index import SymbolRecord
+from stitcher.analysis.schema import SymbolState
+from stitcher.analysis.protocols import AnalysisSubject as CheckSubject
 
 
-class PumpRunner:
+class IndexCheckSubjectAdapter(CheckSubject):
     def __init__(
         self,
-        pump_engine: PumpEngine,
-        executor: PumpExecutorProtocol,
-        interaction_handler: InteractionHandler | None,
-        # Dependencies required for subject creation
+        file_path: str,
+        index_store: IndexStoreProtocol,
+        doc_manager: DocumentManagerProtocol,
+        sig_manager: SignatureManagerProtocol,
+        root_path: Path,
+    ):
+        self._file_path = file_path
+        self._index_store = index_store
+        self._doc_manager = doc_manager
+        self._sig_manager = sig_manager
+        self._root_path = root_path
+
+    @property
+    def file_path(self) -> str:
+~~~~~
+~~~~~python.new
+from typing import Dict, Optional
+from pathlib import Path
+from stitcher.spec import (
+    ModuleDef,
+    Fingerprint,
+    FingerprintStrategyProtocol,
+    IndexStoreProtocol,
+    LockManagerProtocol,
+    URIGeneratorProtocol,
+)
+from stitcher.spec.managers import DocumentManagerProtocol
+from stitcher.spec.index import SymbolRecord
+from stitcher.analysis.schema import SymbolState
+from stitcher.analysis.protocols import AnalysisSubject as CheckSubject
+from stitcher.workspace import Workspace
+
+
+class IndexCheckSubjectAdapter(CheckSubject):
+    def __init__(
+        self,
+        file_path: str,
+        index_store: IndexStoreProtocol,
+        doc_manager: DocumentManagerProtocol,
+        lock_manager: LockManagerProtocol,
+        uri_generator: URIGeneratorProtocol,
+        workspace: Workspace,
+        root_path: Path,
+    ):
+        self._file_path = file_path
+        self._index_store = index_store
+        self._doc_manager = doc_manager
+        self._lock_manager = lock_manager
+        self._uri_generator = uri_generator
+        self._workspace = workspace
+        self._root_path = root_path
+
+    @property
+    def file_path(self) -> str:
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
+~~~~~
+~~~~~python.old
+    def get_all_symbol_states(self) -> Dict[str, SymbolState]:
+        # 1. Load data from all sources
+        symbols_from_db = self._index_store.get_symbols_by_file_path(self.file_path)
+        yaml_docs = self._doc_manager.load_docs_for_path(self.file_path)
+        stored_hashes = self._sig_manager.load_composite_hashes(self.file_path)
+
+        yaml_content_hashes = {
+            fqn: self._doc_manager.compute_ir_hash(ir) for fqn, ir in yaml_docs.items()
+        }
+~~~~~
+~~~~~python.new
+    def get_all_symbol_states(self) -> Dict[str, SymbolState]:
+        # 1. Load data from all sources
+        symbols_from_db = self._index_store.get_symbols_by_file_path(self.file_path)
+        yaml_docs = self._doc_manager.load_docs_for_path(self.file_path)
+        
+        # Load Lock Data
+        abs_path = self._root_path / self.file_path
+        pkg_root = self._workspace.find_owning_package(abs_path)
+        lock_data = self._lock_manager.load(pkg_root)
+        
+        # Prepare coordinates
+        ws_rel_path = self._workspace.to_workspace_relative(abs_path)
+
+        yaml_content_hashes = {
+            fqn: self._doc_manager.compute_ir_hash(ir) for fqn, ir in yaml_docs.items()
+        }
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
+~~~~~
+~~~~~python.old
+        # 3. Aggregate all unique FQNs
+        all_fqns = (
+            set(symbol_map.keys()) | set(yaml_docs.keys()) | set(stored_hashes.keys())
+        )
+        if module_symbol:
+            all_fqns.add("__doc__")
+
+        states: Dict[str, SymbolState] = {}
+
+        # 4. Build state for each FQN
+        for fqn in all_fqns:
+            symbol_rec: Optional[SymbolRecord] = None
+            if fqn == "__doc__":
+                symbol_rec = module_symbol
+            else:
+                symbol_rec = symbol_map.get(fqn)
+
+            stored_fp = stored_hashes.get(fqn, Fingerprint())
+
+            states[fqn] = SymbolState(
+~~~~~
+~~~~~python.new
+        # 3. Aggregate all unique FQNs
+        # Note: We can't easily get FQNs from lock_data without iterating all keys,
+        # but for a single file check, we rely on symbols and yaml as primary sources.
+        # Lock is a lookup source.
+        all_fqns = set(symbol_map.keys()) | set(yaml_docs.keys())
+        if module_symbol:
+            all_fqns.add("__doc__")
+
+        states: Dict[str, SymbolState] = {}
+
+        # 4. Build state for each FQN
+        for fqn in all_fqns:
+            symbol_rec: Optional[SymbolRecord] = None
+            if fqn == "__doc__":
+                symbol_rec = module_symbol
+            else:
+                symbol_rec = symbol_map.get(fqn)
+
+            # Lookup Baseline in Lock
+            suri = self._uri_generator.generate_symbol_uri(ws_rel_path, fqn)
+            stored_fp = lock_data.get(suri) or Fingerprint()
+
+            states[fqn] = SymbolState(
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
+~~~~~
+~~~~~python.old
+class ASTCheckSubjectAdapter(CheckSubject):
+    def __init__(
+        self,
+        module_def: ModuleDef,
         doc_manager: DocumentManagerProtocol,
         sig_manager: SignatureManagerProtocol,
         fingerprint_strategy: FingerprintStrategyProtocol,
+        root_path: Path,
     ):
-        self.pump_engine = pump_engine
-        self.executor = executor
+        self._module = module_def
+        self._doc_manager = doc_manager
+        self._sig_manager = sig_manager
+        self._fingerprint_strategy = fingerprint_strategy
+        self._root_path = root_path
+~~~~~
+~~~~~python.new
+class ASTCheckSubjectAdapter(CheckSubject):
+    def __init__(
+        self,
+        module_def: ModuleDef,
+        doc_manager: DocumentManagerProtocol,
+        lock_manager: LockManagerProtocol,
+        uri_generator: URIGeneratorProtocol,
+        workspace: Workspace,
+        fingerprint_strategy: FingerprintStrategyProtocol,
+        root_path: Path,
+    ):
+        self._module = module_def
+        self._doc_manager = doc_manager
+        self._lock_manager = lock_manager
+        self._uri_generator = uri_generator
+        self._workspace = workspace
+        self._fingerprint_strategy = fingerprint_strategy
+        self._root_path = root_path
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
+~~~~~
+~~~~~python.old
+    def get_all_symbol_states(self) -> Dict[str, SymbolState]:
+        # 1. Load all necessary data from various sources
+        source_docs = self._doc_manager.flatten_module_docs(self._module)
+        yaml_docs = self._doc_manager.load_docs_for_module(self._module)
+        public_fqns = self._module.get_public_documentable_fqns()
+        code_fqns = set(self._module.get_all_fqns())
+        # The module docstring key is always valid/present in code context,
+        # even if the source file has no docstring.
+        code_fqns.add("__doc__")
+
+        fingerprints = self._compute_fingerprints()
+        yaml_hashes = self._doc_manager.compute_yaml_content_hashes(self._module)
+        stored_hashes = self._sig_manager.load_composite_hashes(self.file_path)
+
+        all_fqns = code_fqns | set(yaml_docs.keys()) | set(stored_hashes.keys())
+        states: Dict[str, SymbolState] = {}
+
+        # 2. Iterate and build the state object for each symbol
+        for fqn in all_fqns:
+            fp = fingerprints.get(fqn, Fingerprint())
+            source_ir = source_docs.get(fqn)
+            stored_fp = stored_hashes.get(fqn, Fingerprint())
+
+            states[fqn] = SymbolState(
+~~~~~
+~~~~~python.new
+    def get_all_symbol_states(self) -> Dict[str, SymbolState]:
+        # 1. Load all necessary data from various sources
+        source_docs = self._doc_manager.flatten_module_docs(self._module)
+        yaml_docs = self._doc_manager.load_docs_for_module(self._module)
+        public_fqns = self._module.get_public_documentable_fqns()
+        code_fqns = set(self._module.get_all_fqns())
+        # The module docstring key is always valid/present in code context,
+        # even if the source file has no docstring.
+        code_fqns.add("__doc__")
+
+        fingerprints = self._compute_fingerprints()
+        yaml_hashes = self._doc_manager.compute_yaml_content_hashes(self._module)
+        
+        # Load Lock Data
+        lock_data = {}
+        ws_rel_path = ""
+        
+        if self._module.file_path:
+            abs_path = self._root_path / self.file_path
+            pkg_root = self._workspace.find_owning_package(abs_path)
+            lock_data = self._lock_manager.load(pkg_root)
+            ws_rel_path = self._workspace.to_workspace_relative(abs_path)
+
+        # Note: We rely on code and yaml to drive the loop. Stored hashes are looked up.
+        # This differs slightly from old behavior where stored_hashes keys were also iterated.
+        # But logically, if it's in Lock but not in Code and not in YAML, it's effectively invisible/deleted?
+        # Or should we flag it? For now, we stick to Code | YAML driven check.
+        all_fqns = code_fqns | set(yaml_docs.keys())
+        states: Dict[str, SymbolState] = {}
+
+        # 2. Iterate and build the state object for each symbol
+        for fqn in all_fqns:
+            fp = fingerprints.get(fqn, Fingerprint())
+            source_ir = source_docs.get(fqn)
+            
+            stored_fp = Fingerprint()
+            if ws_rel_path:
+                suri = self._uri_generator.generate_symbol_uri(ws_rel_path, fqn)
+                stored_fp = lock_data.get(suri) or Fingerprint()
+
+            states[fqn] = SymbolState(
+~~~~~
+
+#### Acts 2: 重写 `CheckResolver` (`stitcher-application`)
+
+适配解决冲突和自动调和的逻辑。
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/resolver.py
+~~~~~
+~~~~~python.old
+from stitcher.spec import (
+    ModuleDef,
+    ResolutionAction,
+    Fingerprint,
+    LanguageParserProtocol,
+    FingerprintStrategyProtocol,
+)
+from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
+from stitcher.spec.interaction import InteractionHandler, InteractionContext
+from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
+from stitcher.analysis.schema import FileCheckResult
+
+
+class CheckResolver:
+    def __init__(
+        self,
+        root_path: Path,
+        parser: LanguageParserProtocol,
+        doc_manager: DocumentManagerProtocol,
+        sig_manager: SignatureManagerProtocol,
+        interaction_handler: InteractionHandler | None,
+        fingerprint_strategy: FingerprintStrategyProtocol,
+    ):
+        self.root_path = root_path
+        self.parser = parser
+        self.doc_manager = doc_manager
+        self.sig_manager = sig_manager
         self.interaction_handler = interaction_handler
+        self.fingerprint_strategy = fingerprint_strategy
+~~~~~
+~~~~~python.new
+from stitcher.spec import (
+    ModuleDef,
+    ResolutionAction,
+    Fingerprint,
+    LanguageParserProtocol,
+    FingerprintStrategyProtocol,
+    LockManagerProtocol,
+    URIGeneratorProtocol,
+)
+from stitcher.spec.managers import DocumentManagerProtocol
+from stitcher.spec.interaction import InteractionHandler, InteractionContext
+from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
+from stitcher.analysis.schema import FileCheckResult
+from stitcher.workspace import Workspace
+
+
+class CheckResolver:
+    def __init__(
+        self,
+        root_path: Path,
+        workspace: Workspace,
+        parser: LanguageParserProtocol,
+        doc_manager: DocumentManagerProtocol,
+        lock_manager: LockManagerProtocol,
+        uri_generator: URIGeneratorProtocol,
+        interaction_handler: InteractionHandler | None,
+        fingerprint_strategy: FingerprintStrategyProtocol,
+    ):
+        self.root_path = root_path
+        self.workspace = workspace
+        self.parser = parser
+        self.doc_manager = doc_manager
+        self.lock_manager = lock_manager
+        self.uri_generator = uri_generator
+        self.interaction_handler = interaction_handler
+        self.fingerprint_strategy = fingerprint_strategy
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/resolver.py
+~~~~~
+~~~~~python.old
+    def auto_reconcile_docs(
+        self, results: List[FileCheckResult], modules: List[ModuleDef]
+    ):
+        for res in results:
+            # Find all "doc_updated" violations and update baselines
+            doc_update_violations = [
+                v for v in res.info_violations if v.kind == L.check.state.doc_updated
+            ]
+            if not doc_update_violations:
+                continue
+
+            module_def = next((m for m in modules if m.file_path == res.path), None)
+            if not module_def:
+                continue
+
+            stored_hashes = self.sig_manager.load_composite_hashes(module_def.file_path)
+            new_hashes = copy.deepcopy(stored_hashes)
+            current_yaml_map = self.doc_manager.compute_yaml_content_hashes(module_def)
+
+            for violation in doc_update_violations:
+                fqn = violation.fqn
+                if fqn in new_hashes:
+                    new_yaml_hash = current_yaml_map.get(fqn)
+                    if new_yaml_hash is not None:
+                        new_hashes[fqn]["baseline_yaml_content_hash"] = new_yaml_hash
+                    elif "baseline_yaml_content_hash" in new_hashes[fqn]:
+                        del new_hashes[fqn]["baseline_yaml_content_hash"]
+
+            if new_hashes != stored_hashes:
+                self.sig_manager.save_composite_hashes(module_def.file_path, new_hashes)
+~~~~~
+~~~~~python.new
+    def auto_reconcile_docs(
+        self, results: List[FileCheckResult], modules: List[ModuleDef]
+    ):
+        # Group by package to batch lock updates
+        updates_by_pkg: Dict[Path, Dict[str, Fingerprint]] = defaultdict(dict)
+        
+        # Pre-load needed lock data? Or load on demand.
+        # Since this is auto-reconcile, we iterate results.
+        
+        for res in results:
+            doc_update_violations = [
+                v for v in res.info_violations if v.kind == L.check.state.doc_updated
+            ]
+            if not doc_update_violations:
+                continue
+
+            module_def = next((m for m in modules if m.file_path == res.path), None)
+            if not module_def:
+                continue
+                
+            abs_path = self.root_path / module_def.file_path
+            pkg_root = self.workspace.find_owning_package(abs_path)
+            ws_rel_path = self.workspace.to_workspace_relative(abs_path)
+            
+            # Load lock only if not already loaded for this batch? 
+            # For simplicity, we load fresh, update in memory, then save later.
+            # But here we need cumulative updates.
+            if pkg_root not in updates_by_pkg:
+                updates_by_pkg[pkg_root] = self.lock_manager.load(pkg_root)
+            
+            lock_data = updates_by_pkg[pkg_root]
+            current_yaml_map = self.doc_manager.compute_yaml_content_hashes(module_def)
+
+            for violation in doc_update_violations:
+                fqn = violation.fqn
+                suri = self.uri_generator.generate_symbol_uri(ws_rel_path, fqn)
+                
+                if suri in lock_data:
+                    fp = lock_data[suri]
+                    new_yaml_hash = current_yaml_map.get(fqn)
+                    
+                    if new_yaml_hash is not None:
+                        fp["baseline_yaml_content_hash"] = new_yaml_hash
+                    elif "baseline_yaml_content_hash" in fp:
+                        del fp["baseline_yaml_content_hash"]
+                        
+        # Save all updated locks
+        for pkg_root, lock_data in updates_by_pkg.items():
+            self.lock_manager.save(pkg_root, lock_data)
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/resolver.py
+~~~~~
+~~~~~python.old
+    def _apply_resolutions(
+        self, resolutions: dict[str, list[tuple[InteractionContext, ResolutionAction]]]
+    ):
+        sig_updates_by_file = defaultdict(list)
+        purges_by_file = defaultdict(list)
+
+        for file_path, context_actions in resolutions.items():
+            for context, action in context_actions:
+                if action in [ResolutionAction.RELINK, ResolutionAction.RECONCILE]:
+                    sig_updates_by_file[file_path].append((context.fqn, action))
+                elif action == ResolutionAction.PURGE_DOC:
+                    purges_by_file[file_path].append(context.fqn)
+
+        # Apply signature updates
+        for file_path, fqn_actions in sig_updates_by_file.items():
+            stored_hashes = self.sig_manager.load_composite_hashes(file_path)
+            new_hashes = copy.deepcopy(stored_hashes)
+
+            full_module_def = self.parser.parse(
+                (self.root_path / file_path).read_text("utf-8"), file_path
+            )
+            computed_fingerprints = self._compute_fingerprints(full_module_def)
+            current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
+                full_module_def
+            )
+
+            for fqn, action in fqn_actions:
+                if fqn in new_hashes:
+                    fp = new_hashes[fqn]
+                    current_fp = computed_fingerprints.get(fqn, Fingerprint())
+                    current_code_hash = current_fp.get("current_code_structure_hash")
+
+                    if action == ResolutionAction.RELINK:
+                        if current_code_hash:
+                            fp["baseline_code_structure_hash"] = str(current_code_hash)
+                    elif action == ResolutionAction.RECONCILE:
+                        if current_code_hash:
+                            fp["baseline_code_structure_hash"] = str(current_code_hash)
+                        if fqn in current_yaml_map:
+                            fp["baseline_yaml_content_hash"] = str(
+                                current_yaml_map[fqn]
+                            )
+
+            if new_hashes != stored_hashes:
+                self.sig_manager.save_composite_hashes(file_path, new_hashes)
+~~~~~
+~~~~~python.new
+    def _apply_resolutions(
+        self, resolutions: dict[str, list[tuple[InteractionContext, ResolutionAction]]]
+    ):
+        # 1. Group resolutions by Package Root (Lock Boundary)
+        updates_by_pkg: Dict[Path, Dict[str, Fingerprint]] = defaultdict(dict)
+        actions_by_file = defaultdict(list)
+        
+        # Pre-process actions to group by file first for efficient parsing
+        for file_path, context_actions in resolutions.items():
+            abs_path = self.root_path / file_path
+            pkg_root = self.workspace.find_owning_package(abs_path)
+            
+            if pkg_root not in updates_by_pkg:
+                updates_by_pkg[pkg_root] = self.lock_manager.load(pkg_root)
+            
+            actions_by_file[file_path].extend(context_actions)
+
+        # 2. Process file-by-file logic
+        purges_by_file = defaultdict(list)
+
+        for file_path, context_actions in actions_by_file.items():
+            abs_path = self.root_path / file_path
+            pkg_root = self.workspace.find_owning_package(abs_path)
+            ws_rel_path = self.workspace.to_workspace_relative(abs_path)
+            
+            lock_data = updates_by_pkg[pkg_root]
+            
+            # Need to parse code to get current state for Relink/Reconcile
+            has_sig_updates = any(a in [ResolutionAction.RELINK, ResolutionAction.RECONCILE] for _, a in context_actions)
+            
+            computed_fingerprints = {}
+            current_yaml_map = {}
+            
+            if has_sig_updates:
+                full_module_def = self.parser.parse(
+                    abs_path.read_text("utf-8"), file_path
+                )
+                computed_fingerprints = self._compute_fingerprints(full_module_def)
+                current_yaml_map = self.doc_manager.compute_yaml_content_hashes(full_module_def)
+
+            for context, action in context_actions:
+                fqn = context.fqn
+                
+                if action == ResolutionAction.PURGE_DOC:
+                    purges_by_file[file_path].append(fqn)
+                    continue
+                
+                suri = self.uri_generator.generate_symbol_uri(ws_rel_path, fqn)
+                if suri in lock_data:
+                    fp = lock_data[suri]
+                    current_fp = computed_fingerprints.get(fqn, Fingerprint())
+                    current_code_hash = current_fp.get("current_code_structure_hash")
+
+                    if action == ResolutionAction.RELINK:
+                        if current_code_hash:
+                            fp["baseline_code_structure_hash"] = str(current_code_hash)
+                    elif action == ResolutionAction.RECONCILE:
+                        if current_code_hash:
+                            fp["baseline_code_structure_hash"] = str(current_code_hash)
+                        if fqn in current_yaml_map:
+                            fp["baseline_yaml_content_hash"] = str(current_yaml_map[fqn])
+
+        # 3. Save Lock Files
+        for pkg_root, lock_data in updates_by_pkg.items():
+            self.lock_manager.save(pkg_root, lock_data)
+
+        # 4. Apply doc purges (Sidecar operations)
+        for file_path, fqns_to_purge in purges_by_file.items():
+            module_def = ModuleDef(file_path=file_path)
+            docs = self.doc_manager.load_docs_for_module(module_def)
+            original_len = len(docs)
+
+            for fqn in fqns_to_purge:
+                if fqn in docs:
+                    del docs[fqn]
+
+            if len(docs) < original_len:
+                doc_path = (self.root_path / file_path).with_suffix(".stitcher.yaml")
+                if not docs:
+                    if doc_path.exists():
+                        doc_path.unlink()
+                else:
+                    final_data = {
+                        k: self.doc_manager.serialize_ir(v) for k, v in docs.items()
+                    }
+                    content = self.doc_manager.dump_data(final_data)
+                    doc_path.write_text(content, encoding="utf-8")
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/resolver.py
+~~~~~
+~~~~~python.old
+    def reformat_all(self, modules: List[ModuleDef]):
+        bus.info(L.check.run.reformatting)
+        for module in modules:
+            self.doc_manager.reformat_docs_for_module(module)
+            self.sig_manager.reformat_hashes_for_file(module.file_path)
+~~~~~
+~~~~~python.new
+    def reformat_all(self, modules: List[ModuleDef]):
+        bus.info(L.check.run.reformatting)
+        # Reformatting only applies to docs now. Lock file is auto-formatted on save.
+        for module in modules:
+            self.doc_manager.reformat_docs_for_module(module)
+~~~~~
+
+#### Acts 3: 重写 `CheckRunner` (`stitcher-application`)
+
+更新 Runner 入口。
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/runner.py
+~~~~~
+~~~~~python.old
+from stitcher.spec import (
+    ModuleDef,
+    FingerprintStrategyProtocol,
+    IndexStoreProtocol,
+    DifferProtocol,
+)
+from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
+from stitcher.spec.interaction import InteractionContext
+from stitcher.analysis.schema import FileCheckResult as AnalysisFileCheckResult
+
+from stitcher.app.runners.check.resolver import CheckResolver
+from stitcher.app.runners.check.reporter import CheckReporter
+from .subject import IndexCheckSubjectAdapter, ASTCheckSubjectAdapter
+from stitcher.analysis.engines.consistency.engine import create_consistency_engine
+
+
+class CheckRunner:
+    def __init__(
+        self,
+        doc_manager: DocumentManagerProtocol,
+        sig_manager: SignatureManagerProtocol,
+        fingerprint_strategy: FingerprintStrategyProtocol,
+        index_store: IndexStoreProtocol,
+        differ: DifferProtocol,
+        resolver: CheckResolver,
+        reporter: CheckReporter,
+        root_path: Path,
+    ):
         self.doc_manager = doc_manager
         self.sig_manager = sig_manager
         self.fingerprint_strategy = fingerprint_strategy
+        self.index_store = index_store
+        self.root_path = root_path
 
-    def run_batch(
+        self.engine = create_consistency_engine(differ=differ)
+        self.resolver = resolver
+        self.reporter = reporter
+~~~~~
+~~~~~python.new
+from stitcher.spec import (
+    ModuleDef,
+    FingerprintStrategyProtocol,
+    IndexStoreProtocol,
+    DifferProtocol,
+    LockManagerProtocol,
+    URIGeneratorProtocol,
+)
+from stitcher.spec.managers import DocumentManagerProtocol
+from stitcher.spec.interaction import InteractionContext
+from stitcher.analysis.schema import FileCheckResult as AnalysisFileCheckResult
+
+from stitcher.app.runners.check.resolver import CheckResolver
+from stitcher.app.runners.check.reporter import CheckReporter
+from .subject import IndexCheckSubjectAdapter, ASTCheckSubjectAdapter
+from stitcher.analysis.engines.consistency.engine import create_consistency_engine
+from stitcher.workspace import Workspace
+
+
+class CheckRunner:
+    def __init__(
         self,
-        modules: List[ModuleDef],
-        config: StitcherConfig,
-        tm: TransactionManager,
-        strip: bool = False,
-        force: bool = False,
-        reconcile: bool = False,
-    ) -> PumpResult:
-        # --- Phase 1: Analysis ---
-        all_conflicts = []
-        # The runner is responsible for adapting ModuleDefs to AnalysisSubjects
+        doc_manager: DocumentManagerProtocol,
+        lock_manager: LockManagerProtocol,
+        uri_generator: URIGeneratorProtocol,
+        fingerprint_strategy: FingerprintStrategyProtocol,
+        index_store: IndexStoreProtocol,
+        workspace: Workspace,
+        differ: DifferProtocol,
+        resolver: CheckResolver,
+        reporter: CheckReporter,
+        root_path: Path,
+    ):
+        self.doc_manager = doc_manager
+        self.lock_manager = lock_manager
+        self.uri_generator = uri_generator
+        self.fingerprint_strategy = fingerprint_strategy
+        self.index_store = index_store
+        self.workspace = workspace
+        self.root_path = root_path
+
+        self.engine = create_consistency_engine(differ=differ)
+        self.resolver = resolver
+        self.reporter = reporter
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/runner.py
+~~~~~
+~~~~~python.old
+        for file_path in file_paths:
+            subject = IndexCheckSubjectAdapter(
+                file_path,
+                self.index_store,
+                self.doc_manager,
+                self.sig_manager,
+                self.root_path,
+            )
+            analysis_result = self.engine.analyze(subject)
+~~~~~
+~~~~~python.new
+        for file_path in file_paths:
+            subject = IndexCheckSubjectAdapter(
+                file_path,
+                self.index_store,
+                self.doc_manager,
+                self.lock_manager,
+                self.uri_generator,
+                self.workspace,
+                self.root_path,
+            )
+            analysis_result = self.engine.analyze(subject)
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/runner.py
+~~~~~
+~~~~~python.old
         for module in modules:
             subject = ASTCheckSubjectAdapter(
                 module,
                 self.doc_manager,
                 self.sig_manager,
                 self.fingerprint_strategy,
-                tm.root_path,
+                self.root_path,
             )
-            conflicts = self.pump_engine.analyze(subject)
-            all_conflicts.extend(conflicts)
+            analysis_result = self.engine.analyze(subject)
 ~~~~~
 ~~~~~python.new
-from stitcher.spec import (
-    ModuleDef,
-    ResolutionAction,
-    FingerprintStrategyProtocol,
-    LockManagerProtocol,
-    URIGeneratorProtocol,
-)
-from stitcher.spec.managers import DocumentManagerProtocol
-from stitcher.spec.interaction import InteractionHandler
-from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
-from stitcher.app.types import PumpResult
-from stitcher.config import StitcherConfig
-from stitcher.common.transaction import TransactionManager
-from stitcher.analysis.engines import PumpEngine
-from .protocols import PumpExecutorProtocol
-from ..check.subject import ASTCheckSubjectAdapter
-from stitcher.workspace import Workspace
-
-
-class PumpRunner:
-    def __init__(
-        self,
-        pump_engine: PumpEngine,
-        executor: PumpExecutorProtocol,
-        interaction_handler: InteractionHandler | None,
-        # Dependencies required for subject creation
-        doc_manager: DocumentManagerProtocol,
-        lock_manager: LockManagerProtocol,
-        uri_generator: URIGeneratorProtocol,
-        workspace: Workspace,
-        fingerprint_strategy: FingerprintStrategyProtocol,
-    ):
-        self.pump_engine = pump_engine
-        self.executor = executor
-        self.interaction_handler = interaction_handler
-        self.doc_manager = doc_manager
-        self.lock_manager = lock_manager
-        self.uri_generator = uri_generator
-        self.workspace = workspace
-        self.fingerprint_strategy = fingerprint_strategy
-
-    def run_batch(
-        self,
-        modules: List[ModuleDef],
-        config: StitcherConfig,
-        tm: TransactionManager,
-        strip: bool = False,
-        force: bool = False,
-        reconcile: bool = False,
-    ) -> PumpResult:
-        # --- Phase 1: Analysis ---
-        all_conflicts = []
-        # The runner is responsible for adapting ModuleDefs to AnalysisSubjects
         for module in modules:
             subject = ASTCheckSubjectAdapter(
                 module,
@@ -895,17 +787,12 @@ class PumpRunner:
                 self.uri_generator,
                 self.workspace,
                 self.fingerprint_strategy,
-                tm.root_path,
+                self.root_path,
             )
-            conflicts = self.pump_engine.analyze(subject)
-            all_conflicts.extend(conflicts)
+            analysis_result = self.engine.analyze(subject)
 ~~~~~
 
 ### 下一步建议
-我们已经完成了核心 Runner (`Init`, `Pump`) 的迁移。
-接下来的重点是 **Check 子系统** 的重写。这是一个较大的任务，因为它涉及到 `SubjectAdapter` 的逻辑变更（从文件哈希到 SURI 查找）以及 `Resolver` 的冲突解决逻辑。
+我们已经完成了应用层的代码重写。现在所有的 Runner 应该都能基于新的 LockFileManager 工作。
 
-建议将 Check 子系统的迁移拆分为以下步骤：
-1.  重写 `stitcher-application/src/stitcher/app/runners/check/subject.py`。
-2.  重写 `stitcher-application/src/stitcher/app/runners/check/resolver.py`。
-3.  重写 `stitcher-application/src/stitcher/app/runners/check/runner.py`。
+接下来的步骤是 **阶段 4: 重构引擎简化 (Refactor Engine Lobotomy)**。我们需要去 `stitcher-refactor` 包中，把那些复杂的、针对旧签名文件的移动/重命名逻辑砍掉，换成简单的 Lock 更新逻辑。完成那一步之后，我们就可以进行全面的清理和测试修复了。

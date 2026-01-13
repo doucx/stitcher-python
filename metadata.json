@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] feat: 切换至 LockFileManager 并移除 SignatureManager", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768296156.0801165, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] feat: 迁移 Check 子系统至 LockFileManager", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768296390.1212955, "duration_ms": 0}}
