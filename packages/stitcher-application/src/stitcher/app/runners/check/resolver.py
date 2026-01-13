@@ -11,27 +11,34 @@ from stitcher.spec import (
     Fingerprint,
     LanguageParserProtocol,
     FingerprintStrategyProtocol,
+    LockManagerProtocol,
+    URIGeneratorProtocol,
 )
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
+from stitcher.spec.managers import DocumentManagerProtocol
 from stitcher.spec.interaction import InteractionHandler, InteractionContext
 from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
 from stitcher.analysis.schema import FileCheckResult
+from stitcher.workspace import Workspace
 
 
 class CheckResolver:
     def __init__(
         self,
         root_path: Path,
+        workspace: Workspace,
         parser: LanguageParserProtocol,
         doc_manager: DocumentManagerProtocol,
-        sig_manager: SignatureManagerProtocol,
+        lock_manager: LockManagerProtocol,
+        uri_generator: URIGeneratorProtocol,
         interaction_handler: InteractionHandler | None,
         fingerprint_strategy: FingerprintStrategyProtocol,
     ):
         self.root_path = root_path
+        self.workspace = workspace
         self.parser = parser
         self.doc_manager = doc_manager
-        self.sig_manager = sig_manager
+        self.lock_manager = lock_manager
+        self.uri_generator = uri_generator
         self.interaction_handler = interaction_handler
         self.fingerprint_strategy = fingerprint_strategy
 
@@ -50,8 +57,13 @@ class CheckResolver:
     def auto_reconcile_docs(
         self, results: List[FileCheckResult], modules: List[ModuleDef]
     ):
+        # Group by package to batch lock updates
+        updates_by_pkg: Dict[Path, Dict[str, Fingerprint]] = defaultdict(dict)
+        
+        # Pre-load needed lock data? Or load on demand.
+        # Since this is auto-reconcile, we iterate results.
+        
         for res in results:
-            # Find all "doc_updated" violations and update baselines
             doc_update_violations = [
                 v for v in res.info_violations if v.kind == L.check.state.doc_updated
             ]
@@ -61,22 +73,36 @@ class CheckResolver:
             module_def = next((m for m in modules if m.file_path == res.path), None)
             if not module_def:
                 continue
-
-            stored_hashes = self.sig_manager.load_composite_hashes(module_def.file_path)
-            new_hashes = copy.deepcopy(stored_hashes)
+                
+            abs_path = self.root_path / module_def.file_path
+            pkg_root = self.workspace.find_owning_package(abs_path)
+            ws_rel_path = self.workspace.to_workspace_relative(abs_path)
+            
+            # Load lock only if not already loaded for this batch? 
+            # For simplicity, we load fresh, update in memory, then save later.
+            # But here we need cumulative updates.
+            if pkg_root not in updates_by_pkg:
+                updates_by_pkg[pkg_root] = self.lock_manager.load(pkg_root)
+            
+            lock_data = updates_by_pkg[pkg_root]
             current_yaml_map = self.doc_manager.compute_yaml_content_hashes(module_def)
 
             for violation in doc_update_violations:
                 fqn = violation.fqn
-                if fqn in new_hashes:
+                suri = self.uri_generator.generate_symbol_uri(ws_rel_path, fqn)
+                
+                if suri in lock_data:
+                    fp = lock_data[suri]
                     new_yaml_hash = current_yaml_map.get(fqn)
+                    
                     if new_yaml_hash is not None:
-                        new_hashes[fqn]["baseline_yaml_content_hash"] = new_yaml_hash
-                    elif "baseline_yaml_content_hash" in new_hashes[fqn]:
-                        del new_hashes[fqn]["baseline_yaml_content_hash"]
-
-            if new_hashes != stored_hashes:
-                self.sig_manager.save_composite_hashes(module_def.file_path, new_hashes)
+                        fp["baseline_yaml_content_hash"] = new_yaml_hash
+                    elif "baseline_yaml_content_hash" in fp:
+                        del fp["baseline_yaml_content_hash"]
+                        
+        # Save all updated locks
+        for pkg_root, lock_data in updates_by_pkg.items():
+            self.lock_manager.save(pkg_root, lock_data)
 
     def resolve_conflicts(
         self,
@@ -170,32 +196,53 @@ class CheckResolver:
     def _apply_resolutions(
         self, resolutions: dict[str, list[tuple[InteractionContext, ResolutionAction]]]
     ):
-        sig_updates_by_file = defaultdict(list)
+        # 1. Group resolutions by Package Root (Lock Boundary)
+        updates_by_pkg: Dict[Path, Dict[str, Fingerprint]] = defaultdict(dict)
+        actions_by_file = defaultdict(list)
+        
+        # Pre-process actions to group by file first for efficient parsing
+        for file_path, context_actions in resolutions.items():
+            abs_path = self.root_path / file_path
+            pkg_root = self.workspace.find_owning_package(abs_path)
+            
+            if pkg_root not in updates_by_pkg:
+                updates_by_pkg[pkg_root] = self.lock_manager.load(pkg_root)
+            
+            actions_by_file[file_path].extend(context_actions)
+
+        # 2. Process file-by-file logic
         purges_by_file = defaultdict(list)
 
-        for file_path, context_actions in resolutions.items():
+        for file_path, context_actions in actions_by_file.items():
+            abs_path = self.root_path / file_path
+            pkg_root = self.workspace.find_owning_package(abs_path)
+            ws_rel_path = self.workspace.to_workspace_relative(abs_path)
+            
+            lock_data = updates_by_pkg[pkg_root]
+            
+            # Need to parse code to get current state for Relink/Reconcile
+            has_sig_updates = any(a in [ResolutionAction.RELINK, ResolutionAction.RECONCILE] for _, a in context_actions)
+            
+            computed_fingerprints = {}
+            current_yaml_map = {}
+            
+            if has_sig_updates:
+                full_module_def = self.parser.parse(
+                    abs_path.read_text("utf-8"), file_path
+                )
+                computed_fingerprints = self._compute_fingerprints(full_module_def)
+                current_yaml_map = self.doc_manager.compute_yaml_content_hashes(full_module_def)
+
             for context, action in context_actions:
-                if action in [ResolutionAction.RELINK, ResolutionAction.RECONCILE]:
-                    sig_updates_by_file[file_path].append((context.fqn, action))
-                elif action == ResolutionAction.PURGE_DOC:
-                    purges_by_file[file_path].append(context.fqn)
-
-        # Apply signature updates
-        for file_path, fqn_actions in sig_updates_by_file.items():
-            stored_hashes = self.sig_manager.load_composite_hashes(file_path)
-            new_hashes = copy.deepcopy(stored_hashes)
-
-            full_module_def = self.parser.parse(
-                (self.root_path / file_path).read_text("utf-8"), file_path
-            )
-            computed_fingerprints = self._compute_fingerprints(full_module_def)
-            current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
-                full_module_def
-            )
-
-            for fqn, action in fqn_actions:
-                if fqn in new_hashes:
-                    fp = new_hashes[fqn]
+                fqn = context.fqn
+                
+                if action == ResolutionAction.PURGE_DOC:
+                    purges_by_file[file_path].append(fqn)
+                    continue
+                
+                suri = self.uri_generator.generate_symbol_uri(ws_rel_path, fqn)
+                if suri in lock_data:
+                    fp = lock_data[suri]
                     current_fp = computed_fingerprints.get(fqn, Fingerprint())
                     current_code_hash = current_fp.get("current_code_structure_hash")
 
@@ -206,12 +253,33 @@ class CheckResolver:
                         if current_code_hash:
                             fp["baseline_code_structure_hash"] = str(current_code_hash)
                         if fqn in current_yaml_map:
-                            fp["baseline_yaml_content_hash"] = str(
-                                current_yaml_map[fqn]
-                            )
+                            fp["baseline_yaml_content_hash"] = str(current_yaml_map[fqn])
 
-            if new_hashes != stored_hashes:
-                self.sig_manager.save_composite_hashes(file_path, new_hashes)
+        # 3. Save Lock Files
+        for pkg_root, lock_data in updates_by_pkg.items():
+            self.lock_manager.save(pkg_root, lock_data)
+
+        # 4. Apply doc purges (Sidecar operations)
+        for file_path, fqns_to_purge in purges_by_file.items():
+            module_def = ModuleDef(file_path=file_path)
+            docs = self.doc_manager.load_docs_for_module(module_def)
+            original_len = len(docs)
+
+            for fqn in fqns_to_purge:
+                if fqn in docs:
+                    del docs[fqn]
+
+            if len(docs) < original_len:
+                doc_path = (self.root_path / file_path).with_suffix(".stitcher.yaml")
+                if not docs:
+                    if doc_path.exists():
+                        doc_path.unlink()
+                else:
+                    final_data = {
+                        k: self.doc_manager.serialize_ir(v) for k, v in docs.items()
+                    }
+                    content = self.doc_manager.dump_data(final_data)
+                    doc_path.write_text(content, encoding="utf-8")
 
         # Apply doc purges
         for file_path, fqns_to_purge in purges_by_file.items():
@@ -237,6 +305,6 @@ class CheckResolver:
 
     def reformat_all(self, modules: List[ModuleDef]):
         bus.info(L.check.run.reformatting)
+        # Reformatting only applies to docs now. Lock file is auto-formatted on save.
         for module in modules:
             self.doc_manager.reformat_docs_for_module(module)
-            self.sig_manager.reformat_hashes_for_file(module.file_path)

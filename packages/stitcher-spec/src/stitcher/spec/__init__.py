@@ -30,7 +30,7 @@ from .protocols import (
     URIGeneratorProtocol,
 )
 from .storage import IndexStoreProtocol
-from .managers import DocumentManagerProtocol, SignatureManagerProtocol
+from .managers import DocumentManagerProtocol
 
 __all__ = [
     "DocstringIR",
@@ -47,7 +47,6 @@ __all__ = [
     "URIGeneratorProtocol",
     "LockManagerProtocol",
     "DocumentManagerProtocol",
-    "SignatureManagerProtocol",
     "DifferProtocol",
     "DocstringMergerProtocol",
     "IndexStoreProtocol",

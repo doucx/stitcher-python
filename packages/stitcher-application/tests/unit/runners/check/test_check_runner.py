@@ -4,13 +4,16 @@ from unittest.mock import MagicMock
 from stitcher.app.runners.check.runner import CheckRunner
 from stitcher.app.runners.check.resolver import CheckResolver
 from stitcher.app.runners.check.reporter import CheckReporter
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
+from stitcher.spec.managers import DocumentManagerProtocol
 from stitcher.spec import (
     FingerprintStrategyProtocol,
     IndexStoreProtocol,
     ModuleDef,
     DifferProtocol,
+    LockManagerProtocol,
+    URIGeneratorProtocol,
 )
+from stitcher.workspace import Workspace
 from stitcher.spec.interaction import InteractionContext
 from stitcher.analysis.schema import FileCheckResult as AnalysisResult, Violation
 from needle.pointer import L
@@ -25,7 +28,9 @@ def test_check_runner_orchestrates_analysis_and_resolution(mocker):
     """
     # 1. Arrange: 为所有依赖项创建 mock
     mock_doc_manager = mocker.create_autospec(DocumentManagerProtocol, instance=True)
-    mock_sig_manager = mocker.create_autospec(SignatureManagerProtocol, instance=True)
+    mock_lock_manager = mocker.create_autospec(LockManagerProtocol, instance=True)
+    mock_uri_generator = mocker.create_autospec(URIGeneratorProtocol, instance=True)
+    mock_workspace = mocker.create_autospec(Workspace, instance=True)
     mock_fingerprint_strategy = mocker.create_autospec(
         FingerprintStrategyProtocol, instance=True
     )
@@ -53,9 +58,11 @@ def test_check_runner_orchestrates_analysis_and_resolution(mocker):
     # 2. Act: 实例化 runner 并注入 mock engine
     runner = CheckRunner(
         doc_manager=mock_doc_manager,
-        sig_manager=mock_sig_manager,
+        lock_manager=mock_lock_manager,
+        uri_generator=mock_uri_generator,
         fingerprint_strategy=mock_fingerprint_strategy,
         index_store=mock_index_store,
+        workspace=mock_workspace,
         differ=mock_differ,
         resolver=mock_resolver,
         reporter=mock_reporter,
@@ -104,7 +111,9 @@ def test_check_runner_passes_relink_and_reconcile_flags_to_resolver(mocker):
     mock_resolver = mocker.create_autospec(CheckResolver, instance=True)
     runner = CheckRunner(
         doc_manager=mocker.create_autospec(DocumentManagerProtocol, instance=True),
-        sig_manager=mocker.create_autospec(SignatureManagerProtocol, instance=True),
+        lock_manager=mocker.create_autospec(LockManagerProtocol, instance=True),
+        uri_generator=mocker.create_autospec(URIGeneratorProtocol, instance=True),
+        workspace=mocker.create_autospec(Workspace, instance=True),
         fingerprint_strategy=mocker.create_autospec(
             FingerprintStrategyProtocol, instance=True
         ),

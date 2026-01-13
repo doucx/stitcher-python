@@ -5,11 +5,14 @@ from stitcher.spec import (
     Fingerprint,
     FingerprintStrategyProtocol,
     IndexStoreProtocol,
+    LockManagerProtocol,
+    URIGeneratorProtocol,
 )
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
+from stitcher.spec.managers import DocumentManagerProtocol
 from stitcher.spec.index import SymbolRecord
 from stitcher.analysis.schema import SymbolState
 from stitcher.analysis.protocols import AnalysisSubject as CheckSubject
+from stitcher.workspace import Workspace
 
 
 class IndexCheckSubjectAdapter(CheckSubject):
@@ -18,13 +21,17 @@ class IndexCheckSubjectAdapter(CheckSubject):
         file_path: str,
         index_store: IndexStoreProtocol,
         doc_manager: DocumentManagerProtocol,
-        sig_manager: SignatureManagerProtocol,
+        lock_manager: LockManagerProtocol,
+        uri_generator: URIGeneratorProtocol,
+        workspace: Workspace,
         root_path: Path,
     ):
         self._file_path = file_path
         self._index_store = index_store
         self._doc_manager = doc_manager
-        self._sig_manager = sig_manager
+        self._lock_manager = lock_manager
+        self._uri_generator = uri_generator
+        self._workspace = workspace
         self._root_path = root_path
 
     @property
@@ -58,7 +65,14 @@ class IndexCheckSubjectAdapter(CheckSubject):
         # 1. Load data from all sources
         symbols_from_db = self._index_store.get_symbols_by_file_path(self.file_path)
         yaml_docs = self._doc_manager.load_docs_for_path(self.file_path)
-        stored_hashes = self._sig_manager.load_composite_hashes(self.file_path)
+        
+        # Load Lock Data
+        abs_path = self._root_path / self.file_path
+        pkg_root = self._workspace.find_owning_package(abs_path)
+        lock_data = self._lock_manager.load(pkg_root)
+        
+        # Prepare coordinates
+        ws_rel_path = self._workspace.to_workspace_relative(abs_path)
 
         yaml_content_hashes = {
             fqn: self._doc_manager.compute_ir_hash(ir) for fqn, ir in yaml_docs.items()
@@ -76,9 +90,10 @@ class IndexCheckSubjectAdapter(CheckSubject):
                 symbol_map[sym.logical_path] = sym
 
         # 3. Aggregate all unique FQNs
-        all_fqns = (
-            set(symbol_map.keys()) | set(yaml_docs.keys()) | set(stored_hashes.keys())
-        )
+        # Note: We can't easily get FQNs from lock_data without iterating all keys,
+        # but for a single file check, we rely on symbols and yaml as primary sources.
+        # Lock is a lookup source.
+        all_fqns = set(symbol_map.keys()) | set(yaml_docs.keys())
         if module_symbol:
             all_fqns.add("__doc__")
 
@@ -92,7 +107,9 @@ class IndexCheckSubjectAdapter(CheckSubject):
             else:
                 symbol_rec = symbol_map.get(fqn)
 
-            stored_fp = stored_hashes.get(fqn, Fingerprint())
+            # Lookup Baseline in Lock
+            suri = self._uri_generator.generate_symbol_uri(ws_rel_path, fqn)
+            stored_fp = lock_data.get(suri) or Fingerprint()
 
             states[fqn] = SymbolState(
                 fqn=fqn,
@@ -120,13 +137,17 @@ class ASTCheckSubjectAdapter(CheckSubject):
         self,
         module_def: ModuleDef,
         doc_manager: DocumentManagerProtocol,
-        sig_manager: SignatureManagerProtocol,
+        lock_manager: LockManagerProtocol,
+        uri_generator: URIGeneratorProtocol,
+        workspace: Workspace,
         fingerprint_strategy: FingerprintStrategyProtocol,
         root_path: Path,
     ):
         self._module = module_def
         self._doc_manager = doc_manager
-        self._sig_manager = sig_manager
+        self._lock_manager = lock_manager
+        self._uri_generator = uri_generator
+        self._workspace = workspace
         self._fingerprint_strategy = fingerprint_strategy
         self._root_path = root_path
 
@@ -167,16 +188,33 @@ class ASTCheckSubjectAdapter(CheckSubject):
 
         fingerprints = self._compute_fingerprints()
         yaml_hashes = self._doc_manager.compute_yaml_content_hashes(self._module)
-        stored_hashes = self._sig_manager.load_composite_hashes(self.file_path)
+        
+        # Load Lock Data
+        lock_data = {}
+        ws_rel_path = ""
+        
+        if self._module.file_path:
+            abs_path = self._root_path / self.file_path
+            pkg_root = self._workspace.find_owning_package(abs_path)
+            lock_data = self._lock_manager.load(pkg_root)
+            ws_rel_path = self._workspace.to_workspace_relative(abs_path)
 
-        all_fqns = code_fqns | set(yaml_docs.keys()) | set(stored_hashes.keys())
+        # Note: We rely on code and yaml to drive the loop. Stored hashes are looked up.
+        # This differs slightly from old behavior where stored_hashes keys were also iterated.
+        # But logically, if it's in Lock but not in Code and not in YAML, it's effectively invisible/deleted?
+        # Or should we flag it? For now, we stick to Code | YAML driven check.
+        all_fqns = code_fqns | set(yaml_docs.keys())
         states: Dict[str, SymbolState] = {}
 
         # 2. Iterate and build the state object for each symbol
         for fqn in all_fqns:
             fp = fingerprints.get(fqn, Fingerprint())
             source_ir = source_docs.get(fqn)
-            stored_fp = stored_hashes.get(fqn, Fingerprint())
+            
+            stored_fp = Fingerprint()
+            if ws_rel_path:
+                suri = self._uri_generator.generate_symbol_uri(ws_rel_path, fqn)
+                stored_fp = lock_data.get(suri) or Fingerprint()
 
             states[fqn] = SymbolState(
                 fqn=fqn,

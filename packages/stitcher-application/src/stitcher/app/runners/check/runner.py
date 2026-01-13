@@ -7,8 +7,10 @@ from stitcher.spec import (
     FingerprintStrategyProtocol,
     IndexStoreProtocol,
     DifferProtocol,
+    LockManagerProtocol,
+    URIGeneratorProtocol,
 )
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
+from stitcher.spec.managers import DocumentManagerProtocol
 from stitcher.spec.interaction import InteractionContext
 from stitcher.analysis.schema import FileCheckResult as AnalysisFileCheckResult
 
@@ -16,24 +18,29 @@ from stitcher.app.runners.check.resolver import CheckResolver
 from stitcher.app.runners.check.reporter import CheckReporter
 from .subject import IndexCheckSubjectAdapter, ASTCheckSubjectAdapter
 from stitcher.analysis.engines.consistency.engine import create_consistency_engine
+from stitcher.workspace import Workspace
 
 
 class CheckRunner:
     def __init__(
         self,
         doc_manager: DocumentManagerProtocol,
-        sig_manager: SignatureManagerProtocol,
+        lock_manager: LockManagerProtocol,
+        uri_generator: URIGeneratorProtocol,
         fingerprint_strategy: FingerprintStrategyProtocol,
         index_store: IndexStoreProtocol,
+        workspace: Workspace,
         differ: DifferProtocol,
         resolver: CheckResolver,
         reporter: CheckReporter,
         root_path: Path,
     ):
         self.doc_manager = doc_manager
-        self.sig_manager = sig_manager
+        self.lock_manager = lock_manager
+        self.uri_generator = uri_generator
         self.fingerprint_strategy = fingerprint_strategy
         self.index_store = index_store
+        self.workspace = workspace
         self.root_path = root_path
 
         self.engine = create_consistency_engine(differ=differ)
@@ -76,7 +83,9 @@ class CheckRunner:
                 file_path,
                 self.index_store,
                 self.doc_manager,
-                self.sig_manager,
+                self.lock_manager,
+                self.uri_generator,
+                self.workspace,
                 self.root_path,
             )
             analysis_result = self.engine.analyze(subject)
@@ -96,7 +105,9 @@ class CheckRunner:
             subject = ASTCheckSubjectAdapter(
                 module,
                 self.doc_manager,
-                self.sig_manager,
+                self.lock_manager,
+                self.uri_generator,
+                self.workspace,
                 self.fingerprint_strategy,
                 self.root_path,
             )
