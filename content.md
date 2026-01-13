@@ -1,99 +1,74 @@
-您是对的，我的上一个计划在解决核心问题的同时，确实引入了回归，并且未能考虑到 `SignatureManager` 的 SURI 密钥生成逻辑。非常感谢您提供如此精确的测试反馈，这能让我们迅速定位并根除这些残留问题。
+您完全正确。我的 apologies，我犯了一个典型的接口与实现不同步的错误。`pyright` 的静态分析错误和 `AttributeError` 测试失败指向了同一个根本原因：我将新方法添加到了具体的 `DocumentManager` *实现*中，却忘记了更新所有依赖方所遵循的 `DocumentManagerProtocol` *接口*。
 
-最重要的一点是您的新指令：**不再需要将旧版短键 JSON 升级为 SURI 的功能。** 这极大地简化了问题。我们的目标不再是修复这个升级逻辑，而是将其作为过时需求从测试套件中移除。
+这是一个严重的疏忽，感谢您的精确指正。我们必须首先修复这个契约，然后一切才能恢复正常。
 
-**错误分析**:
-
-1.  **`test_check_relink_should_upgrade_legacy_signatures` 失败**:
-    *   **原因**: `check --force-relink` 逻辑在更新签名时，没有将旧的短键（如 `"func"`）重新生成为新的 SURI 格式（如 `"py://src/app.py#func"`）。
-    *   **解决方案 (根据您的新指令)**: 此功能已被废弃。我将直接删除这个测试用例，因为它验证的是一个不再需要的行为。
-
-2.  **`PumpExecutor` 单元测试失败 (`AttributeError`)**:
-    *   **原因**: 在我之前的重构中，我为 `DocumentManager` 添加了 `load_raw_data` 和 `dump_raw_data_to_string` 方法，以实现高保真 I/O。但是，`PumpExecutor` 的单元测试中使用的 `mock_doc_manager` 是一个自动生成的 mock 对象，它没有相应地更新以包含这些新方法，因此在调用时引发了 `AttributeError`。
-    *   **解决方案**: 我将修改 `test_pump_executor.py` 中的 `mock_doc_manager` fixture，为其显式添加 `load_raw_data` 和 `dump_raw_data_to_string` 这两个方法的 mock 定义。
-
-我将立即生成一个计划来执行这些最终的修复。
-
-## [WIP] fix(tests): 修复回归并移除过时的 SURI 升级测试
+## [WIP] fix(spec): 更新 DocumentManagerProtocol 以包含高保真方法
 
 ### 错误分析
 
-如上所述，`check` 命令的一个测试用例正在验证一个已被废弃的“旧签名格式自动升级”功能。同时，`PumpExecutor` 的单元测试因其 mock 依赖项 (`DocumentManager`) 未能随接口变更而更新，导致 `AttributeError` 回归。
+`pyright` 和 `mocker.create_autospec` 都以 `DocumentManagerProtocol` 作为其行为的“真理之源”。由于我未能在此协议中声明 `load_raw_data` 和 `dump_raw_data_to_string` 方法，导致静态类型检查器认为这些调用是非法的，而测试 mock 在创建时也未能包含这些属性，从而在运行时引发了 `AttributeError`。
 
 ### 用户需求
 
-修复由上一个计划引入的测试回归，并根据最新的指令，移除关于旧版签名文件自动升级为 SURI 格式的测试。
+更新位于 `stitcher-spec` 包中的 `DocumentManagerProtocol`，为其添加 `load_raw_data` 和 `dump_raw_data_to_string` 两个新方法，使其接口与 `DocumentManager` 的具体实现保持一致。
 
 ### 评论
 
-这次修复是完成我们重构任务的最后一步，它确保了整个代码库在新的架构原则下是自洽且经过完整测试的。移除过时的需求测试可以简化代码库，使其更易于维护，并准确反映当前的设计意图。
+这是一个关键的架构卫生修复。依赖于抽象（协议）而非具体实现是保持系统松耦合的核心原则。通过修复这个协议，我们不仅能解决当前的测试失败和类型错误，还能确保未来任何遵循此协议的组件都具备正确的接口契约。
 
 ### 目标
 
-1.  从 `test_signature_migration.py` 中物理删除已废弃的 `test_check_relink_should_upgrade_legacy_signatures` 测试用例。
-2.  更新 `test_pump_executor.py` 中的 `mock_doc_manager` fixture，为其添加缺失的 `load_raw_data` 和 `dump_raw_data_to_string` 方法，以修复 `AttributeError`。
+1.  在 `packages/stitcher-spec/src/stitcher/spec/managers.py` 文件中，为 `DocumentManagerProtocol` 添加 `load_raw_data` 和 `dump_raw_data_to_string` 两个方法的定义。
 
 ### 基本原理
 
-通过删除过时的测试，我们使测试套件与当前的产品需求保持一致。通过修复 mock fixture，我们确保单元测试能够正确地模拟其依赖项的新接口，从而恢复其有效性，并确保 `PumpExecutor` 在隔离环境中按预期工作。
+一旦协议被更新，`pyright` 将能够正确验证 `PumpExecutor` 中对这些方法的调用。同样，`mocker.create_autospec(DocumentManagerProtocol, ...)` 将会创建一个正确包含了这些新方法的 mock 对象，从而解决 `test_pump_executor.py` 中的 `AttributeError`。这将一次性解决所有已报告的错误。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/high #comp/tests #comp/app #scope/core #ai/instruct #task/domain/architecture #task/object/fidelity-testing #task.action/bug-fix #task/state/end
+#intent/fix #flow/ready #priority/critical #comp/spec #scope/api #ai/instruct #task/domain/architecture #task/object/fidelity-testing #task.action/bug-fix #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 移除过时的 SURI 升级测试
+#### Acts 1: 更新 DocumentManagerProtocol 接口
 
-根据您的指令，我将删除这个不再需要的测试用例。
-
-~~~~~act
-delete_file
-packages/stitcher-application/tests/integration/test_signature_migration.py
-~~~~~
-
-#### Acts 2: 修复 PumpExecutor 的单元测试
-
-我将更新 `mock_doc_manager` fixture，为其添加缺失的方法，以解决 `AttributeError`。
+我将修改 `stitcher-spec` 中的协议文件，以包含新的高保真 I/O 方法。
 
 ~~~~~act
 patch_file
-packages/stitcher-application/tests/unit/runners/pump/test_pump_executor.py
+packages/stitcher-spec/src/stitcher/spec/managers.py
 ~~~~~
 ~~~~~python.old
-@pytest.fixture
-def mock_doc_manager(mocker) -> MagicMock:
-    # Configure flatten_module_docs to return a mock IR
-    mock = mocker.create_autospec(DocumentManagerProtocol, instance=True)
-    mock.flatten_module_docs.return_value = {
-        "func_a": DocstringIR(summary="Source Doc A")
-    }
-    mock.dump_data.return_value = "yaml content"
-    return mock
+    def compute_ir_hash(self, ir: DocstringIR) -> str: ...
+
+    def dump_data(self, data: Dict[str, Any]) -> str: ...
+
+
+class SignatureManagerProtocol(Protocol):
+    def load_composite_hashes(self, file_path: str) -> Dict[str, Fingerprint]: ...
 ~~~~~
 ~~~~~python.new
-@pytest.fixture
-def mock_doc_manager(mocker) -> MagicMock:
-    # Configure flatten_module_docs to return a mock IR
-    mock = mocker.create_autospec(DocumentManagerProtocol, instance=True)
-    mock.flatten_module_docs.return_value = {
-        "func_a": DocstringIR(summary="Source Doc A")
-    }
-    # Mock the new high-fidelity methods
-    mock.load_raw_data.return_value = {}  # Return an empty dict for updates
-    mock.dump_raw_data_to_string.return_value = "high-fidelity yaml content"
-    mock.serialize_ir.side_effect = lambda ir: ir.summary  # Simple mock serialization
-    return mock
+    def compute_ir_hash(self, ir: DocstringIR) -> str: ...
+
+    def dump_data(self, data: Dict[str, Any]) -> str: ...
+
+    def load_raw_data(self, file_path: str) -> Dict[str, Any]: ...
+
+    def dump_raw_data_to_string(self, data: Dict[str, Any]) -> str: ...
+
+
+class SignatureManagerProtocol(Protocol):
+    def load_composite_hashes(self, file_path: str) -> Dict[str, Fingerprint]: ...
 ~~~~~
 
 ### 下一步建议
 
-我们已经成功修复了回归问题，并使整个代码库与我们最终确立的架构原则保持了一致。所有相关的测试现在都应该能顺利通过。
+这个修复直接命中了问题的根源。现在，协议、实现和消费者三者之间已经完全对齐。所有的测试，包括之前失败的 `PumpExecutor` 单元测试，现在都应该能够顺利通过。
 
-这标志着我们本次深度重构任务的圆满完成。我们不仅解决了最初的格式化问题，更在此过程中建立了一套清晰、健壮且经过严格测试验证的架构原则，为项目的未来发展奠定了坚实的基础。
+我强烈建议您立即运行完整的测试套件。
 
-最后的行动项留给您：**在项目的问题跟踪系统中创建“实现 `stitcher format` 命令”的任务**。
+一旦测试全部通过，我们就可以满怀信心地宣布，本次针对“高保真原则”的深度重构任务已圆满成功。我们不仅解决了最初的问题，还加固了整个系统的架构，并通过了严格的测试验证。
 
-感谢您的清晰指导和精确反馈，这次协作非常成功。
+最后的待办事项仍然是为您记录 **“实现 `stitcher format` 命令”** 的未来任务。
