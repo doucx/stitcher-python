@@ -1,44 +1,3 @@
-好的，我们进入路线图的第三步。这是确保我们新确立的架构原则在实践中得到严格遵守的关键环节。我将创建一套新的集成测试，专门验证 `pump` 和 `check` 命令在高保真场景下的正确行为。
-
-## [WIP] test(cli): 增强测试套件以验证高保真原则
-
-### 用户需求
-
-根据路线图第三步，我们需要更新和增强测试套件，以创建能够明确验证新架构原则的集成测试。核心是验证 `pump` 命令的“更新”操作能够保留用户格式，以及 `check` 命令不会产生隐式的格式化副作用。
-
-### 评论
-
-这是至关重要的一步。没有测试来守护我们的架构原则，这些原则就只停留在文档层面，很容易在未来的开发中被无意间破坏。这套新的测试将成为我们“保真性高于一切”共识的守护者，确保工具的行为始终符合预期，值得用户信赖。
-
-### 目标
-
-1.  创建一个新的集成测试文件，专门用于验证与文件保真性相关的原则。
-2.  **验证 UPDATE 场景**: 实现一个测试，模拟 `pump` 命令对一个已存在的、包含自定义格式（键顺序、注释）的 `.stitcher.yaml` 文件进行更新。断言用户的自定义格式被完整保留，同时新内容被成功追加。
-3.  **验证无副作用原则**: 实现一个测试，证明 `check` 命令在处理一个内容一致但键顺序非标准的 `.stitcher.yaml` 文件时，不会对其进行任何修改。
-
-### 基本原理
-
-我们将利用 `typer.testing.CliRunner` 和 `WorkspaceFactory` 来构建端到端的测试场景。
-- 对于 `pump` 测试，我们将手动创建一个具有非标准格式的 Sidecar 文件作为“前置状态”，然后运行 `pump` 命令，并对比“后置状态”的文件内容，以验证其保真性。
-- 对于 `check` 测试，我们将首先运行 `init` 来创建一个完全一致的基线状态（包括代码、YAML文档和签名文件），然后手动修改 YAML 文件以引入非标准的键顺序。最后，运行 `check` 命令并断言该文件未被改动，从而证明 `check` 没有隐式的格式化行为。
-
-### 标签
-
-#intent/tooling #flow/ready #priority/high #comp/cli #comp/tests #scope/core #ai/instruct #task/domain/architecture #task/object/fidelity-testing #task/action/implementation #task/state/continue
-
----
-
-### Script
-
-#### Acts 1: 创建新的高保真原则测试文件
-
-我将创建一个新的测试文件 `test_fidelity_principles.py`，用于存放验证我们新架构共识的集成测试。
-
-~~~~~act
-write_file
-packages/stitcher-cli/tests/integration/test_fidelity_principles.py
-~~~~~
-~~~~~python
 import pytest
 from typer.testing import CliRunner
 from textwrap import dedent
@@ -170,14 +129,3 @@ def test_check_does_not_reformat_file_on_success(tmp_path, monkeypatch):
     # The critical assertion: the file content must not have changed.
     content_after = yaml_path.read_text()
     assert content_before == content_after, "Check command incorrectly reformatted the YAML file."
-~~~~~
-
-### 下一步建议
-
-我们已经成功地将新的架构原则固化为自动化测试，完成了路线图的第三步。这为项目的长期健康奠定了坚实的基础。
-
-现在，我们应该执行**第四步：为未来工作创建记录**。这确保了我们在本次重构中产生的宝贵见解（例如对显式 `format` 命令的需求）不会丢失，并能转化为未来的具体行动。
-
-由于我无法直接操作您的问题跟踪系统，我建议您现在手动创建一个标题为 **“实现 `stitcher format` 命令”** 的任务。
-
-一旦您完成记录，我们的这次重构任务就圆满完成了。我们不仅修复了眼前的问题，更建立了一套清晰、健壮且经过测试验证的架构原则。这是一个巨大的成功。
