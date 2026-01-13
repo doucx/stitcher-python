@@ -52,7 +52,7 @@ def test_move_file_in_monorepo_updates_cross_package_imports(tmp_path):
     # Load all packages
     graph.load("pkga_lib")
     graph.load("pkgb_app")
-    sidecar_manager = SidecarManager(root_path=project_root)
+    sidecar_manager = SidecarManager(workspace=workspace)
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,

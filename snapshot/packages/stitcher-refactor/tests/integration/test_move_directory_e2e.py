@@ -59,7 +59,7 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
     graph = SemanticGraph(workspace=workspace, index_store=index_store)
     graph.load("mypkg")
     graph.load("app")
-    sidecar_manager = SidecarManager(root_path=project_root)
+    sidecar_manager = SidecarManager(workspace=workspace)
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,

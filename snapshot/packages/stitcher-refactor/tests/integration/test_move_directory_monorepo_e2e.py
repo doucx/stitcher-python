@@ -70,7 +70,7 @@ def test_move_directory_in_monorepo_updates_cross_package_references(tmp_path):
     # Load the top-level namespace package. Griffe will discover all its parts
     # from the search paths provided by the Workspace.
     graph.load("cascade")
-    sidecar_manager = SidecarManager(root_path=project_root)
+    sidecar_manager = SidecarManager(workspace=workspace)
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,

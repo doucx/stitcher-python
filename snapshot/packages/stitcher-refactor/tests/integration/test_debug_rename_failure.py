@@ -143,7 +143,7 @@ def test_debug_rename_failure_analysis(tmp_path):
     graph.load("stitcher")
 
     # 3. EXECUTE REFACTOR
-    sidecar_manager = SidecarManager(root_path=project_root)
+    sidecar_manager = SidecarManager(workspace=workspace)
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,

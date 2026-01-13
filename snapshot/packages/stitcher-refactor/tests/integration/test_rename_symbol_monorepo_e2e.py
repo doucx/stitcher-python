@@ -68,7 +68,7 @@ def test_rename_symbol_in_monorepo_updates_all_references_and_sidecars(tmp_path)
     graph.load("pkgb_app")
     graph.load("test_core")
     graph.load("integration")
-    sidecar_manager = SidecarManager(root_path=project_root)
+    sidecar_manager = SidecarManager(workspace=workspace)
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,

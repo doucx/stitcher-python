@@ -1,375 +1,335 @@
-好的，分析显示之前的修复未能解决根本问题。直接修改代码存在风险，我们需要先通过日志来观测系统的内部状态，以做出正确的诊断。
+## [WIP] 统一的 Sidecar 路径解析策略
 
-根据 `HFEA` 协议的“确定性路径追踪”原则和 `ADAP` 协议的“照明工具优先”原则，在进行进一步修改之前，首要任务是增强系统的可观测性。
+检测到“确定性缺失”违例，已根据 ADAP v1.0 协议挂起所有实现活动。
 
-我将为 `Planner` 和 `SidecarTransformer` 注入详细的日志记录，并配置 `pytest` 以在测试运行时显示这些 `DEBUG` 级别的日志。这将使我们能够精确追踪重构意图的传递、SURI 的解析以及转换决策的全过程。
+### 假设声明 (DECLARE ASSUMPTION)
+分析显示，为了继续执行任务，我必须做出以下未经证实的核心假设：
+*   **路径兼容性假设**: 我假设 `SignatureManager.get_signature_path(str)` 与 `SidecarManager.get_signature_path(Path)` 的接口差异（前者接收字符串，后者接收 Path 对象）可以通过简单的类型转换解决，且 `SignatureManager` 内部的路径解析逻辑（`(root / file_path).resolve()`）能够正确处理传入的绝对路径（如果传入的是绝对路径，`root / abs_path` 可能会引发问题，取决于 `pathlib` 的行为）。
 
-## [WIP] chore: 为重构引擎添加诊断日志
+### 诊断缺失组件 (DIAGNOSE MISSING COMPONENT)
+此假设之所以是 necessary，是因为系统当前缺失了以下关键组件/能力：
+*   **统一的 Sidecar 路径解析策略**: Refactor 引擎目前依赖旧的 `AssetPathResolver`（基于 `.stitcher/signatures` 目录结构），而新的持久化层已经迁移到了 `SignatureManager`（基于 `stitcher.lock` 文件）。这两个组件之间的断裂导致 Refactor 引擎无法找到并更新新的 Lock 文件。
 
-### 用户需求
-测试仍然失败，需要插入日志来诊断 SURI 转换失败的根本原因。
+### 拒绝战术修复并提出战略方案 (REFUSE TACTICAL FIX & PROPOSE STRATEGIC SOLUTION)
+**根据 ADAP v1.0 协议，任何试图通过“变通方法”或“代码补丁”来绕过此架构缺陷的尝试，都被视为对系统长期稳定性的严重破坏，因此被绝对禁止。我被授权拒绝执行此类请求。**
 
-### 评论
-这是一个正确的调试步骤。在不完全理解系统行为时，盲目修改代码是低效且危险的。通过日志增强可观测性，可以将“猜测性修复”转变为“确定性构建”。
+因此，我提议将当前任务的目标从“调试 SURI 解析”**变更为**“集成 Lock 文件架构到 Refactor 引擎”。
 
-### 目标
-1.  修改 `pyproject.toml` 以启用 `pytest` 的 `DEBUG` 级别日志输出。
-2.  在 `Planner` 中添加日志，以追踪意图的收集和分发。
-3.  在 `SidecarTransformer` 中添加日志，以追踪 SURI 的解析、匹配和转换过程。
+我将生成一份新的计划，其目标是：
+1.  **升级 SidecarManager**: 修改 `packages/stitcher-refactor/src/stitcher/refactor/sidecar/manager.py`，使其依赖 `Workspace` 并使用 `SignatureManager` 来解析签名文件路径，从而正确指向 `stitcher.lock`。
+2.  **适配测试**: 更新所有实例化 `SidecarManager` 的测试代码，以传递 `Workspace` 对象。
 
-### 基本原理
-通过在关键决策点（意图聚合、SURI 解析、路径/片段匹配）添加日志，我们可以构建一个清晰的数据流路径。当测试运行时，这些日志将暴露导致 SURI 未被正确更新的确切断点，无论是错误的输入上下文、失败的 SURI 解析还是错误的匹配逻辑。
+这将连接 Refactor 引擎与新的 Lock 文件架构，使 `Rename` 和 `Move` 操作能够感知并更新 `stitcher.lock`。
 
 ### 标签
-#intent/tooling #flow/ready #priority/critical #comp/refactor #comp/tests #scope/dx #ai/instruct #task/domain/debugging #task/object/refactor-engine #task/action/add-logging #task/state/begin
+#intent/refine #flow/ready #priority/critical #comp/refactor #concept/state #scope/core #ai/instruct #task/domain/architecture #task/object/sidecar-manager #task/action/integrate-lock-file #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: 配置 Pytest 以显示 DEBUG 日志
-
-我们将修改 `pyproject.toml`，为 `pytest` 添加日志相关的配置。
+#### Acts 1: 升级 SidecarManager 以集成 SignatureManager
 
 ~~~~~act
-patch_file
-pyproject.toml
+write_file
+packages/stitcher-refactor/src/stitcher/refactor/sidecar/manager.py
 ~~~~~
-~~~~~toml.old
-[tool.pytest.ini_options]
-addopts = "-ra --cov=stitcher --cov=needle --cov-report=term-missing"
-testpaths = ["tests", "packages"]
-norecursedirs = ["tests/fixtures"]
-pythonpath = [
-~~~~~
-~~~~~toml.new
-[tool.pytest.ini_options]
-addopts = "-ra -s --cov=stitcher --cov=needle --cov-report=term-missing"
-log_cli = "true"
-log_cli_level = "DEBUG"
-testpaths = ["tests", "packages"]
-norecursedirs = ["tests/fixtures"]
-pythonpath = [
-~~~~~
-
-#### Acts 2: 为 Planner 添加日志
-
-现在，我们在 `planner.py` 中注入日志，以观察意图的生命周期。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
-~~~~~
-~~~~~python.old
-from collections import defaultdict
+~~~~~python
 from pathlib import Path
-from typing import List, Dict, DefaultDict, TYPE_CHECKING
-import json
+from typing import Union
 
-if TYPE_CHECKING:
-    from stitcher.refactor.migration import MigrationSpec
-from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.services import AssetPathResolver
+from stitcher.lang.sidecar.signature_manager import SignatureManager
+from stitcher.workspace import Workspace
+
+
+class SidecarManager:
+    def __init__(self, workspace: Workspace):
+        self.workspace = workspace
+        self.resolver = AssetPathResolver(workspace.root_path)
+        self.signature_manager = SignatureManager(workspace)
+
+    def get_doc_path(self, source_file_path: Union[str, Path]) -> Path:
+        """
+        Returns the path to the document sidecar (.stitcher.yaml) for a given source file.
+        Delegates to AssetPathResolver as doc files are still per-source-file.
+        """
+        return self.resolver.get_doc_path(source_file_path)
+
+    def get_signature_path(self, source_file_path: Union[str, Path]) -> Path:
+        """
+        Returns the path to the signature lock file (stitcher.lock) containing the given source file.
+        Delegates to SignatureManager to handle package root resolution.
+        """
+        # SignatureManager expects a string path relative to workspace root or absolute?
+        # Looking at SignatureManager implementation:
+        # abs_file_path = (self.workspace.root_path / file_path).resolve()
+        # If file_path is absolute, pathlib joins ignores the left side.
+        # So passing absolute path works.
+        
+        return self.signature_manager.get_signature_path(str(source_file_path))
+~~~~~
+
+#### Acts 2: 适配相关测试用例
+
+我们需要更新所有实例化 `SidecarManager` 的地方。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_debug_rename_failure.py
+~~~~~
+~~~~~python.old
+    # 3. EXECUTE REFACTOR
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 ~~~~~python.new
-import logging
-from collections import defaultdict
-from pathlib import Path
-from typing import List, Dict, DefaultDict, TYPE_CHECKING
-import json
-
-if TYPE_CHECKING:
-    from stitcher.refactor.migration import MigrationSpec
-from stitcher.refactor.engine.context import RefactorContext
-
-log = logging.getLogger(__name__)
+    # 3. EXECUTE REFACTOR
+    sidecar_manager = SidecarManager(workspace=workspace)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+packages/stitcher-refactor/tests/integration/test_monorepo_refactor_e2e.py
 ~~~~~
 ~~~~~python.old
-class Planner:
-    def plan(self, spec: "MigrationSpec", ctx: RefactorContext) -> List[FileOp]:
-        all_ops: List[FileOp] = []
-
-        # --- 1. Intent Collection ---
-        all_intents: List[RefactorIntent] = []
-        for operation in spec.operations:
-            all_intents.extend(operation.collect_intents(ctx))
+    # Load all packages
+    graph.load("pkga_lib")
+    graph.load("pkgb_app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 ~~~~~python.new
-class Planner:
-    def plan(self, spec: "MigrationSpec", ctx: RefactorContext) -> List[FileOp]:
-        log.debug("--- Planner: Starting plan generation ---")
-        all_ops: List[FileOp] = []
-
-        # --- 1. Intent Collection ---
-        all_intents: List[RefactorIntent] = []
-        for operation in spec.operations:
-            all_intents.extend(operation.collect_intents(ctx))
-        log.debug(f"Collected {len(all_intents)} total intents.")
+    # Load all packages
+    graph.load("pkga_lib")
+    graph.load("pkgb_app")
+    sidecar_manager = SidecarManager(workspace=workspace)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+packages/stitcher-refactor/tests/integration/test_move_directory_e2e.py
 ~~~~~
 ~~~~~python.old
-        rename_map: Dict[str, str] = {}
-        for intent in all_intents:
-            if isinstance(intent, RenameIntent):
-                # TODO: Handle rename chains (A->B, B->C should become A->C)
-                rename_map[intent.old_fqn] = intent.new_fqn
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+    graph.load("app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 ~~~~~python.new
-        rename_map: Dict[str, str] = {}
-        for intent in all_intents:
-            if isinstance(intent, RenameIntent):
-                # TODO: Handle rename chains (A->B, B->C should become A->C)
-                rename_map[intent.old_fqn] = intent.new_fqn
-        log.debug(f"Aggregated rename_map: {rename_map}")
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+    graph.load("app")
+    sidecar_manager = SidecarManager(workspace=workspace)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+packages/stitcher-refactor/tests/integration/test_move_directory_monorepo_e2e.py
 ~~~~~
 ~~~~~python.old
-        sidecar_updates: DefaultDict[Path, List[SidecarUpdateIntent]] = defaultdict(
-            list
-        )
-        for intent in all_intents:
-            if isinstance(intent, SidecarUpdateIntent):
-                sidecar_updates[intent.sidecar_path].append(intent)
-
-        sidecar_adapter = SidecarAdapter(ctx.workspace.root_path)
-        sidecar_transformer = SidecarTransformer()
-        for path, intents in sidecar_updates.items():
-            # Load the sidecar file only once
-            is_yaml = path.suffix in [".yaml", ".yml"]
-            data = (
-                sidecar_adapter.load_raw_data(path)
-                if is_yaml
-                else json.loads(path.read_text("utf-8"))
-            )
-
-            # Apply all intents for this file
-            for intent in intents:
-                old_module_fqn = intent.module_fqn
-                new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
-
-                transform_ctx = SidecarTransformContext(
-                    old_module_fqn=old_module_fqn,
-                    new_module_fqn=new_module_fqn,
-                    old_fqn=intent.old_fqn,
-                    new_fqn=intent.new_fqn,
-                    old_file_path=intent.old_file_path,
-                    new_file_path=intent.new_file_path,
-                )
-                data = sidecar_transformer.transform(path, data, transform_ctx)
+    # Load the top-level namespace package. Griffe will discover all its parts
+    # from the search paths provided by the Workspace.
+    graph.load("cascade")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 ~~~~~python.new
-        sidecar_updates: DefaultDict[Path, List[SidecarUpdateIntent]] = defaultdict(
-            list
-        )
-        for intent in all_intents:
-            if isinstance(intent, SidecarUpdateIntent):
-                sidecar_updates[intent.sidecar_path].append(intent)
-        log.debug(
-            f"Aggregated {len(sidecar_updates)} sidecar files to update: {list(sidecar_updates.keys())}"
-        )
-
-        sidecar_adapter = SidecarAdapter(ctx.workspace.root_path)
-        sidecar_transformer = SidecarTransformer()
-        for path, intents in sidecar_updates.items():
-            log.debug(f"Processing sidecar file: {path}")
-            log.debug(f"  Intents for this file: {intents}")
-            # Load the sidecar file only once
-            is_yaml = path.suffix in [".yaml", ".yml"]
-            data = (
-                sidecar_adapter.load_raw_data(path)
-                if is_yaml
-                else json.loads(path.read_text("utf-8"))
-            )
-
-            # Apply all intents for this file
-            for intent in intents:
-                log.debug(f"  Applying intent: {intent}")
-                old_module_fqn = intent.module_fqn
-                new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
-
-                transform_ctx = SidecarTransformContext(
-                    old_module_fqn=old_module_fqn,
-                    new_module_fqn=new_module_fqn,
-                    old_fqn=intent.old_fqn,
-                    new_fqn=intent.new_fqn,
-                    old_file_path=intent.old_file_path,
-                    new_file_path=intent.new_file_path,
-                )
-                log.debug(f"  Creating transform_ctx: {transform_ctx}")
-                data = sidecar_transformer.transform(path, data, transform_ctx)
-~~~~~
-
-#### Acts 3: 为 SidecarTransformer 添加日志
-
-最后，我们在 `transform.py` 中添加日志，以观察 SURI 的处理细节。
-
-~~~~~act
-patch_file
-packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
-~~~~~
-~~~~~python.old
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
-
-from stitcher.lang.python.uri import SURIGenerator
-~~~~~
-~~~~~python.new
-import logging
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
-
-from stitcher.lang.python.uri import SURIGenerator
-
-log = logging.getLogger(__name__)
+    # Load the top-level namespace package. Griffe will discover all its parts
+    # from the search paths provided by the Workspace.
+    graph.load("cascade")
+    sidecar_manager = SidecarManager(workspace=workspace)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 
 ~~~~~act
 patch_file
-packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
+packages/stitcher-refactor/tests/integration/test_move_nested_directory_e2e.py
 ~~~~~
 ~~~~~python.old
-    def _transform_json_data(
-        self,
-        data: Dict[str, Any],
-        old_file_path: Optional[str],
-        new_file_path: Optional[str],
-        old_fragment: Optional[str],
-        new_fragment: Optional[str],
-    ) -> Dict[str, Any]:
-        # Handle stitcher.lock format (nested fingerprints)
-        if "fingerprints" in data and isinstance(data["fingerprints"], dict):
-            new_fingerprints = self._transform_json_data(
-                data["fingerprints"],
-                old_file_path,
-                new_file_path,
-                old_fragment,
-                new_fragment,
-            )
-            if new_fingerprints is not data["fingerprints"]:
-                new_data = data.copy()
-                new_data["fingerprints"] = new_fingerprints
-                return new_data
-            return data
-
-        new_data = {}
-        modified = False
-
-        for key, value in data.items():
-            if not key.startswith("py://"):
-                new_data[key] = value
-                continue
-
-            try:
-                # Use the centralized, fixed SURIGenerator
-                path, fragment = SURIGenerator.parse(key)
-            except ValueError:
-                new_data[key] = value
-                continue
+    # We load 'cascade' and 'app' to build the full semantic picture
+    graph.load("cascade")
+    graph.load("app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 ~~~~~python.new
-    def _transform_json_data(
-        self,
-        data: Dict[str, Any],
-        old_file_path: Optional[str],
-        new_file_path: Optional[str],
-        old_fragment: Optional[str],
-        new_fragment: Optional[str],
-    ) -> Dict[str, Any]:
-        log.debug(
-            f"--- _transform_json_data (file context: {old_file_path or 'N/A'}) ---\n"
-            f"  Context: old_frag={old_fragment}, new_frag={new_fragment}, old_path={old_file_path}, new_path={new_file_path}"
-        )
-        # Handle stitcher.lock format (nested fingerprints)
-        if "fingerprints" in data and isinstance(data["fingerprints"], dict):
-            log.debug("Found 'fingerprints' key, recursing.")
-            new_fingerprints = self._transform_json_data(
-                data["fingerprints"],
-                old_file_path,
-                new_file_path,
-                old_fragment,
-                new_fragment,
-            )
-            if new_fingerprints is not data["fingerprints"]:
-                new_data = data.copy()
-                new_data["fingerprints"] = new_fingerprints
-                return new_data
-            return data
-
-        new_data = {}
-        modified = False
-
-        for key, value in data.items():
-            log.debug(f"  Processing key: '{key}'")
-            if not key.startswith("py://"):
-                new_data[key] = value
-                log.debug("    -> Not a SURI, skipping.")
-                continue
-
-            try:
-                # Use the centralized, fixed SURIGenerator
-                path, fragment = SURIGenerator.parse(key)
-                log.debug(f"    - Parsed SURI: path='{path}', fragment='{fragment}'")
-            except ValueError:
-                new_data[key] = value
-                log.debug(f"    - SURI parse failed, skipping.")
-                continue
+    # We load 'cascade' and 'app' to build the full semantic picture
+    graph.load("cascade")
+    graph.load("app")
+    sidecar_manager = SidecarManager(workspace=workspace)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 
 ~~~~~act
 patch_file
-packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
+packages/stitcher-refactor/tests/integration/test_rename_e2e.py
 ~~~~~
 ~~~~~python.old
-            if current_path != original_path or current_fragment != original_fragment:
-                # Use SURIGenerator to construct the new key
-                # We handle the 'empty fragment' case: if fragment is None/empty,
-                # for_symbol might not be right if we want file-only SURI.
-                # But here we are transforming existing SURIs which usually have fragments.
-                # If original fragment was empty, current_fragment is empty.
-                if current_fragment:
-                    new_key = SURIGenerator.for_symbol(current_path, current_fragment)
-                else:
-                    new_key = SURIGenerator.for_file(current_path)
-                
-                new_data[new_key] = value
-                modified = True
-            else:
-                new_data[key] = value
+    index_store = create_populated_index(project_root)
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 ~~~~~python.new
-            if current_path != original_path or current_fragment != original_fragment:
-                # Use SURIGenerator to construct the new key
-                # We handle the 'empty fragment' case: if fragment is None/empty,
-                # for_symbol might not be right if we want file-only SURI.
-                # But here we are transforming existing SURIs which usually have fragments.
-                # If original fragment was empty, current_fragment is empty.
-                if current_fragment:
-                    new_key = SURIGenerator.for_symbol(current_path, current_fragment)
-                else:
-                    new_key = SURIGenerator.for_file(current_path)
+    index_store = create_populated_index(project_root)
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+    sidecar_manager = SidecarManager(workspace=workspace)
+    ctx = RefactorContext(
+        workspace=workspace,
+~~~~~
 
-                log.debug(f"    -> MODIFIED: New key will be '{new_key}'")
-                new_data[new_key] = value
-                modified = True
-            else:
-                log.debug("    -> UNCHANGED")
-                new_data[key] = value
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_suri_update.py
+~~~~~
+~~~~~python.old
+def test_rename_symbol_updates_suri_fragment_in_signatures(tmp_path):
+    """
+    验证 RenameSymbolOperation 能够正确更新 Signature 文件中的 SURI 键。
+    场景: 重命名类 MyClass -> YourClass
+    预期: 签名文件中的键从 py://...#MyClass 变为 py://...#YourClass
+    """
+    # 1. ARRANGE
+    factory = WorkspaceFactory(tmp_path)
+
+    # 构造 SURI (注意: 路径相对于项目根目录)
+    rel_py_path = "src/mypkg/core.py"
+    old_suri = f"py://{rel_py_path}#MyClass"
+    new_suri = f"py://{rel_py_path}#YourClass"
+
+    project_root = (
+        factory.with_pyproject(".")
+        .with_source("src/mypkg/__init__.py", "")
+        .with_source(rel_py_path, "class MyClass:\n    pass\n")
+        .build()
+    )
+
+    # Manually create lock file
+    lock_file = project_root / "stitcher.lock"
+    lock_data = {
+        "version": "1.0",
+        "fingerprints": {old_suri: {"baseline_code_structure_hash": "original_hash"}},
+    }
+    lock_file.write_text(json.dumps(lock_data))
+
+    # 2. ACT
+    index_store = create_populated_index(project_root)
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+~~~~~
+~~~~~python.new
+def test_rename_symbol_updates_suri_fragment_in_signatures(tmp_path):
+    """
+    验证 RenameSymbolOperation 能够正确更新 Signature 文件中的 SURI 键。
+    场景: 重命名类 MyClass -> YourClass
+    预期: 签名文件中的键从 py://...#MyClass 变为 py://...#YourClass
+    """
+    # 1. ARRANGE
+    factory = WorkspaceFactory(tmp_path)
+
+    # 构造 SURI (注意: 路径相对于项目根目录)
+    rel_py_path = "src/mypkg/core.py"
+    old_suri = f"py://{rel_py_path}#MyClass"
+    new_suri = f"py://{rel_py_path}#YourClass"
+
+    project_root = (
+        factory.with_pyproject(".")
+        .with_source("src/mypkg/__init__.py", "")
+        .with_source(rel_py_path, "class MyClass:\n    pass\n")
+        .build()
+    )
+
+    # Manually create lock file
+    lock_file = project_root / "stitcher.lock"
+    lock_data = {
+        "version": "1.0",
+        "fingerprints": {old_suri: {"baseline_code_structure_hash": "original_hash"}},
+    }
+    lock_file.write_text(json.dumps(lock_data))
+
+    # 2. ACT
+    index_store = create_populated_index(project_root)
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+
+    sidecar_manager = SidecarManager(workspace=workspace)
+    ctx = RefactorContext(
+        workspace=workspace,
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_suri_update.py
+~~~~~
+~~~~~python.old
+    index_store = create_populated_index(project_root)
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+~~~~~
+~~~~~python.new
+    index_store = create_populated_index(project_root)
+    workspace = Workspace(root_path=project_root)
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+
+    sidecar_manager = SidecarManager(workspace=workspace)
+    ctx = RefactorContext(
+        workspace=workspace,
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_symbol_monorepo_e2e.py
+~~~~~
+~~~~~python.old
+    graph.load("pkgb_app")
+    graph.load("test_core")
+    graph.load("integration")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+~~~~~
+~~~~~python.new
+    graph.load("pkgb_app")
+    graph.load("test_core")
+    graph.load("integration")
+    sidecar_manager = SidecarManager(workspace=workspace)
+    ctx = RefactorContext(
+        workspace=workspace,
 ~~~~~
 
 ### 下一步建议
 
-请重新运行测试。`pytest` 现在会捕获并显示详细的 `DEBUG` 日志。请将完整的、包含日志的测试失败输出提供给我，以便我进行最终的根本原因分析和修复。
+运行测试以验证修复：
+`pytest packages/stitcher-lang-sidecar/tests/unit/test_transform.py packages/stitcher-refactor/tests/integration/`

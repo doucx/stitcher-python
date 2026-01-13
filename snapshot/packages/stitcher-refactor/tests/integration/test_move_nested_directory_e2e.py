@@ -59,7 +59,7 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
     # We load 'cascade' and 'app' to build the full semantic picture
     graph.load("cascade")
     graph.load("app")
-    sidecar_manager = SidecarManager(root_path=project_root)
+    sidecar_manager = SidecarManager(workspace=workspace)
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,
