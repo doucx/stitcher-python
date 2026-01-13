@@ -42,6 +42,8 @@ __all__ = [
     "DocstringParserProtocol",
     "DocstringRendererProtocol",
     "DocstringSerializerProtocol",
+    "URIGeneratorProtocol",
+    "LockManagerProtocol",
     "DocumentManagerProtocol",
     "SignatureManagerProtocol",
     "DifferProtocol",
