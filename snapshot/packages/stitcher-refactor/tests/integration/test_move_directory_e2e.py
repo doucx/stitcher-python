@@ -18,6 +18,9 @@ from stitcher.test_utils import WorkspaceFactory, create_populated_index
 def test_move_directory_updates_all_contents_and_references(tmp_path):
     # 1. SETUP: Declaratively build the project
     factory = WorkspaceFactory(tmp_path)
+    py_rel_path = "mypkg/core/utils.py"
+    old_suri = f"py://{py_rel_path}#Helper"
+
     project_root = (
         factory.with_pyproject(".")
         .with_source("mypkg/core/__init__.py", "")
@@ -34,11 +37,13 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
         )
         .with_docs(
             "mypkg/core/utils.stitcher.yaml",
-            {"mypkg.core.utils.Helper": "Doc for Helper"},
+            # Key is Fragment
+            {"Helper": "Doc for Helper"},
         )
         .with_raw_file(
             ".stitcher/signatures/mypkg/core/utils.json",
-            json.dumps({"mypkg.core.utils.Helper": {"hash": "123"}}),
+            # Key is SURI
+            json.dumps({old_suri: {"hash": "123"}}),
         )
         .build()
     )
@@ -91,10 +96,15 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
     new_sig_path = sig_root / "mypkg/services/utils.json"
     assert new_sig_path.exists()
 
+    # YAML key is Fragment
     new_yaml_data = yaml.safe_load((services_dir / "utils.stitcher.yaml").read_text())
-    assert "mypkg.services.utils.Helper" in new_yaml_data
+    assert "Helper" in new_yaml_data
+
+    # JSON key is SURI
+    new_py_rel_path = "mypkg/services/utils.py"
+    expected_suri = f"py://{new_py_rel_path}#Helper"
     new_sig_data = json.loads(new_sig_path.read_text())
-    assert "mypkg.services.utils.Helper" in new_sig_data
+    assert expected_suri in new_sig_data
 
     updated_app_code = app_py.read_text(encoding="utf-8")
     assert "from mypkg.services.utils import Helper" in updated_app_code

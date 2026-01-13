@@ -90,6 +90,11 @@ def test_debug_rename_failure_analysis(tmp_path):
     old_fqn = "stitcher.common.messaging.bus.MessageBus"
     new_fqn = "stitcher.common.messaging.bus.FeedbackBus"
 
+    # Define paths and identifiers according to the new ontology
+    py_rel_path = "packages/stitcher-common/src/stitcher/common/messaging/bus.py"
+    old_suri = f"py://{py_rel_path}#MessageBus"
+    new_suri = f"py://{py_rel_path}#FeedbackBus"
+
     project_root = (
         factory.with_pyproject(".")
         .with_pyproject("packages/stitcher-common")
@@ -112,13 +117,15 @@ def test_debug_rename_failure_analysis(tmp_path):
         .with_docs(
             "packages/stitcher-common/src/stitcher/common/messaging/bus.stitcher.yaml",
             {
+                # Keys are now Fragments (short names)
                 "MessageBus": "Docs for MessageBus.",
                 "MessageBus.info": "Docs for info method.",
             },
         )
         .with_raw_file(
             ".stitcher/signatures/packages/stitcher-common/src/stitcher/common/messaging/bus.json",
-            json.dumps({old_fqn: {"hash": "abc"}}),
+            # Key is now a SURI
+            json.dumps({old_suri: {"hash": "abc"}}),
         )
         .build()
     )
@@ -167,7 +174,7 @@ def test_debug_rename_failure_analysis(tmp_path):
         "BUG: Python code definition was not renamed."
     )
 
-    # Assert YAML sidecar content
+    # Assert YAML sidecar content (Fragments)
     updated_yaml_data = yaml.safe_load(bus_yaml_path.read_text())
     assert "FeedbackBus" in updated_yaml_data, "BUG: YAML doc key was not renamed."
     assert "MessageBus" not in updated_yaml_data
@@ -175,8 +182,8 @@ def test_debug_rename_failure_analysis(tmp_path):
         "BUG: YAML doc method key was not renamed."
     )
 
-    # Assert Signature sidecar content
+    # Assert Signature sidecar content (SURI)
     updated_sig_data = json.loads(bus_sig_path.read_text())
-    assert new_fqn in updated_sig_data, "BUG: Signature JSON FQN key was not renamed."
-    assert old_fqn not in updated_sig_data
-    assert updated_sig_data[new_fqn] == {"hash": "abc"}
+    assert new_suri in updated_sig_data, "BUG: Signature JSON SURI key was not renamed."
+    assert old_suri not in updated_sig_data
+    assert updated_sig_data[new_suri] == {"hash": "abc"}

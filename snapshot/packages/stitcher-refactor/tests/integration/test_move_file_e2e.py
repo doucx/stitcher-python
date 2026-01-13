@@ -15,6 +15,9 @@ from stitcher.test_utils import WorkspaceFactory, create_populated_index
 def test_move_file_flat_layout(tmp_path):
     # 1. Arrange: Declaratively build the project structure
     factory = WorkspaceFactory(tmp_path)
+    py_rel_path = "mypkg/old.py"
+    old_suri = f"py://{py_rel_path}#A"
+
     project_root = (
         factory.with_pyproject(".")
         .with_source("mypkg/__init__.py", "")
@@ -33,10 +36,10 @@ def test_move_file_flat_layout(tmp_path):
             w = AliasA()
             """,
         )
-        .with_docs("mypkg/old.stitcher.yaml", {"mypkg.old.A": "Doc"})
+        .with_docs("mypkg/old.stitcher.yaml", {"A": "Doc"})  # Key is Fragment
         .with_raw_file(
             ".stitcher/signatures/mypkg/old.json",
-            json.dumps({"mypkg.old.A": {"h": "1"}}),
+            json.dumps({old_suri: {"h": "1"}}),  # Key is SURI
         )
         .build()
     )
@@ -97,5 +100,5 @@ def test_move_file_flat_layout(tmp_path):
 
     # Sidecar Keys
     new_yaml_content = new_py.with_suffix(".stitcher.yaml").read_text("utf-8")
-    assert "mypkg.new.A" in new_yaml_content
-    assert "mypkg.old.A" not in new_yaml_content
+    assert "A" in new_yaml_content
+    assert "mypkg.new.A" not in new_yaml_content

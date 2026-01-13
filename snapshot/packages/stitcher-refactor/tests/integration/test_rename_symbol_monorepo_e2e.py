@@ -12,6 +12,10 @@ from stitcher.test_utils import WorkspaceFactory, create_populated_index
 def test_rename_symbol_in_monorepo_updates_all_references_and_sidecars(tmp_path):
     # 1. ARRANGE: Build a monorepo with cross-package and test references
     factory = WorkspaceFactory(tmp_path)
+    py_rel_path = "packages/pkg_a/src/pkga_lib/core.py"
+    old_suri = f"py://{py_rel_path}#OldNameClass"
+    new_suri = f"py://{py_rel_path}#NewNameClass"
+
     project_root = (
         factory.with_pyproject(".")  # For top-level integration tests
         # --- Package A: Defines the symbol ---
@@ -20,11 +24,13 @@ def test_rename_symbol_in_monorepo_updates_all_references_and_sidecars(tmp_path)
         .with_source("packages/pkg_a/src/pkga_lib/core.py", "class OldNameClass: pass")
         .with_docs(
             "packages/pkg_a/src/pkga_lib/core.stitcher.yaml",
-            {"pkga_lib.core.OldNameClass": "Docs for the old class."},
+            # Key is Fragment
+            {"OldNameClass": "Docs for the old class."},
         )
         .with_raw_file(
             ".stitcher/signatures/packages/pkg_a/src/pkga_lib/core.json",
-            json.dumps({"pkga_lib.core.OldNameClass": {"hash": "abc"}}),
+            # Key is SURI
+            json.dumps({old_suri: {"hash": "abc"}}),
         )
         .with_source(
             "packages/pkg_a/tests/test_core.py",
@@ -97,17 +103,14 @@ def test_rename_symbol_in_monorepo_updates_all_references_and_sidecars(tmp_path)
     assert expected_import in top_level_test_path.read_text()
 
     # --- Sidecar Files ---
-    new_fqn = "pkga_lib.core.NewNameClass"
-    old_fqn = "pkga_lib.core.OldNameClass"
-
-    # YAML Doc file
+    # YAML Doc file (key is Fragment)
     doc_data = yaml.safe_load(doc_path.read_text())
-    assert new_fqn in doc_data
-    assert old_fqn not in doc_data
-    assert doc_data[new_fqn] == "Docs for the old class."
+    assert "NewNameClass" in doc_data
+    assert "OldNameClass" not in doc_data
+    assert doc_data["NewNameClass"] == "Docs for the old class."
 
-    # JSON Signature file
+    # JSON Signature file (key is SURI)
     sig_data = json.loads(sig_path.read_text())
-    assert new_fqn in sig_data
-    assert old_fqn not in sig_data
-    assert sig_data[new_fqn] == {"hash": "abc"}
+    assert new_suri in sig_data
+    assert old_suri not in sig_data
+    assert sig_data[new_suri] == {"hash": "abc"}

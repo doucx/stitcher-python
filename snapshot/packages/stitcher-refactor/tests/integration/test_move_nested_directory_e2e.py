@@ -17,6 +17,9 @@ from stitcher.test_utils import WorkspaceFactory, create_populated_index
 def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_path):
     # 1. ARRANGE: Create a complex, multi-level directory structure
     factory = WorkspaceFactory(tmp_path)
+    py_rel_path = "src/cascade/core/adapters/cache/in_memory.py"
+    old_suri = f"py://{py_rel_path}#InMemoryCache"
+
     project_root = (
         factory.with_pyproject(".")
         .with_source("src/cascade/__init__.py", "")
@@ -28,13 +31,13 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
         )
         .with_docs(
             "src/cascade/core/adapters/cache/in_memory.stitcher.yaml",
-            {"cascade.core.adapters.cache.in_memory.InMemoryCache": "Doc for Cache"},
+            # Key is Fragment
+            {"InMemoryCache": "Doc for Cache"},
         )
         .with_raw_file(
             ".stitcher/signatures/src/cascade/core/adapters/cache/in_memory.json",
-            json.dumps(
-                {"cascade.core.adapters.cache.in_memory.InMemoryCache": {"h": "123"}}
-            ),
+            # Key is SURI
+            json.dumps({old_suri: {"h": "123"}}),
         )
         .with_source(
             "src/app.py",
@@ -103,12 +106,15 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
     )
     assert expected_import in updated_app_code
 
-    # C. Verify content of moved sidecar files (FQN update)
+    # C. Verify content of moved sidecar files
+    # YAML key is Fragment
     new_yaml_data = yaml.safe_load(new_yaml_file.read_text())
-    expected_yaml_fqn = "cascade.runtime.adapters.cache.in_memory.InMemoryCache"
-    assert expected_yaml_fqn in new_yaml_data
-    assert new_yaml_data[expected_yaml_fqn] == "Doc for Cache"
+    assert "InMemoryCache" in new_yaml_data
+    assert new_yaml_data["InMemoryCache"] == "Doc for Cache"
 
+    # JSON key is SURI
+    new_py_rel_path = "src/cascade/runtime/adapters/cache/in_memory.py"
+    expected_suri = f"py://{new_py_rel_path}#InMemoryCache"
     new_sig_data = json.loads(new_sig_file_path.read_text())
-    assert expected_yaml_fqn in new_sig_data
-    assert new_sig_data[expected_yaml_fqn] == {"h": "123"}
+    assert expected_suri in new_sig_data
+    assert new_sig_data[expected_suri] == {"h": "123"}
