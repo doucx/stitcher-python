@@ -14,16 +14,16 @@ from stitcher.spec import (
     DocstringParserProtocol,
     DocstringSerializerProtocol,
 )
-from stitcher.common import DocumentAdapter, YamlAdapter
 from stitcher.lang.python.docstring import RawDocstringParser, RawSerializer
 from stitcher.common.services import AssetPathResolver
+from stitcher.lang.sidecar import SidecarAdapter
 
 
 class DocumentManager:
-    def __init__(self, root_path: Path, adapter: Optional[DocumentAdapter] = None):
+    def __init__(self, root_path: Path):
         self.root_path = root_path
-        self.adapter = adapter or YamlAdapter()
         self.resolver = AssetPathResolver(root_path)
+        self._sidecar_adapter = SidecarAdapter(root_path)
         # Defaults to Raw mode for backward compatibility
         self.parser: DocstringParserProtocol = RawDocstringParser()
         self.serializer: DocstringSerializerProtocol = RawSerializer()
@@ -36,21 +36,15 @@ class DocumentManager:
         self.parser = parser
         self.serializer = serializer
 
-    def _deserialize_ir(self, data: Union[str, Dict[str, Any]]) -> DocstringIR:
-        return self.serializer.from_yaml(data)
-
-    def _serialize_ir(self, ir: DocstringIR) -> Union[str, Dict[str, Any]]:
-        return self.serializer.to_yaml(ir)
-
     def serialize_ir(self, ir: DocstringIR) -> Union[str, Dict[str, Any]]:
-        return self._serialize_ir(ir)
+        return self._sidecar_adapter.serialize_ir(ir, self.serializer)
 
     def compute_ir_hash(self, ir: DocstringIR) -> str:
-        serialized = self._serialize_ir(ir)
+        serialized = self.serialize_ir(ir)
         return self.compute_yaml_content_hash(serialized)
 
     def dump_data(self, data: Dict[str, Any]) -> str:
-        return self.adapter.dump(data)
+        return self._sidecar_adapter.dump_to_string(data)
 
     def _extract_from_function(
         self, func: FunctionDef, prefix: str = ""
@@ -94,12 +88,9 @@ class DocumentManager:
         if not ir_map:
             return Path("")
 
-        # Convert IRs to YAML-ready data (str or dict)
-        yaml_data = {fqn: self._serialize_ir(ir) for fqn, ir in ir_map.items()}
-
         module_path = self.root_path / module.file_path
         output_path = self.resolver.get_doc_path(module_path)
-        self.adapter.save(output_path, yaml_data)
+        self._sidecar_adapter.save_doc_irs(output_path, ir_map, self.serializer)
         return output_path
 
     def load_docs_for_path(self, file_path: str) -> Dict[str, DocstringIR]:
@@ -107,9 +98,7 @@ class DocumentManager:
             return {}
         module_path = self.root_path / file_path
         doc_path = self.resolver.get_doc_path(module_path)
-
-        raw_data = self.adapter.load(doc_path)
-        return {fqn: self._deserialize_ir(val) for fqn, val in raw_data.items()}
+        return self._sidecar_adapter.load_doc_irs(doc_path, self.serializer)
 
     def load_docs_for_module(self, module: ModuleDef) -> Dict[str, DocstringIR]:
         return self.load_docs_for_path(module.file_path)
@@ -314,14 +303,9 @@ class DocumentManager:
             }
 
         if updated_keys and not dry_run:
-            # Serialize back to raw data
-            final_data = {
-                fqn: self._serialize_ir(ir) for fqn, ir in new_yaml_docs_ir.items()
-            }
-
             module_path = self.root_path / module.file_path
             output_path = module_path.with_suffix(".stitcher.yaml")
-            self.adapter.save(output_path, final_data)
+            self._sidecar_adapter.save_doc_irs(output_path, new_yaml_docs_ir, self.serializer)
 
         return {
             "success": True,
@@ -374,10 +358,10 @@ class DocumentManager:
         module_path = self.root_path / file_path
         doc_path = self.resolver.get_doc_path(module_path)
 
-        raw_data = self.adapter.load(doc_path)
+        irs = self.load_docs_for_path(file_path)
 
         return {
-            fqn: self.compute_yaml_content_hash(val) for fqn, val in raw_data.items()
+            fqn: self.compute_ir_hash(ir) for fqn, ir in irs.items()
         }
 
     def compute_yaml_content_hashes(self, module: ModuleDef) -> Dict[str, str]:
@@ -391,14 +375,9 @@ class DocumentManager:
         if not doc_path.exists():
             return False
 
-        # Load raw to preserve everything, then deserialize->serialize to apply formatting rules
-        raw_data = self.adapter.load(doc_path)
-        if not raw_data:
+        irs = self.load_docs_for_module(module)
+        if not irs:
             return False
 
-        # Round-trip through IR to enforce schema
-        irs = {fqn: self._deserialize_ir(val) for fqn, val in raw_data.items()}
-        formatted_data = {fqn: self._serialize_ir(ir) for fqn, ir in irs.items()}
-
-        self.adapter.save(doc_path, formatted_data)
+        self._sidecar_adapter.save_doc_irs(doc_path, irs, self.serializer)
         return True

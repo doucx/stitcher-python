@@ -1,6 +1,10 @@
+import io
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Dict, Optional, Union, Any
 
+from ruamel.yaml import YAML
+from stitcher.spec import DocstringIR
+from stitcher.spec.protocols import DocstringSerializerProtocol
 from stitcher.spec.registry import LanguageAdapter
 from stitcher.spec.index import SymbolRecord, ReferenceRecord
 from stitcher.lang.sidecar.parser import (
@@ -13,9 +17,16 @@ from stitcher.lang.python.analysis.models import ReferenceType
 
 
 class SidecarAdapter(LanguageAdapter):
-    def __init__(self, root_path: Path):
+    def __init__(
+        self,
+        root_path: Path,
+    ):
         self.root_path = root_path
         self.resolver = AssetPathResolver(root_path)
+        self._yaml = YAML()
+        self._yaml.indent(mapping=2, sequence=4, offset=2)
+        self._yaml.preserve_quotes = True
+        self._yaml.width = 1000  # Avoid line wrapping for readability
 
     def parse(
         self, file_path: Path, content: str
@@ -24,14 +35,12 @@ class SidecarAdapter(LanguageAdapter):
         references: List[ReferenceRecord] = []
 
         if file_path.suffix == ".json":
-            # --- Handle Signature File (.json) ---
-            # Keys are SURIs (Identity References)
             refs = parse_signature_references(content)
             for suri, line, col in refs:
                 references.append(
                     ReferenceRecord(
-                        target_fqn=None,  # Pure ID reference
-                        target_id=suri,  # The key IS the ID
+                        target_fqn=None,
+                        target_id=suri,
                         kind=ReferenceType.SIDECAR_ID.value,
                         lineno=line,
                         col_offset=col,
@@ -41,11 +50,7 @@ class SidecarAdapter(LanguageAdapter):
                 )
 
         elif file_path.suffix in (".yaml", ".yml"):
-            # --- Handle Doc File (.yaml) ---
-            # Keys are Fragments, which we resolve to SURIs
             try:
-                # 1. Resolve corresponding python file by reversing the doc path.
-                # e.g. /path/to/file.stitcher.yaml -> /path/to/file.py
                 if not file_path.name.endswith(".stitcher.yaml"):
                     return symbols, references
 
@@ -53,22 +58,16 @@ class SidecarAdapter(LanguageAdapter):
                 py_path = file_path.with_name(py_name)
 
                 if not py_path.exists():
-                    # If the corresponding .py file doesn't exist, this is a dangling sidecar.
-                    # We can't generate SURIs, so we skip it.
                     return symbols, references
 
                 rel_py_path = py_path.relative_to(self.root_path).as_posix()
 
-                # 2. Parse fragments from YAML
                 refs = parse_doc_references(content)
                 for fragment, line, col in refs:
-                    # 3. Compute SURI
                     suri = SURIGenerator.for_symbol(rel_py_path, fragment)
-
-                    # 4. Create ReferenceRecord
                     references.append(
                         ReferenceRecord(
-                            target_id=suri,  # Direct, strong reference
+                            target_id=suri,
                             kind=ReferenceType.SIDECAR_DOC_ID.value,
                             lineno=line,
                             col_offset=col,
@@ -77,8 +76,60 @@ class SidecarAdapter(LanguageAdapter):
                         )
                     )
             except (ValueError, FileNotFoundError):
-                # If we can't find the source file, we can't generate SURIs.
-                # In a real app, we might log a warning here.
                 pass
 
         return symbols, references
+
+    def load_doc_irs(
+        self, path: Path, serializer: DocstringSerializerProtocol
+    ) -> Dict[str, DocstringIR]:
+        if not path.exists():
+            return {}
+
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                raw_data = self._yaml.load(f)
+            if not isinstance(raw_data, dict):
+                return {}
+
+            return {
+                fqn: serializer.from_yaml(val) for fqn, val in raw_data.items()
+            }
+        except Exception:
+            return {}
+
+    def save_doc_irs(
+        self,
+        path: Path,
+        irs: Dict[str, DocstringIR],
+        serializer: DocstringSerializerProtocol,
+    ) -> None:
+        sorted_irs = dict(sorted(irs.items()))
+        yaml_data = {fqn: serializer.to_yaml(ir) for fqn, ir in sorted_irs.items()}
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        original_content = ""
+        if path.exists():
+            try:
+                original_content = path.read_text("utf-8")
+            except (OSError, UnicodeDecodeError):
+                pass
+
+        string_stream = io.StringIO()
+        self._yaml.dump(yaml_data, string_stream)
+        new_content = string_stream.getvalue()
+
+        if original_content != new_content:
+            with path.open("w", encoding="utf-8") as f:
+                f.write(new_content)
+
+    def dump_to_string(self, data: Dict[str, Any]) -> str:
+        string_stream = io.StringIO()
+        self._yaml.dump(data, string_stream)
+        return string_stream.getvalue()
+
+    def serialize_ir(
+        self, ir: DocstringIR, serializer: DocstringSerializerProtocol
+    ) -> Union[str, Dict[str, Any]]:
+        return serializer.to_yaml(ir)
