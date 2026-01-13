@@ -50,6 +50,7 @@ def test_indexer_resolves_aliases_and_references(tmp_path, store):
     files_to_index = workspace.discover_files()
 
     from stitcher.lang.python.uri import PythonURIGenerator
+
     indexer = FileIndexer(project_root, store)
     # Manual search_paths to avoid dependency on Workspace service in pure index tests
     adapter = PythonAdapter(project_root, [project_root], PythonURIGenerator())

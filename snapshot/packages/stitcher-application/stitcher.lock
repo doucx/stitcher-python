@@ -398,8 +398,8 @@
       "baseline_code_structure_hash": "3fdfdc7d87145f7a37995377a7eb2abd5cceb75b9e0b8b07f4e628980020cd4b"
     },
     "py://packages/stitcher-application/src/stitcher/app/runners/refactor.py#RefactorRunner.__init__": {
-      "baseline_code_signature_text": "def __init__(self, root_path: Path, index_store: IndexStoreProtocol, file_indexer: FileIndexer):",
-      "baseline_code_structure_hash": "29cc421141df494fb05dc052445b2117cb372d3626a3fde4ed301c50aae8693a"
+      "baseline_code_signature_text": "def __init__(self, root_path: Path, index_store: IndexStoreProtocol, file_indexer: FileIndexer, uri_generator: URIGeneratorProtocol):",
+      "baseline_code_structure_hash": "3c21c09321da5ca633e8e70ea2f63d73174df9e60a5e08a8cbd424da0da96a83"
     },
     "py://packages/stitcher-application/src/stitcher/app/runners/refactor.py#RefactorRunner.file_indexer": {},
     "py://packages/stitcher-application/src/stitcher/app/runners/refactor.py#RefactorRunner.index_store": {},
@@ -408,6 +408,7 @@
       "baseline_code_signature_text": "def run_apply(self, migration_script: Path, config: StitcherConfig, dry_run: bool = False, confirm_callback: Optional[Callable[[int], bool]] = None) -> bool:",
       "baseline_code_structure_hash": "f4c8ec05521cba7b1380ddd595a6ea806690da985365733d874bae3403bccd4b"
     },
+    "py://packages/stitcher-application/src/stitcher/app/runners/refactor.py#RefactorRunner.uri_generator": {},
     "py://packages/stitcher-application/src/stitcher/app/runners/transform.py#TransformRunner": {
       "baseline_code_signature_text": "class TransformRunner:",
       "baseline_code_structure_hash": "8f26048a25c09e9b90fefe3c9c895e8713966c5018c405c95387d0bba5e62bf5"

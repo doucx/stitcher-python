@@ -12,7 +12,6 @@ from stitcher.lang.python.analysis.usage_visitor import UsageScanVisitor, UsageR
 from stitcher.lang.python.analysis.scope import ScopeAnalyzer
 from stitcher.spec import URIGeneratorProtocol
 from stitcher.lang.python.analysis.utils import path_to_logical_fqn
-from stitcher.lang.python.uri import PythonURIGenerator
 
 
 class PythonAdapter(LanguageAdapter):

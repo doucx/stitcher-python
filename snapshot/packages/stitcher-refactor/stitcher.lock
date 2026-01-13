@@ -11,6 +11,7 @@
     "py://packages/stitcher-refactor/src/stitcher/refactor/engine/context.py#RefactorContext.index_store": {},
     "py://packages/stitcher-refactor/src/stitcher/refactor/engine/context.py#RefactorContext.lock_manager": {},
     "py://packages/stitcher-refactor/src/stitcher/refactor/engine/context.py#RefactorContext.sidecar_manager": {},
+    "py://packages/stitcher-refactor/src/stitcher/refactor/engine/context.py#RefactorContext.uri_generator": {},
     "py://packages/stitcher-refactor/src/stitcher/refactor/engine/context.py#RefactorContext.workspace": {},
     "py://packages/stitcher-refactor/src/stitcher/refactor/engine/intent.py#DeleteDirectoryIntent": {
       "baseline_code_signature_text": "class DeleteDirectoryIntent(FileSystemIntent):",

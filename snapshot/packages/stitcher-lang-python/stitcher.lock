@@ -8,8 +8,8 @@
       "baseline_code_structure_hash": "816ffb64743f42cc526b9ca5a37b81acdf1224278ef1a602fc2fc3780383b72a"
     },
     "py://packages/stitcher-lang-python/src/stitcher/lang/python/adapter.py#PythonAdapter.__init__": {
-      "baseline_code_signature_text": "def __init__(self, root_path: Path, search_paths: List[Path]):",
-      "baseline_code_structure_hash": "f64b32116fed69a603031d2a1958bf6e93ed6ec4ae06d18f85a05ff028d1718f"
+      "baseline_code_signature_text": "def __init__(self, root_path: Path, search_paths: List[Path], uri_generator: URIGeneratorProtocol):",
+      "baseline_code_structure_hash": "4eb6f648f531186448b3fce4ed52b45ee3ec3fbfd7736f82ce06f2c713445eb7"
     },
     "py://packages/stitcher-lang-python/src/stitcher/lang/python/adapter.py#PythonAdapter._extract_references": {
       "baseline_code_signature_text": "def _extract_references(self, rel_path: str, module: ModuleDef, content: str, file_path: Path, logical_module_fqn: str) -> List[ReferenceRecord]:",
@@ -32,6 +32,7 @@
     "py://packages/stitcher-lang-python/src/stitcher/lang/python/adapter.py#PythonAdapter.parser": {},
     "py://packages/stitcher-lang-python/src/stitcher/lang/python/adapter.py#PythonAdapter.root_path": {},
     "py://packages/stitcher-lang-python/src/stitcher/lang/python/adapter.py#PythonAdapter.search_paths": {},
+    "py://packages/stitcher-lang-python/src/stitcher/lang/python/adapter.py#PythonAdapter.uri_generator": {},
     "py://packages/stitcher-lang-python/src/stitcher/lang/python/analysis/__init__.py#__all__": {},
     "py://packages/stitcher-lang-python/src/stitcher/lang/python/analysis/models.py#ReferenceType": {
       "baseline_code_signature_text": "class ReferenceType(Enum):",
