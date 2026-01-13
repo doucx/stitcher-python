@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -7,14 +8,14 @@ from stitcher.lang.python import (
     PythonTransformer,
     PythonFingerprintStrategy,
 )
-from stitcher.workspace import Workspace
+from stitcher.workspace import Workspace, find_package_root
+from stitcher.lang.sidecar import SignatureManager
 
 from stitcher.lang.python.parser.griffe import GriffePythonParser
 from stitcher.index.db import DatabaseManager
 from stitcher.index.store import IndexStore
 from stitcher.index.indexer import FileIndexer
 from stitcher.lang.python.adapter import PythonAdapter
-from stitcher.app.services import SignatureManager
 
 
 def create_populated_index(root_path: Path) -> IndexStore:
@@ -53,7 +54,21 @@ def create_test_app(
     )
 
 
-def get_stored_hashes(project_root: Path, file_path: str) -> dict:
-    manager = SignatureManager(root_path=project_root)
-    fingerprints = manager.load_composite_hashes(file_path)
-    return {fqn: fp.to_dict() for fqn, fp in fingerprints.items()}
+def get_stored_hashes(project_root: Path, file_path_in_package: str) -> dict:
+    """
+    Reads a stitcher.lock file for the package containing the given file
+    and returns all fingerprints within that lock file.
+    """
+    abs_file_path = project_root / file_path_in_package
+    package_root = find_package_root(abs_file_path)
+    if not package_root:
+        return {}
+
+    lock_path = package_root / "stitcher.lock"
+    if not lock_path.exists():
+        return {}
+
+    with lock_path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    return data.get("fingerprints", {})

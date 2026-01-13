@@ -37,10 +37,8 @@ def mock_sig_manager(mocker, tmp_path: Path) -> MagicMock:
     # IMPORTANT: Return a real dict to avoid deepcopy issues with mocks.
     mock.load_composite_hashes.return_value = {}
     # Configure path generation to return a concrete Path
-    mock.get_signature_path.return_value = (
-        tmp_path / ".stitcher/signatures/src/main.json"
-    )
-    mock.serialize_hashes.return_value = "json content"
+    # This path is used for logging/reporting, so it should be a valid lock file path
+    mock.get_signature_path.return_value = tmp_path / "src/stitcher.lock"
     return mock
 
 

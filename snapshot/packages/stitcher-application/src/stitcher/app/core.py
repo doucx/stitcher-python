@@ -11,9 +11,9 @@ from stitcher.spec import (
 )
 from stitcher.stubgen import StubgenService
 from stitcher.config import load_config_from_path, StitcherConfig
+from stitcher.lang.sidecar import SignatureManager
 from stitcher.app.services import (
     DocumentManager,
-    SignatureManager,
     ScannerService,
     DocstringMerger,
 )
@@ -62,7 +62,7 @@ class StitcherApp:
         self.fingerprint_strategy = fingerprint_strategy
         # 1. Core Services
         self.doc_manager = DocumentManager(root_path)
-        self.sig_manager = SignatureManager(root_path)
+        self.sig_manager = SignatureManager(self.workspace)
         self.scanner = ScannerService(root_path, parser)
         self.differ = Differ()
         self.merger = DocstringMerger()
@@ -212,6 +212,8 @@ class StitcherApp:
             created = self.init_runner.run_batch(modules)
             all_created.extend(created)
 
+        self.sig_manager.flush()
+
         if not found_any:
             bus.info(L.init.no_docs_found)
         elif all_created:
@@ -317,6 +319,7 @@ class StitcherApp:
             global_success = False
 
         tm.commit()
+        self.sig_manager.flush()
         return PumpResult(success=global_success, redundant_files=all_redundant)
 
     def run_strip(
