@@ -70,12 +70,18 @@ class RefactorRunner:
 
             graph.load_from_workspace()
 
+            # The main app holds the URI generator instance.
+            # In a full DI framework this would be resolved from a container.
+            # For now, we manually construct it here.
+            from stitcher.lang.python import PythonURIGenerator
+
             ctx = RefactorContext(
                 workspace=workspace,
                 graph=graph,
                 sidecar_manager=sidecar_manager,
                 index_store=self.index_store,
                 lock_manager=lock_manager,
+                uri_generator=PythonURIGenerator(),
             )
 
             # 2. Load and plan the migration

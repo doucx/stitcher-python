@@ -64,7 +64,7 @@ class StitcherApp:
         # 1. Core Services
         self.doc_manager = DocumentManager(root_path)
         self.lock_manager = LockFileManager()
-        self.uri_generator = PythonURIGenerator()
+        self.uri_generator: URIGeneratorProtocol = PythonURIGenerator()
         self.scanner = ScannerService(root_path, parser)
         self.differ = Differ()
         self.merger = DocstringMerger()
@@ -80,9 +80,10 @@ class StitcherApp:
 
         # Register Adapters
         search_paths = self.workspace.get_search_paths()
-        self.file_indexer.register_adapter(
-            ".py", PythonAdapter(root_path, search_paths)
+        python_adapter = PythonAdapter(
+            root_path, search_paths, uri_generator=self.uri_generator
         )
+        self.file_indexer.register_adapter(".py", python_adapter)
 
         # 3. Runners (Command Handlers)
         check_resolver = CheckResolver(
