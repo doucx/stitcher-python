@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix(analysis): 修复图构建器中的别名解析以消除伪循环依赖", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768309023.5196805, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] test(analysis): Add failing test for __init__ alias resolution in GraphBuilder", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768309111.751067, "duration_ms": 0}}
