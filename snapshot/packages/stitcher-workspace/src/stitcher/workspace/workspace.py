@@ -155,8 +155,14 @@ class Workspace:
                     rel_path = abs_path.relative_to(self.root_path).as_posix()
                     paths.add(rel_path)
 
-        # Global Filter: Exclude .stitcher directory
-        final_paths = {
-            p for p in paths if not p.startswith(".stitcher/") and p != ".stitcher"
-        }
+        # Global Filter: Exclude .stitcher directory, BUT allow signatures
+        final_paths = set()
+        for p in paths:
+            if p == ".stitcher":
+                continue
+            if p.startswith(".stitcher/"):
+                # Only allow signatures, skip index, cache, etc.
+                if not p.startswith(".stitcher/signatures/"):
+                    continue
+            final_paths.add(p)
         return final_paths

@@ -112,8 +112,8 @@ def test_debug_rename_failure_analysis(tmp_path):
         .with_docs(
             "packages/stitcher-common/src/stitcher/common/messaging/bus.stitcher.yaml",
             {
-                "MessageBus": "Docs for MessageBus.",
-                "MessageBus.info": "Docs for info method.",
+                "stitcher.common.messaging.bus.MessageBus": "Docs for MessageBus.",
+                "stitcher.common.messaging.bus.MessageBus.info": "Docs for info method.",
             },
         )
         .with_raw_file(
@@ -169,9 +169,9 @@ def test_debug_rename_failure_analysis(tmp_path):
 
     # Assert YAML sidecar content
     updated_yaml_data = yaml.safe_load(bus_yaml_path.read_text())
-    assert "FeedbackBus" in updated_yaml_data, "BUG: YAML doc key was not renamed."
-    assert "MessageBus" not in updated_yaml_data
-    assert "FeedbackBus.info" in updated_yaml_data, (
+    assert new_fqn in updated_yaml_data, "BUG: YAML doc key was not renamed."
+    assert old_fqn not in updated_yaml_data
+    assert f"{new_fqn}.info" in updated_yaml_data, (
         "BUG: YAML doc method key was not renamed."
     )
 

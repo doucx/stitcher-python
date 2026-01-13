@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix: Register SidecarAdapter in tests and refine Planner logic", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768277463.580808, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix(core): 修复 Sidecar 发现机制与目录移动逻辑", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768278122.0625558, "duration_ms": 0}}

@@ -43,6 +43,21 @@ class MoveDirectoryOperation(AbstractOperation):
                 dest_item = dest_dir / relative_path
                 intents.append(MoveFileIntent(src_item, dest_item))
 
+                # Also move associated sidecars (docs and signatures)
+                # These are usually outside the src_dir (e.g. signatures), so they won't be caught by rglob.
+                for get_sidecar_path in [
+                    ctx.sidecar_manager.get_doc_path,
+                    ctx.sidecar_manager.get_signature_path,
+                ]:
+                    try:
+                        sidecar_src = get_sidecar_path(src_item)
+                        if sidecar_src.exists():
+                            sidecar_dest = get_sidecar_path(dest_item)
+                            intents.append(MoveFileIntent(sidecar_src, sidecar_dest))
+                    except ValueError:
+                        # Ignore paths that can't be mapped (e.g. outside root)
+                        pass
+
         # 3. Declare deletion of the source directory
         intents.append(DeleteDirectoryIntent(src_dir))
 

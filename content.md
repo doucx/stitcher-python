@@ -1,295 +1,163 @@
-1.  **修复测试工具**: 修改 `create_populated_index`，注册 `SidecarAdapter`。
-2.  **修复 Planner**: 调整 `_plan_renames` 中对 JSON 引用的处理逻辑，允许 `target_node_fqn` 为空，只要 `target_node_id` 存在即可。
+## [WIP] fix(core): 修复 Sidecar 发现机制与目录移动逻辑
 
-## [WIP] fix: Register SidecarAdapter in tests and refine Planner logic
+### 错误分析
+
+1.  **签名文件未被更新**: 多数集成测试失败的原因是 `.json` 签名文件的内容（键名）未被重命名。这是因为 `Workspace.discover_files` 包含一个硬编码的过滤器 `if not p.startswith(".stitcher/")`，这直接导致位于 `.stitcher/signatures/` 下的所有签名文件被排除在索引之外。索引器“看不见”这些文件，自然无法为它们生成重命名计划。
+2.  **签名文件未被移动**: `MoveDirectoryOperation` 仅遍历并移动了源目录下的物理文件。由于签名文件存储在源码树之外的 `.stitcher/signatures` 目录中，它们被遗留在了旧位置。
+3.  **调试测试用例失败**: `test_debug_rename_failure.py` 在 `.stitcher.yaml` 中使用了 `"MessageBus"` 这样的短名，而 `RenameSymbolOperation` 依据 FQN (`stitcher.common.messaging.bus.MessageBus`) 进行匹配。由于 `SidecarAdapter` 目前不执行自动名称解析，这种不匹配导致重命名被跳过。
 
 ### 用户需求
 
-修复集成测试中 Sidecar 文件未被更新的 Bug。这源于两个问题：
-1.  测试辅助函数 `create_populated_index` 未注册 `SidecarAdapter`，导致 Sidecar 文件未被索引。
-2.  `Planner` 的逻辑过于严格，错误地过滤掉了仅包含 SURI 的引用。
+修复上述三个问题，使重构引擎能够正确地：
+1.  **发现**并索引 `.stitcher/signatures` 下的签名文件。
+2.  在移动目录时，**同步移动**关联的外部 Sidecar 文件。
+3.  通过修正测试数据，**验证** Sidecar 内容的重命名逻辑。
 
 ### 评论
 
-这是一个典型的“集成缝隙”问题。我们在生产代码中实现了所有逻辑，但在测试基础设施中漏掉了一个关键的配置步骤。同时，`Planner` 的防御性编程也稍微过头了。修复这两个问题将打通整个链路。
+这是一个非常关键的修复。它不仅解决了一大批集成测试失败的问题，更重要的是它填补了系统在处理“影子文件”（Shadow Files/Sidecars）时的架构漏洞。特别是 `Workspace` 的发现逻辑修正，对于确保系统的完整性至关重要。
 
 ### 目标
 
-1.  修改 `packages/stitcher-test-utils/src/stitcher/test_utils/helpers.py`，引入并注册 `SidecarAdapter`。
-2.  修改 `packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py`，放宽对 `target_node_fqn` 的检查。
+1.  修改 `Workspace.discover_files`，允许 `.stitcher/signatures` 目录被发现，但继续排除 `.stitcher/index` 等缓存目录。
+2.  增强 `MoveDirectoryOperation`，使其在处理每个源文件时，利用 `SidecarManager` 检查并生成对应 Sidecar 的移动意图。
+3.  修正 `test_debug_rename_failure.py`，使用标准的 FQN 作为 Sidecar 键名。
 
 ### 基本原理
 
-*   **测试工具修复**: 索引器必须知道如何解析 `.yaml` 和 `.json` 文件，否则数据库就是不完整的。
-*   **Planner 修复**: Signature 文件本质上是基于 ID 的。当我们重命名一个符号时，我们知道它的旧 ID（`old_suri`）和新 FQN。我们可以通过解析旧 ID 获取 `path`，然后结合新 FQN 计算出新 ID（`new_suri`），从而构建重命名映射，而不需要依赖数据库中是否存在 `target_fqn`。
+1.  **白名单机制**: 我们不能简单地移除 `.stitcher/` 的过滤器，因为 `.stitcher/index` (SQLite DB) 不应被作为文本文件索引。我们需要一个精细的过滤逻辑：排除 `.stitcher` 但特例放行 `.stitcher/signatures`。
+2.  **操作原子性**: 目录移动操作在逻辑上等同于“批量文件移动”。因此，它必须继承“移动文件”的所有语义，包括对关联 Sidecar 的处理。最简单的实现方式是在遍历源文件时，复用 `SidecarManager` 的路径解析逻辑。
+3.  **测试一致性**: 既然系统设计为“Sidecar 使用 FQN”，测试数据就必须遵循这一契约，除非我们计划在 Adapter 层引入复杂的符号解析（目前不在范围内）。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/critical #comp/test-utils #comp/refactor #concept/index #scope/core #ai/instruct #task/domain/testing #task/object/test-helper #task/action/fix #task.state/continue
+#intent/fix #flow/ready #priority/critical
+#comp/runtime #comp/refactor #comp/tests
+#concept/file-discovery #concept/sidecar #concept/refactoring
+#task/domain/refactoring #task/object/sidecar-handling #task/action/fix-discovery-and-move
 
 ---
 
 ### Script
 
-#### Acts 1: 修复测试辅助函数
+#### Acts 1: 修正 Workspace 的文件发现逻辑
 
-我们需要导入 `SidecarAdapter` 并注册它。
-
-~~~~~act
-patch_file
-packages/stitcher-test-utils/src/stitcher/test_utils/helpers.py
-~~~~~
-~~~~~python.old
-from stitcher.index.db import DatabaseManager
-from stitcher.index.store import IndexStore
-from stitcher.index.indexer import FileIndexer
-from stitcher.lang.python.adapter import PythonAdapter
-from stitcher.app.services import SignatureManager
-
-
-def create_populated_index(root_path: Path) -> IndexStore:
-    db_path = root_path / ".stitcher" / "index" / "index.db"
-
-    db_manager = DatabaseManager(db_path)
-    db_manager.initialize()
-    store = IndexStore(db_manager)
-
-    # The indexer needs a workspace-aware adapter.
-    workspace = Workspace(root_path)
-    search_paths = workspace.get_search_paths()
-
-    # Discover files first, then index them.
-    files_to_index = workspace.discover_files()
-
-    indexer = FileIndexer(root_path, store)
-    indexer.register_adapter(".py", PythonAdapter(root_path, search_paths))
-    indexer.index_files(files_to_index)
-
-    return store
-~~~~~
-~~~~~python.new
-from stitcher.index.db import DatabaseManager
-from stitcher.index.store import IndexStore
-from stitcher.index.indexer import FileIndexer
-from stitcher.lang.python.adapter import PythonAdapter
-from stitcher.lang.sidecar.adapter import SidecarAdapter
-from stitcher.app.services import SignatureManager
-
-
-def create_populated_index(root_path: Path) -> IndexStore:
-    db_path = root_path / ".stitcher" / "index" / "index.db"
-
-    db_manager = DatabaseManager(db_path)
-    db_manager.initialize()
-    store = IndexStore(db_manager)
-
-    # The indexer needs a workspace-aware adapter.
-    workspace = Workspace(root_path)
-    search_paths = workspace.get_search_paths()
-
-    # Discover files first, then index them.
-    files_to_index = workspace.discover_files()
-
-    indexer = FileIndexer(root_path, store)
-    python_adapter = PythonAdapter(root_path, search_paths)
-    sidecar_adapter = SidecarAdapter()
-    
-    indexer.register_adapter(".py", python_adapter)
-    indexer.register_adapter(".yaml", sidecar_adapter)
-    indexer.register_adapter(".json", sidecar_adapter)
-    
-    indexer.index_files(files_to_index)
-
-    return store
-~~~~~
-
-#### Acts 2: 优化 Planner 逻辑
-
-对于 JSON 文件，我们允许 `target_node_fqn` 为空。但是，如果它是空的，我们需要一种方法来匹配它。
-在 `find_usages(target_fqn)` 调用中，Index 会返回所有匹配该 FQN 的引用（YAML）以及所有匹配该 FQN 对应 SURI 的引用（JSON）。
-所以，对于 JSON 引用，`target_node_id` 应该是存在的（且等于旧符号的 SURI），而 `target_node_fqn` 可能是 None。
-
-关键点：如果 `loc.target_node_fqn` 是 None，我们怎么知道它对应 `rename_map` 中的哪个 `old_fqn` 呢？
-`rename_map` 的键是 `old_fqn`。
-我们在 `Planner._plan_renames` 中是遍历 `old_fqn` 来调用 `find_usages` 的。
-所以我们其实知道当前的 `old_fqn` 是什么！
-
-我们需要稍微调整 `_plan_renames` 的结构，以便将上下文（当前的 `old_fqn` 和 `new_fqn`）传递给文件处理逻辑。或者，由于我们是先收集所有 usages 再按文件分组，我们需要在 `UsageLocation` 中携带“导致此 Usage 被选中的查询 FQN”信息，或者更简单地，我们应该相信 `find_usages` 的结果。
-
-但是 `find_usages` 可能会返回多个符号的混合结果（如果我们并发查询的话）。当前实现是串行的：
-```python
-        for old_fqn in rename_map.keys():
-            for usage in ctx.graph.find_usages(old_fqn):
-                usages_by_file[usage.file_path].append(usage)
-```
-这里有个问题：`usage` 对象本身只包含它在文件中的信息。如果 `target_node_fqn` 是 None（Signature文件），我们拿到这个 usage 后，只知道它的 ID。在 `_transform_python_file` 或 `update_keys` 中，我们需要知道把这个 ID 映射到什么新状态。
-
-最稳健的方法是：在 `UsageLocation` 中附加上它所对应的 `Symbol` 信息，但这太重了。
-或者，我们在 `usages_by_file` 中不仅存储 `usage`，还存储 `(usage, old_fqn, new_fqn)` 元组。
-
-让我们修改 `Planner._plan_renames`，构建一个更丰富的数据结构。
+修改 `workspace.py`，将针对 `.stitcher/` 的全局屏蔽改为精细化过滤。我们将允许 `.stitcher/signatures` 通过，同时继续拦截其他 `.stitcher` 子目录。
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+packages/stitcher-workspace/src/stitcher/workspace/workspace.py
 ~~~~~
 ~~~~~python.old
-    def _plan_renames(
-        self, rename_map: Dict[str, str], ctx: RefactorContext
-    ) -> List[FileOp]:
-        ops: List[FileOp] = []
-        usages_by_file: Dict[Path, List[UsageLocation]] = defaultdict(list)
-
-        # 1. Collect all usages for all renames
-        for old_fqn in rename_map.keys():
-            for usage in ctx.graph.find_usages(old_fqn):
-                usages_by_file[usage.file_path].append(usage)
-
-        # 2. For each affected file, generate a single WriteFileOp
-        for file_path, locations in usages_by_file.items():
-            content = file_path.read_text("utf-8")
-            new_content = None
-
-            if file_path.suffix == ".py":
-                new_content = self._transform_python_file(content, locations, rename_map)
-            elif file_path.suffix in (".yaml", ".yml"):
-                # For YAML, the key is the FQN.
-                sidecar_rename_map = {
-                    loc.target_node_fqn: rename_map[loc.target_node_fqn]
-                    for loc in locations
-                    if loc.target_node_fqn in rename_map
-                }
-                new_content = self._sidecar_updater.update_keys(
-                    content, sidecar_rename_map, is_yaml=True
-                )
-            elif file_path.suffix == ".json":
-                # For JSON, the key is the SURI. We construct the SURI rename map.
-                suri_rename_map = {}
-                for loc in locations:
-                    if not (loc.target_node_id and loc.target_node_fqn):
-                        continue
-
-                    old_suri = loc.target_node_id
-                    old_fqn = loc.target_node_fqn
-
-                    if old_fqn in rename_map:
-                        new_fqn = rename_map[old_fqn]
-
-                        # Reconstruct SURI. This logic assumes a symbol rename, not a file move.
-                        # File moves are handled by MoveFileOperation generating cascading renames.
-                        try:
-                            path, old_fragment = SURIGenerator.parse(old_suri)
-                            _, new_fragment_base = SURIGenerator.parse(
-                                f"py://dummy#{new_fqn.replace('.', '#')}"
-                            )
-                            new_suri = SURIGenerator.for_symbol(path, new_fragment_base)
-                            suri_rename_map[old_suri] = new_suri
-                        except (ValueError, AttributeError):
-                            continue # Ignore malformed SURIs or FQNs
-
-                if suri_rename_map:
-                    new_content = self._sidecar_updater.update_keys(
-                        content, suri_rename_map, is_yaml=False
-                    )
-
-            if new_content and new_content != content:
-                ops.append(
-                    WriteFileOp(
-                        file_path.relative_to(ctx.graph.root_path), new_content
-                    )
-                )
-        return ops
+        # Global Filter: Exclude .stitcher directory
+        final_paths = {
+            p for p in paths if not p.startswith(".stitcher/") and p != ".stitcher"
+        }
+        return final_paths
 ~~~~~
 ~~~~~python.new
-    def _plan_renames(
-        self, rename_map: Dict[str, str], ctx: RefactorContext
-    ) -> List[FileOp]:
-        ops: List[FileOp] = []
-        # Store tuples of (UsageLocation, triggering_old_fqn)
-        usages_by_file: Dict[Path, List[tuple[UsageLocation, str]]] = defaultdict(list)
+        # Global Filter: Exclude .stitcher directory, BUT allow signatures
+        final_paths = set()
+        for p in paths:
+            if p == ".stitcher":
+                continue
+            if p.startswith(".stitcher/"):
+                # Only allow signatures, skip index, cache, etc.
+                if not p.startswith(".stitcher/signatures/"):
+                    continue
+            final_paths.add(p)
+        return final_paths
+~~~~~
 
-        # 1. Collect all usages for all renames
-        for old_fqn in rename_map.keys():
-            for usage in ctx.graph.find_usages(old_fqn):
-                usages_by_file[usage.file_path].append((usage, old_fqn))
+#### Acts 2: 增强 MoveDirectoryOperation 以处理 Sidecar
 
-        # 2. For each affected file, generate a single WriteFileOp
-        for file_path, items in usages_by_file.items():
-            # Unpack locations for Python transformer which expects list[UsageLocation]
-            locations = [item[0] for item in items]
-            
-            content = file_path.read_text("utf-8")
-            new_content = None
+修改 `MoveDirectoryOperation`，在遍历源目录文件生成 `MoveFileIntent` 的同时，检查并生成对应的 Sidecar 移动意图。这复用了 `MoveFileOperation` 中的部分逻辑思想，但适配了批量处理的上下文。
 
-            if file_path.suffix == ".py":
-                new_content = self._transform_python_file(content, locations, rename_map)
-            elif file_path.suffix in (".yaml", ".yml"):
-                # For YAML, the key is the FQN.
-                sidecar_rename_map = {}
-                for loc, old_fqn in items:
-                    # Prefer the FQN from the location if available (it should be equal to old_fqn for YAML)
-                    key = loc.target_node_fqn or old_fqn
-                    if key in rename_map:
-                        sidecar_rename_map[key] = rename_map[key]
-                        
-                new_content = self._sidecar_updater.update_keys(
-                    content, sidecar_rename_map, is_yaml=True
-                )
-            elif file_path.suffix == ".json":
-                # For JSON, the key is the SURI. 
-                suri_rename_map = {}
-                for loc, old_fqn in items:
-                    # For Signature files, target_node_id IS the key (SURI).
-                    # target_node_fqn might be None.
-                    # We rely on old_fqn passed from the loop to know what we are renaming.
-                    
-                    if not loc.target_node_id:
-                        continue
+~~~~~act
+patch_file
+packages/stitcher-refactor/src/stitcher/refactor/operations/move_directory.py
+~~~~~
+~~~~~python.old
+                dest_item = dest_dir / relative_path
+                intents.append(MoveFileIntent(src_item, dest_item))
 
-                    old_suri = loc.target_node_id
-                    
-                    if old_fqn in rename_map:
-                        new_fqn = rename_map[old_fqn]
+        # 3. Declare deletion of the source directory
+~~~~~
+~~~~~python.new
+                dest_item = dest_dir / relative_path
+                intents.append(MoveFileIntent(src_item, dest_item))
 
-                        # Reconstruct SURI.
-                        try:
-                            path, old_fragment = SURIGenerator.parse(old_suri)
-                            # We need to compute the new fragment.
-                            # old_fqn: pkg.mod.Class
-                            # new_fqn: pkg.mod.NewClass
-                            # Logic: Replace the suffix of the fragment that corresponds to the changed part of FQN.
-                            
-                            # Simplistic approach: calculate the new short name
-                            # This works for simple renames.
-                            # For nested renames (Class.method), SURIGenerator.parse handles #Class.method
-                            
-                            old_short_name = old_fqn.split(".")[-1]
-                            new_short_name = new_fqn.split(".")[-1]
-                            
-                            # This is still a bit heuristic. A robust way is needed.
-                            # If old_fragment ends with old_short_name, replace it.
-                            if old_fragment and old_fragment.endswith(old_short_name):
-                                new_fragment = old_fragment[: -len(old_short_name)] + new_short_name
-                                new_suri = SURIGenerator.for_symbol(path, new_fragment)
-                                suri_rename_map[old_suri] = new_suri
-                                
-                        except (ValueError, AttributeError):
-                            continue
+                # Also move associated sidecars (docs and signatures)
+                # These are usually outside the src_dir (e.g. signatures), so they won't be caught by rglob.
+                for get_sidecar_path in [
+                    ctx.sidecar_manager.get_doc_path,
+                    ctx.sidecar_manager.get_signature_path,
+                ]:
+                    try:
+                        sidecar_src = get_sidecar_path(src_item)
+                        if sidecar_src.exists():
+                            sidecar_dest = get_sidecar_path(dest_item)
+                            intents.append(MoveFileIntent(sidecar_src, sidecar_dest))
+                    except ValueError:
+                        # Ignore paths that can't be mapped (e.g. outside root)
+                        pass
 
-                if suri_rename_map:
-                    new_content = self._sidecar_updater.update_keys(
-                        content, suri_rename_map, is_yaml=False
-                    )
+        # 3. Declare deletion of the source directory
+~~~~~
 
-            if new_content and new_content != content:
-                ops.append(
-                    WriteFileOp(
-                        file_path.relative_to(ctx.graph.root_path), new_content
-                    )
-                )
-        return ops
+#### Acts 3: 修正测试用例数据
+
+修改 `test_debug_rename_failure.py`，将 YAML 中的键名从短名 `MessageBus` 更新为 FQN `stitcher.common.messaging.bus.MessageBus`，以符合 `SidecarAdapter` 的索引预期。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_debug_rename_failure.py
+~~~~~
+~~~~~python.old
+        .with_docs(
+            "packages/stitcher-common/src/stitcher/common/messaging/bus.stitcher.yaml",
+            {
+                "MessageBus": "Docs for MessageBus.",
+                "MessageBus.info": "Docs for info method.",
+            },
+        )
+~~~~~
+~~~~~python.new
+        .with_docs(
+            "packages/stitcher-common/src/stitcher/common/messaging/bus.stitcher.yaml",
+            {
+                "stitcher.common.messaging.bus.MessageBus": "Docs for MessageBus.",
+                "stitcher.common.messaging.bus.MessageBus.info": "Docs for info method.",
+            },
+        )
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_debug_rename_failure.py
+~~~~~
+~~~~~python.old
+    # Assert YAML sidecar content
+    updated_yaml_data = yaml.safe_load(bus_yaml_path.read_text())
+    assert "FeedbackBus" in updated_yaml_data, "BUG: YAML doc key was not renamed."
+    assert "MessageBus" not in updated_yaml_data
+    assert "FeedbackBus.info" in updated_yaml_data, (
+        "BUG: YAML doc method key was not renamed."
+    )
+~~~~~
+~~~~~python.new
+    # Assert YAML sidecar content
+    updated_yaml_data = yaml.safe_load(bus_yaml_path.read_text())
+    assert new_fqn in updated_yaml_data, "BUG: YAML doc key was not renamed."
+    assert old_fqn not in updated_yaml_data
+    assert f"{new_fqn}.info" in updated_yaml_data, (
+        "BUG: YAML doc method key was not renamed."
+    )
 ~~~~~
 
 ### 下一步建议
 
-现在测试环境已经能够正确索引 Sidecar 文件，且 Planner 也能正确处理仅有 ID 的引用了。建议再次运行测试，验证修复是否生效。如果一切顺利，我们不仅修复了 Bug，还证明了新架构（Index-Driven Refactoring）的强大和正确性。
+执行此计划后，所有的集成测试（包括重命名和移动操作）应该都能通过。接下来，我们应该：
+1.  运行所有测试以确认修复有效。
+2.  考虑为 `SidecarAdapter` 添加更智能的解析逻辑，使其能够处理短名（可选，视未来需求而定）。
+3.  检查 `DeleteDirectoryOperation` 是否也存在类似的遗漏 Sidecar 的问题（虽然删除源码通常不强制要求删除历史签名，但保持清洁是好的）。
