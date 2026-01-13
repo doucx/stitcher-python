@@ -31,7 +31,9 @@ def executor(tmp_path, mocker) -> PumpExecutor:
     return PumpExecutor(
         root_path=tmp_path,
         workspace=mocker.create_autospec(Workspace, instance=True),
-        doc_manager=DocumentManager(root_path=tmp_path, uri_generator=PythonURIGenerator()),
+        doc_manager=DocumentManager(
+            root_path=tmp_path, uri_generator=PythonURIGenerator()
+        ),
         lock_manager=mocker.create_autospec(LockManagerProtocol, instance=True),
         uri_generator=mocker.create_autospec(URIGeneratorProtocol, instance=True),
         transformer=MagicMock(),
