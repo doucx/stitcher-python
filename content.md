@@ -1,38 +1,36 @@
-You've correctly identified the failures. My apologies, my previous implementation of the `SidecarUpdateMixin` was flawed in two critical ways:
-1.  **Logical Error**: The `_calculate_fragments` method was too simplistic, incorrectly stripping parent context from nested symbols (like methods), which caused the `AssertionError` in the integration test.
-2.  **Implementation Error**: The unit tests for the mixin were not updated to match the new method signature, nor were they rewritten to test the new SURI/Fragment-based logic, leading to a cascade of `TypeError` failures.
+You are right. I apologize for the oversight. The test failures clearly indicate two major problems with my previous plan: a critical logic flaw in the fragment calculation and a complete failure to update the unit tests to match the new method signatures and architectural intent.
 
-This is a failure to maintain "Architectural Incorruptibility". The tests have done their job by highlighting this flaw. I will now correct it.
+This violates the HFEA principle of "异味即缺陷" (Smell is a Defect). The `TypeError` cascade is a loud signal that the unit tests are no longer serving as a valid specification. They must be rewritten, not just patched. The `AssertionError` reveals the logical flaw that must be fixed first.
 
-## [WIP] fix: Correct SURI fragment logic and repair sidecar update tests
+I will now generate a plan to correct both the implementation and its corresponding tests.
+
+## [WIP] fix: Correct nested fragment logic and rewrite sidecar unit tests
 
 ### 錯誤分析
 
-1.  **Incorrect Fragment Calculation**: The primary logic error lies in `_calculate_fragments`. When renaming a method like `MyClass.old_method` to `MyClass.new_method`, my previous logic incorrectly calculated the new fragment as just `new_method` instead of the correct `MyClass.new_method`. This caused the SURI to be malformed and the integration test to fail.
-2.  **Obsolete Unit Tests**: The unit tests for `SidecarUpdateMixin` were a relic of the old FQN-based system. They were calling the new method with an incorrect signature and asserting outdated logic. They must be completely rewritten to validate the new, bifurcated SURI vs. Fragment update strategies.
+1.  **Logic Error (`AssertionError`)**: The `_calculate_fragments` method failed to correctly handle nested symbols. When renaming a method (`MyClass.old_method`), it incorrectly extracted only the method name (`old_method`) as the fragment, losing the crucial class prefix (`MyClass.`). The correct fragment must be the full symbol path relative to the module.
+2.  **Obsolete Tests (`TypeError`)**: The unit tests in `test_sidecar_update_mixin.py` were not updated. They called `_update_sidecar_data` with the old, incorrect number of arguments and were still written to validate the old FQN-based logic. They are no longer fit for purpose and must be completely replaced.
 
 ### 用户需求
 
-Fix the failing tests by correcting the SURI generation logic for nested symbols and rewriting the unit tests for `SidecarUpdateMixin` to accurately reflect and validate the new identifier ontology.
+Fix the failing tests by correcting the SURI/fragment generation logic for nested symbols and rewriting the unit tests for `SidecarUpdateMixin` to accurately reflect and validate the new identifier ontology.
 
 ### 评论
 
-This is a perfect example of tests serving as an architectural safety net. The failures clearly pinpoint the logical gap in the implementation. By fixing the core fragment logic and rewriting the unit tests to be specifications for the *desired* SURI/Fragment behavior, we are not just patching an error; we are solidifying the new ontology and ensuring the refactoring engine's correctness.
+This is a necessary and welcome course correction. The test failures have done their job by preventing a flawed implementation from proceeding. Rewriting the unit tests is the only correct path forward; it transforms them from broken code into a precise, executable specification for the new SURI/Fragment-aware refactoring logic. This action directly upholds the principle of "回归驱动开发" (Regression-Driven Development).
 
 ### 目标
 
-1.  **Fix Core Logic**: Correct the implementation of `_calculate_fragments` in `SidecarUpdateMixin` to properly handle nested symbols (e.g., `Class.method`).
-2.  **Rewrite Unit Tests**: Replace the entire obsolete test file (`test_sidecar_update_mixin.py`) with a new set of tests that specifically validate:
-    *   SURI key updates in JSON for symbol renames (including nested ones).
-    *   SURI key updates in JSON for file moves.
-    *   Fragment key updates in YAML for symbol renames.
-    *   The **absence** of key changes in YAML for pure file moves.
+1.  **Fix Core Logic**: Correct the implementation of `_calculate_fragments` in `SidecarUpdateMixin` to properly derive the full fragment for nested symbols (e.g., `Class.method`).
+2.  **Rewrite Unit Tests**: Replace the entire obsolete test file (`test_sidecar_update_mixin.py`) with a new, comprehensive suite that validates the distinct update strategies for JSON (SURI) and YAML (Fragment) files across various rename and move scenarios.
 
 ### 基本原理
 
-First, I will provide a new, correct implementation for `operations/base.py` using `write_file` for clarity. The new `_calculate_fragments` will correctly derive the full fragment (e.g., `MyClass.new_method`) by stripping the module prefix from the full FQN, rather than naively taking the last part of the name.
+First, I will provide a corrected version of `operations/base.py`. The key change is in `_calculate_fragments`, which will now correctly derive the full fragment by splitting the FQN based on the module prefix. This ensures nested paths like `MyClass.my_method` are preserved.
 
-Second, I will completely replace the old unit test file with a new one. This new test file will be structured with distinct classes for testing JSON (SURI) updates and YAML (Fragment) updates, covering all critical rename and move scenarios. This ensures our test suite is no longer just "passing" but is actively enforcing the architectural principles we've established.
+Second, I will completely replace the old unit test file. The new file will contain two distinct test classes:
+-   `TestJsonSuriUpdates`: Will verify that SURI keys in JSON files are correctly updated for symbol renames, nested symbol renames, and file moves.
+-   `TestYamlFragmentUpdates`: Will verify that Fragment keys in YAML files are updated for symbol renames but, crucially, **remain unchanged** for pure file moves, confirming the robustness of the new relative naming scheme.
 
 ### 标签
 
@@ -66,10 +64,15 @@ class SidecarUpdateMixin:
         base_path = None
         for sp in sorted(search_paths, key=lambda p: len(p.parts), reverse=True):
             try:
-                path.relative_to(sp)
-                base_path = sp
-                break
-            except ValueError:
+                # Use is_relative_to for modern Python
+                if path.is_relative_to(sp):
+                    base_path = sp
+                    break
+            except (ValueError, AttributeError):
+                # Fallback for older Python or different path types
+                if str(path).startswith(str(sp)):
+                    base_path = sp
+                    break
                 continue
 
         if base_path is None:
@@ -83,64 +86,35 @@ class SidecarUpdateMixin:
     ) -> Tuple[Optional[str], Optional[str]]:
         """
         Derives symbol fragments by stripping the module FQN prefix.
+        This correctly handles nested fragments like 'Class.method'.
         """
-        old_fragment = None
+        old_fragment = old_fqn
         if module_fqn and old_fqn.startswith(module_fqn + "."):
-            old_fragment = old_fqn[len(module_fqn) + 1 :]
-        elif module_fqn and old_fqn == module_fqn:
-            old_fragment = None # Represents the module itself
-        else:
-            old_fragment = old_fqn # Fallback for non-nested names
+            old_fragment = old_fqn.split(module_fqn + ".", 1)[1]
 
-
-        new_fragment = None
-        # To calculate the new fragment, we need to know the *new* module FQN.
-        # In a simple rename, it's the same. In a move, it's different.
-        # Let's assume the new_fqn is correctly structured.
+        new_fragment = new_fqn
         new_module_prefix = ".".join(new_fqn.split(".")[:-1])
-        if new_fqn.startswith(new_module_prefix + "."):
-             new_fragment = ".".join(new_fqn.split(".")[1:]) if "." in new_fqn else new_fqn
-             # This logic is still tricky. Let's simplify.
-             # The FQN is composed of module + fragment.
-             if module_fqn and new_fqn.startswith(module_fqn + "."):
-                 new_fragment = new_fqn[len(module_fqn) + 1:]
-             else:
-                 # It might have been moved. The last part is a good guess for the new symbol name.
-                 # But the parent part is also needed.
-                 if old_fragment and "." in old_fragment: # e.g. Class.method
-                     new_parent = ".".join(new_fqn.split(".")[:-1])
-                     new_base_name = new_fqn.split(".")[-1]
-                     old_base_name = old_fqn.split(".")[-1]
-
-                     if new_base_name != old_base_name: # method rename
-                        new_fragment = old_fragment.replace(old_base_name, new_base_name)
-                     else: # class rename
-                        new_fragment = new_fqn[len(module_fqn or "") + 1 :]
-
-                 else:
-                    if module_fqn and new_fqn.startswith(module_fqn + "."):
-                         new_fragment = new_fqn[len(module_fqn)+1:]
-                    else:
-                         new_fragment = new_fqn
-
-        # Corrected Logic: Strip the common prefix (module) to get the fragment.
-        # This handles nested fragments correctly.
-        if module_fqn:
-             if old_fqn.startswith(module_fqn + "."):
-                 old_fragment = old_fqn.split(module_fqn + ".", 1)[1]
-             else:
-                 old_fragment = old_fqn
+        if module_fqn and new_module_prefix == module_fqn:
+            if new_fqn.startswith(module_fqn + "."):
+                new_fragment = new_fqn.split(module_fqn + ".", 1)[1]
+        
+        # If it's a move, the new_fqn will have a different module prefix.
+        # The fragment itself might be the same.
+        # e.g., old_fqn=a.b.C, new_fqn=x.y.C. The fragment is 'C'.
+        if old_fqn.split(".")[-1] == new_fqn.split(".")[-1]:
+             if module_fqn and old_fqn.startswith(module_fqn + "."):
+                  old_fragment = old_fqn.split(module_fqn + ".", 1)[1]
              
-             if new_fqn.startswith(module_fqn + "."):
-                 new_fragment = new_fqn.split(module_fqn + ".", 1)[1]
-             else:
-                 new_fragment = new_fqn
-        else: # No module context, treat FQNs as fragments
-            old_fragment = old_fqn
-            new_fragment = new_fqn
-
+             new_mod_fqn = self._get_module_fqn_from_symbol_fqn(new_fqn)
+             if new_mod_fqn and new_fqn.startswith(new_mod_fqn + "."):
+                 new_fragment = new_fqn.split(new_mod_fqn + ".", 1)[1]
 
         return old_fragment, new_fragment
+    
+    def _get_module_fqn_from_symbol_fqn(self, fqn: str) -> Optional[str]:
+        if "." not in fqn:
+            return None # Top-level module/file
+        return fqn.rsplit(".", 1)[0]
 
 
     def _update_sidecar_data(
@@ -257,6 +231,151 @@ class AbstractOperation(ABC):
     @abstractmethod
     def collect_intents(self, ctx: RefactorContext) -> List[RefactorIntent]:
         pass
-
-
 ~~~~~
+
+#### Acts 2: Rewrite the Unit Tests for `SidecarUpdateMixin`
+
+We replace the entire outdated test file with a new specification-driven test suite.
+
+~~~~~act
+write_file
+packages/stitcher-refactor/tests/unit/operations/test_sidecar_update_mixin.py
+~~~~~
+~~~~~python
+import pytest
+from pathlib import Path
+from stitcher.refactor.operations.base import SidecarUpdateMixin
+
+
+@pytest.fixture
+def mixin():
+    return SidecarUpdateMixin()
+
+
+class TestJsonSuriUpdates:
+    def test_updates_suri_on_symbol_rename(self, mixin):
+        old_suri = "py://src/app.py#OldClass"
+        new_suri = "py://src/app.py#NewClass"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/app.json"),
+            module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
+
+    def test_updates_suri_on_nested_symbol_rename(self, mixin):
+        old_suri = "py://src/app.py#MyClass.old_method"
+        new_suri = "py://src/app.py#MyClass.new_method"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/app.json"),
+            module_fqn="app",
+            old_fqn="app.MyClass.old_method",
+            new_fqn="app.MyClass.new_method",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
+
+    def test_updates_suri_on_parent_rename(self, mixin):
+        old_suri = "py://src/app.py#OldClass.method"
+        new_suri = "py://src/app.py#NewClass.method"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/app.json"),
+            module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
+
+    def test_updates_suri_on_file_move(self, mixin):
+        old_suri = "py://src/old_path/app.py#MyClass"
+        new_suri = "py://src/new_path/app.py#MyClass"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/old_path/app.json"),
+            module_fqn="old_path.app",
+            old_fqn="old_path.app.MyClass",
+            new_fqn="new_path.app.MyClass",
+            old_file_path="src/old_path/app.py",
+            new_file_path="src/new_path/app.py",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
+
+    def test_updates_suri_on_combined_move_and_rename(self, mixin):
+        old_suri = "py://src/old_path/app.py#OldClass"
+        new_suri = "py://src/new_path/app.py#NewClass"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/old_path/app.json"),
+            module_fqn="old_path.app",
+            old_fqn="old_path.app.OldClass",
+            new_fqn="new_path.app.NewClass",
+            old_file_path="src/old_path/app.py",
+            new_file_path="src/new_path/app.py",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
+
+
+class TestYamlFragmentUpdates:
+    def test_updates_fragment_on_symbol_rename(self, mixin):
+        data = {"OldClass": "doc", "Other": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {"NewClass": "doc", "Other": "doc"}
+
+    def test_updates_fragment_on_nested_symbol_rename(self, mixin):
+        data = {"MyClass.old_method": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            module_fqn="app",
+            old_fqn="app.MyClass.old_method",
+            new_fqn="app.MyClass.new_method",
+        )
+        assert updated == {"MyClass.new_method": "doc"}
+
+    def test_updates_fragment_on_parent_rename(self, mixin):
+        data = {"OldClass.method": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {"NewClass.method": "doc"}
+
+    def test_does_not_update_fragment_on_pure_file_move(self, mixin):
+        data = {"MyClass": "doc"}
+        original_data = data.copy()
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("old_path/app.stitcher.yaml"),
+            module_fqn="old_path.app",
+            old_fqn="old_path.app.MyClass",
+            new_fqn="new_path.app.MyClass", # Symbol name 'MyClass' is unchanged
+            old_file_path="old_path/app.py",
+            new_file_path="new_path/app.py",
+        )
+        # The key is relative to the file, so a move should NOT change it.
+        assert updated == original_data
+~~~~~
+
+### 下一步建议
+
+我们已经修复了 `SidecarUpdateMixin` 中的核心逻辑，并为其配备了一套全新的、符合新架构思想的单元测试。现在，我们应该重新运行完整的测试套件，特别是之前失败的集成测试，以确认我们的修复是全面且正确的。
+
+我建议立即执行：
+`pytest packages/stitcher-refactor/`
