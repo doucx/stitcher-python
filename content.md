@@ -1,29 +1,28 @@
-Excellent. We have the data access layer ready. Now, we will build the component that consumes this data to construct the in-memory dependency graph.
+Excellent. With the graph builder in place, we can now add the intelligence to analyze it.
 
-This plan will implement the `GraphBuilder` class, which is the core of our new graph capability. It will also create a corresponding unit test to verify its logic in isolation, ensuring its correctness and adherence to the project's testing standards.
+This plan will populate the `algorithms.py` file with functions that wrap `networkx`'s powerful capabilities, providing a clean, domain-specific API for our future architecture rules. We will also create a dedicated test file to ensure these algorithms behave exactly as expected.
 
-## [WIP] feat: Implement GraphBuilder and its unit tests
+## [WIP] feat: Implement graph algorithms for architectural analysis
 
 ### 用户需求
 
-As per the roadmap, the next step is to implement the `GraphBuilder`. This component will consume data from the `IndexStore` to construct a `networkx.DiGraph` representing the project's file-level import dependencies. A corresponding unit test must also be created to validate this logic.
+Based on the roadmap, we need to develop graph algorithm tools in `stitcher.analysis.graph.algorithms`. This involves creating functions to detect circular dependencies and check for paths within the dependency graph, along with corresponding unit tests.
 
 ### 评论
 
-This is the heart of Phase 2. The `GraphBuilder` transforms the raw, relational data from our index into a powerful, queryable graph structure. The most critical piece of logic is resolving symbolic imports (`target_fqn`) to physical file locations, which effectively maps the conceptual dependencies to the actual file system structure. The accompanying unit test, using a mocked `IndexStore`, will be vital for ensuring this complex resolution logic is robust and correct.
+This step transforms our graph data structure into a source of actionable insights. By creating an abstraction layer over `networkx`, we isolate the core analysis logic from the specific library implementation, making our architecture more maintainable. The `detect_circular_dependencies` function will be the first major feature enabled by this new infrastructure, providing immediate value by identifying critical architectural flaws.
 
 ### 目标
 
-1.  Implement the `GraphBuilder` class in `packages/stitcher-analysis/src/stitcher/analysis/graph/builder.py`.
-2.  The builder will have a `build_dependency_graph` method that takes an `IndexStoreProtocol` instance and returns a `networkx.DiGraph`.
-3.  Create a new test directory: `packages/stitcher-analysis/tests/unit/graph/`.
-4.  Implement a unit test file, `test_builder.py`, within that directory.
-5.  The test will use a mock `IndexStore` to provide controlled input and verify that the generated graph has the correct nodes and edges.
+1.  Implement the function `detect_circular_dependencies` in `algorithms.py` to find all simple cycles in the graph.
+2.  Implement the helper function `has_path` in `algorithms.py`.
+3.  Create a new unit test file, `test_algorithms.py`, in the `packages/stitcher-analysis/tests/unit/graph/` directory.
+4.  Write tests that verify the correctness of both algorithm functions using various graph structures (e.g., with and without cycles).
 
 ### 基本原理
 
-1.  **Implementation (`builder.py`)**: The `GraphBuilder` will first call `store.get_all_files()` to populate the graph with nodes, where each node is a file path. It will then iterate through the results of `store.get_all_dependency_edges()`. For each edge, it will use `store.find_symbol_by_fqn()` to resolve the dependency's target FQN to a file path. An internal cache will be used to prevent redundant lookups for the same FQN. If a symbol is resolved to a file within the project, a directed edge is added from the source file to the target file in the graph. External dependencies (unresolvable FQNs) are ignored.
-2.  **Testing (`test_builder.py`)**: A new test file will be created following the monorepo testing architecture. We will use `unittest.mock.MagicMock` to create a fake `IndexStore`. This mock will be configured to return predefined `FileRecord` and `DependencyEdge` objects, and to simulate the behavior of `find_symbol_by_fqn`. The test will then assert that the `GraphBuilder` correctly constructs the graph based on this controlled data, verifying node count, edge count, and the presence of specific dependency links.
+1.  **Implementation (`algorithms.py`)**: We will use a `write_file` operation to populate the `algorithms.py` module. The `detect_circular_dependencies` function will directly call `networkx.simple_cycles` and convert the resulting generator into a `List[List[str]]` for a stable, predictable return type. `has_path` will be a simple wrapper around `networkx.has_path`.
+2.  **Testing (`test_algorithms.py`)**: A new test file will be created. Inside, we will manually construct `networkx.DiGraph` instances representing different dependency scenarios. For `detect_circular_dependencies`, we will test a Directed Acyclic Graph (DAG) (expecting no cycles) and a graph containing a known cycle (expecting it to be found). For `has_path`, we will test both a valid path and an invalid path. This ensures our wrappers are functioning correctly.
 
 ### 标签
 
@@ -33,161 +32,120 @@ This is the heart of Phase 2. The `GraphBuilder` transforms the raw, relational 
 
 ### Script
 
-#### Acts 1: Implement the GraphBuilder
+#### Acts 1: Implement the Graph Algorithms
 
-We will write the full implementation of the `GraphBuilder` class.
-
-~~~~~act
-write_file
-packages/stitcher-analysis/src/stitcher/analysis/graph/builder.py
-~~~~~
-~~~~~python
-from typing import Dict
-import networkx as nx
-
-from stitcher.spec import IndexStoreProtocol
-
-
-class GraphBuilder:
-    def build_dependency_graph(self, store: IndexStoreProtocol) -> nx.DiGraph:
-        """
-        Builds a file-level dependency graph from the index store.
-
-        Nodes: File paths (str)
-        Edges: Represent an import from source file to target file.
-        """
-        graph = nx.DiGraph()
-        fqn_to_path_cache: Dict[str, str | None] = {}
-
-        # 1. Add all source files as nodes
-        all_files = store.get_all_files()
-        for file_record in all_files:
-            graph.add_node(file_record.path)
-
-        # 2. Add edges based on import references
-        all_edges = store.get_all_dependency_edges()
-        for edge in all_edges:
-            source_path = edge.source_path
-            target_fqn = edge.target_fqn
-
-            # Skip if we've already processed this FQN and found it unresolvable
-            if target_fqn in fqn_to_path_cache and fqn_to_path_cache[target_fqn] is None:
-                continue
-
-            # Resolve FQN to a file path
-            if target_fqn not in fqn_to_path_cache:
-                symbol_result = store.find_symbol_by_fqn(target_fqn)
-                if symbol_result:
-                    _, target_path = symbol_result
-                    fqn_to_path_cache[target_fqn] = target_path
-                else:
-                    # Mark as unresolvable (likely an external library)
-                    fqn_to_path_cache[target_fqn] = None
-
-            target_path = fqn_to_path_cache.get(target_fqn)
-
-            # Add edge if the target is an internal, resolved file
-            if target_path and source_path != target_path:
-                graph.add_edge(source_path, target_path)
-
-        return graph
-~~~~~
-
-#### Acts 2: Create the test directory structure
-
-Now, we create the necessary directory for our new test file, ensuring we do not create `__init__.py` files, per the testing specification.
-
-~~~~~act
-run_command
-~~~~~
-~~~~~bash
-mkdir -p packages/stitcher-analysis/tests/unit/graph
-~~~~~
-
-#### Acts 3: Implement the unit test for GraphBuilder
-
-Finally, we write the test file that verifies the `GraphBuilder`'s logic using a mocked `IndexStore`.
+We will populate the `algorithms.py` file with our cycle and path detection functions.
 
 ~~~~~act
 write_file
-packages/stitcher-analysis/tests/unit/graph/test_builder.py
+packages/stitcher-analysis/src/stitcher/analysis/graph/algorithms.py
 ~~~~~
 ~~~~~python
-from unittest.mock import MagicMock
+from typing import List
 import networkx as nx
 
-from stitcher.spec.index import FileRecord, DependencyEdge, SymbolRecord
-from stitcher.analysis.graph.builder import GraphBuilder
+
+def detect_circular_dependencies(graph: nx.DiGraph) -> List[List[str]]:
+    """
+    Finds all simple cycles in a directed graph.
+
+    A simple cycle is a path where the start and end nodes are the same,
+    and no other nodes are repeated. Self-loops are not considered simple cycles.
+
+    Args:
+        graph: The directed graph to check.
+
+    Returns:
+        A list of cycles, where each cycle is represented as a list of
+        node identifiers (file paths).
+    """
+    return [list(cycle) for cycle in nx.simple_cycles(graph)]
 
 
-def test_build_dependency_graph():
-    # 1. Arrange: Setup mock store and data
-    mock_store = MagicMock()
+def has_path(graph: nx.DiGraph, source: str, target: str) -> bool:
+    """
+    Checks if a path exists between two nodes in the graph.
 
-    # Mock files (nodes)
-    mock_files = [
-        FileRecord(id=1, path="src/a.py", content_hash="a", last_mtime=1, last_size=1, indexing_status=1),
-        FileRecord(id=2, path="src/b.py", content_hash="b", last_mtime=1, last_size=1, indexing_status=1),
-        FileRecord(id=3, path="src/c.py", content_hash="c", last_mtime=1, last_size=1, indexing_status=1),
-    ]
-    mock_store.get_all_files.return_value = mock_files
+    Args:
+        graph: The directed graph to check.
+        source: The starting node.
+        target: The ending node.
 
-    # Mock dependencies (potential edges)
-    mock_edges = [
-        # a -> b
-        DependencyEdge(source_path="src/a.py", target_fqn="b_module.some_func", kind="import", lineno=1),
-        # a -> c
-        DependencyEdge(source_path="src/a.py", target_fqn="c_module.SomeClass", kind="import", lineno=2),
-        # b -> c
-        DependencyEdge(source_path="src/b.py", target_fqn="c_module.SomeClass", kind="import", lineno=5),
-        # a -> external (should be ignored)
-        DependencyEdge(source_path="src/a.py", target_fqn="os.path.join", kind="import", lineno=3),
-        # c -> a (creating a cycle for later tests)
-        DependencyEdge(source_path="src/c.py", target_fqn="a_module.main", kind="import", lineno=1),
-    ]
-    mock_store.get_all_dependency_edges.return_value = mock_edges
+    Returns:
+        True if a path exists, False otherwise.
+    """
+    return nx.has_path(graph, source, target)
+~~~~~
 
-    # Mock FQN lookup
-    def mock_find_symbol(fqn):
-        symbol_rec = SymbolRecord(id=fqn, name="", kind="", lineno=1, col_offset=0, end_lineno=1, end_col_offset=0)
-        if fqn.startswith("a_module"):
-            return (symbol_rec, "src/a.py")
-        if fqn.startswith("b_module"):
-            return (symbol_rec, "src/b.py")
-        if fqn.startswith("c_module"):
-            return (symbol_rec, "src/c.py")
-        return None  # For external symbols like 'os.path.join'
+#### Acts 2: Implement Unit Tests for Graph Algorithms
 
-    mock_store.find_symbol_by_fqn.side_effect = mock_find_symbol
+Next, we create the test file and add tests to verify the correctness of our new algorithm functions.
 
-    # 2. Act: Build the graph
-    builder = GraphBuilder()
-    graph = builder.build_dependency_graph(mock_store)
+~~~~~act
+write_file
+packages/stitcher-analysis/tests/unit/graph/test_algorithms.py
+~~~~~
+~~~~~python
+import networkx as nx
 
-    # 3. Assert: Verify the graph structure
-    assert isinstance(graph, nx.DiGraph)
-    assert set(graph.nodes) == {"src/a.py", "src/b.py", "src/c.py"}
-    assert graph.number_of_edges() == 4
+from stitcher.analysis.graph.algorithms import (
+    detect_circular_dependencies,
+    has_path,
+)
 
-    # Check for specific edges
-    assert graph.has_edge("src/a.py", "src/b.py")
-    assert graph.has_edge("src/a.py", "src/c.py")
-    assert graph.has_edge("src/b.py", "src/c.py")
-    assert graph.has_edge("src/c.py", "src/a.py")
 
-    # Check that external dependency was ignored
-    # (There's no node for 'os', and no edge pointing to a non-existent node)
-    assert "os" not in graph.nodes
+def test_detect_circular_dependencies():
+    # 1. Arrange: Create a graph with a known cycle
+    graph = nx.DiGraph()
+    graph.add_edges_from([
+        ("a.py", "b.py"),
+        ("b.py", "c.py"),
+        ("c.py", "a.py"),  # Cycle: a -> b -> c -> a
+        ("d.py", "a.py"),  # Not part of cycle
+    ])
 
-    # Verify calls to mock
-    assert mock_store.get_all_files.call_count == 1
-    assert mock_store.get_all_dependency_edges.call_count == 1
-    # We call find_symbol_by_fqn 4 times (a,b,c,os), not 5, due to caching
-    assert mock_store.find_symbol_by_fqn.call_count == 4
+    # 2. Act
+    cycles = detect_circular_dependencies(graph)
+
+    # 3. Assert
+    assert len(cycles) == 1
+    # networkx can start the cycle from any node, so we sort to have a stable check
+    assert sorted(cycles[0]) == ["a.py", "b.py", "c.py"]
+
+
+def test_detect_circular_dependencies_no_cycles():
+    # 1. Arrange: Create a Directed Acyclic Graph (DAG)
+    graph = nx.DiGraph()
+    graph.add_edges_from([
+        ("a.py", "b.py"),
+        ("b.py", "c.py"),
+        ("a.py", "c.py"),
+    ])
+
+    # 2. Act
+    cycles = detect_circular_dependencies(graph)
+
+    # 3. Assert
+    assert len(cycles) == 0
+
+
+def test_has_path():
+    # 1. Arrange
+    graph = nx.DiGraph()
+    graph.add_edges_from([
+        ("a.py", "b.py"),
+        ("b.py", "c.py"),
+        ("d.py", "e.py"),
+    ])
+
+    # 2. Act & 3. Assert
+    assert has_path(graph, "a.py", "c.py") is True
+    assert has_path(graph, "a.py", "e.py") is False
+    assert has_path(graph, "a.py", "a.py") is True # A path to self always exists
 ~~~~~
 
 ### 下一步建议
 
-我们已经成功地构建了图的生成器并为其建立了测试保障。现在我们拥有了一个内存中的项目依赖图。
+我们已经成功地将底层的图算法封装成了清晰的、面向业务的 API。现在，我们拥有了检测架构问题的工具。
 
-下一步是利用这个图。根据路线图，我们将进入 **第 4 步：开发图算法工具 (Graph Algorithms)**。我将开始填充 `stitcher/analysis/graph/algorithms.py` 文件，封装 `networkx` 的能力，并提供一个 `detect_circular_dependencies` 函数。如果你同意，我将着手准备这个计划。
+下一步是**第 5 步：实现架构规则 (Implement Architecture Rules)**。我将开始创建 `stitcher.analysis.rules.architecture` 目录和 `CircularDependencyRule`，这个规则将使用我们刚刚创建的 `detect_circular_dependencies` 函数来生成具体的 `Violation` 报告。如果你同意，我将开始制定此计划。
