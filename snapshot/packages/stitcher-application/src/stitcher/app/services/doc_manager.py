@@ -15,14 +15,12 @@ from stitcher.spec import (
     DocstringSerializerProtocol,
 )
 from stitcher.lang.python.docstring import RawDocstringParser, RawSerializer
-from stitcher.common.services import AssetPathResolver
 from stitcher.lang.sidecar import SidecarAdapter
 
 
 class DocumentManager:
     def __init__(self, root_path: Path):
         self.root_path = root_path
-        self.resolver = AssetPathResolver(root_path)
         self._sidecar_adapter = SidecarAdapter(root_path)
         # Defaults to Raw mode for backward compatibility
         self.parser: DocstringParserProtocol = RawDocstringParser()
@@ -53,7 +51,7 @@ class DocumentManager:
         return self._sidecar_adapter.dump_to_string(data)
 
     def load_raw_data(self, file_path: str) -> Dict[str, Any]:
-        doc_path = self.resolver.get_doc_path(self.root_path / file_path)
+        doc_path = (self.root_path / file_path).with_suffix(".stitcher.yaml")
         return self._sidecar_adapter.load_raw_data(doc_path)
 
     def dump_raw_data_to_string(self, data: Dict[str, Any]) -> str:
@@ -102,7 +100,7 @@ class DocumentManager:
             return Path("")
 
         module_path = self.root_path / module.file_path
-        output_path = self.resolver.get_doc_path(module_path)
+        output_path = module_path.with_suffix(".stitcher.yaml")
         self._sidecar_adapter.save_doc_irs(output_path, ir_map, self.serializer)
         return output_path
 
@@ -110,7 +108,7 @@ class DocumentManager:
         if not file_path:
             return {}
         module_path = self.root_path / file_path
-        doc_path = self.resolver.get_doc_path(module_path)
+        doc_path = module_path.with_suffix(".stitcher.yaml")
         return self._sidecar_adapter.load_doc_irs(doc_path, self.serializer)
 
     def load_docs_for_module(self, module: ModuleDef) -> Dict[str, DocstringIR]:
@@ -382,7 +380,7 @@ class DocumentManager:
         if not module.file_path:
             return False
         module_path = self.root_path / module.file_path
-        doc_path = self.resolver.get_doc_path(module_path)
+        doc_path = module_path.with_suffix(".stitcher.yaml")
         if not doc_path.exists():
             return False
 
