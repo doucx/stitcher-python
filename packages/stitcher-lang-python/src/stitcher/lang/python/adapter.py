@@ -10,16 +10,22 @@ from stitcher.lang.python.parser.griffe import GriffePythonParser
 from stitcher.lang.python.fingerprint import PythonFingerprintStrategy
 from stitcher.lang.python.analysis.usage_visitor import UsageScanVisitor, UsageRegistry
 from stitcher.lang.python.analysis.scope import ScopeAnalyzer
+from stitcher.spec import URIGeneratorProtocol
 from stitcher.lang.python.analysis.utils import path_to_logical_fqn
-from stitcher.lang.python.uri import PythonURIGenerator
 
 
 class PythonAdapter(LanguageAdapter):
-    def __init__(self, root_path: Path, search_paths: List[Path]):
+    def __init__(
+        self,
+        root_path: Path,
+        search_paths: List[Path],
+        uri_generator: URIGeneratorProtocol,
+    ):
         self.root_path = root_path
         self.search_paths = search_paths
         self.parser = GriffePythonParser()
         self.hasher = PythonFingerprintStrategy()
+        self.uri_generator = uri_generator
 
     def _get_source_root_for_file(self, file_path: Path) -> Path:
         longest_match: Optional[Path] = None
@@ -74,9 +80,7 @@ class PythonAdapter(LanguageAdapter):
         # 0. Module Symbol (The file/module itself)
         # This allows other files to import this module.
         module_name = logical_module_fqn.split(".")[-1]
-        # TODO: Replace temporary instantiation with dependency injection in Phase 3
-        uri_gen = PythonURIGenerator()
-        module_suri = uri_gen.generate_file_uri(rel_path)
+        module_suri = self.uri_generator.generate_file_uri(rel_path)
 
         symbols.append(
             SymbolRecord(
@@ -103,7 +107,7 @@ class PythonAdapter(LanguageAdapter):
             parent_fragment: str = "",
         ):
             fragment = f"{parent_fragment}.{name}" if parent_fragment else name
-            suri = uri_gen.generate_symbol_uri(rel_path, fragment)
+            suri = self.uri_generator.generate_symbol_uri(rel_path, fragment)
             canonical_fqn = f"{logical_module_fqn}.{fragment}"
 
             # Compute Hash & Metadata

@@ -45,6 +45,7 @@ from stitcher.lang.python.docstring import (
     get_docstring_serializer,
 )
 from stitcher.spec.interaction import InteractionContext
+from stitcher.spec.protocols import URIGeneratorProtocol
 from stitcher.lang.sidecar import LockFileManager
 from stitcher.lang.python import PythonURIGenerator
 
@@ -64,7 +65,7 @@ class StitcherApp:
         # 1. Core Services
         self.doc_manager = DocumentManager(root_path)
         self.lock_manager = LockFileManager()
-        self.uri_generator = PythonURIGenerator()
+        self.uri_generator: URIGeneratorProtocol = PythonURIGenerator()
         self.scanner = ScannerService(root_path, parser)
         self.differ = Differ()
         self.merger = DocstringMerger()
@@ -80,9 +81,10 @@ class StitcherApp:
 
         # Register Adapters
         search_paths = self.workspace.get_search_paths()
-        self.file_indexer.register_adapter(
-            ".py", PythonAdapter(root_path, search_paths)
+        python_adapter = PythonAdapter(
+            root_path, search_paths, uri_generator=self.uri_generator
         )
+        self.file_indexer.register_adapter(".py", python_adapter)
 
         # 3. Runners (Command Handlers)
         check_resolver = CheckResolver(
@@ -150,7 +152,7 @@ class StitcherApp:
 
         # 4. Refactor Runner (depends on Indexing)
         self.refactor_runner = RefactorRunner(
-            root_path, self.index_store, self.file_indexer
+            root_path, self.index_store, self.file_indexer, self.uri_generator
         )
 
     def _load_configs(self) -> Tuple[List[StitcherConfig], Optional[str]]:

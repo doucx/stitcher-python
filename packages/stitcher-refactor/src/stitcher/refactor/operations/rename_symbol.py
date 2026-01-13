@@ -4,7 +4,6 @@ from .base import AbstractOperation
 from ..engine.utils import path_to_fqn
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.analysis.semantic import SymbolNode
-from stitcher.lang.python.uri import PythonURIGenerator
 from stitcher.refactor.engine.intent import (
     RefactorIntent,
     RenameIntent,
@@ -50,8 +49,7 @@ class RenameSymbolOperation(AbstractOperation):
 
             # 3. Declare intent to update stitcher.lock (SURI rename)
             # We calculate SURIs based on the definition file location.
-            # TODO: In Phase 3, inject URIGenerator via Context.
-            uri_gen = PythonURIGenerator()
+            uri_gen = ctx.uri_generator
             rel_path = ctx.workspace.to_workspace_relative(definition_file_path)
 
             # Extract fragments (short names)
