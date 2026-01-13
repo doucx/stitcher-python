@@ -6,12 +6,6 @@ from stitcher.spec import IndexStoreProtocol
 
 class GraphBuilder:
     def build_dependency_graph(self, store: IndexStoreProtocol) -> nx.DiGraph:
-        """
-        Builds a file-level dependency graph from the index store.
-
-        Nodes: File paths (str)
-        Edges: Represent an import from source file to target file.
-        """
         graph = nx.DiGraph()
         fqn_to_path_cache: Dict[str, str | None] = {}
 
