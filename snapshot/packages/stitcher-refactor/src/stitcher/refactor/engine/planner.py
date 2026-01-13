@@ -52,6 +52,16 @@ class Planner(SidecarUpdateMixin):
         renamer = GlobalBatchRenamer(rename_map, ctx)
         all_ops.extend(renamer.analyze())
 
+        # Build a map of module renames from move intents. This is the source of truth
+        # for determining the new module FQN context.
+        module_rename_map: Dict[str, str] = {}
+        for intent in all_intents:
+            if isinstance(intent, MoveFileIntent):
+                old_mod_fqn = self._path_to_fqn(intent.src_path, ctx.graph.search_paths)
+                new_mod_fqn = self._path_to_fqn(intent.dest_path, ctx.graph.search_paths)
+                if old_mod_fqn and new_mod_fqn:
+                    module_rename_map[old_mod_fqn] = new_mod_fqn
+
         # Aggregate and process sidecar updates
         sidecar_updates: DefaultDict[Path, List[SidecarUpdateIntent]] = defaultdict(
             list
@@ -73,10 +83,18 @@ class Planner(SidecarUpdateMixin):
 
             # Apply all intents for this file
             for intent in intents:
+                old_module_fqn = intent.module_fqn
+                # For a given symbol, its new module FQN is either determined by a file move
+                # or it remains the same as the old one (in a pure rename scenario).
+                new_module_fqn = module_rename_map.get(
+                    old_module_fqn, old_module_fqn
+                )
+
                 data = self._update_sidecar_data(
                     data,
                     intent.sidecar_path,
-                    intent.module_fqn,
+                    old_module_fqn,
+                    new_module_fqn,
                     intent.old_fqn,
                     intent.new_fqn,
                     old_file_path=intent.old_file_path,

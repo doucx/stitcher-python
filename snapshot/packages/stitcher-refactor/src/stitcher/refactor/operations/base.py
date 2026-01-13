@@ -28,13 +28,12 @@ class SidecarUpdateMixin:
         rel_path = path.relative_to(base_path)
         return path_to_logical_fqn(rel_path.as_posix())
 
-    def _get_module_fqn_from_symbol_fqn(self, fqn: str) -> Optional[str]:
-        if "." not in fqn:
-            return None
-        return fqn.rsplit(".", 1)[0]
-
     def _calculate_fragments(
-        self, module_fqn: Optional[str], old_fqn: str, new_fqn: str
+        self,
+        old_module_fqn: Optional[str],
+        new_module_fqn: Optional[str],
+        old_fqn: str,
+        new_fqn: str,
     ) -> Tuple[Optional[str], Optional[str]]:
         """
         Derives symbol fragments by stripping the module FQN prefix.
@@ -43,20 +42,19 @@ class SidecarUpdateMixin:
         # --- Calculate Old Fragment ---
         old_fragment = old_fqn
         # The module_fqn is the context of the sidecar file, which relates to the OLD state.
-        if module_fqn and old_fqn.startswith(module_fqn + "."):
-            old_fragment = old_fqn.split(module_fqn + ".", 1)[1]
-        elif module_fqn and old_fqn == module_fqn:
+        if old_module_fqn and old_fqn.startswith(old_module_fqn + "."):
+            old_fragment = old_fqn.split(old_module_fqn + ".", 1)[1]
+        elif old_module_fqn and old_fqn == old_module_fqn:
             old_fragment = None  # Represents the module itself
 
         # --- Calculate New Fragment ---
         new_fragment = new_fqn
-        # The new fragment must be relative to the NEW module FQN.
-        new_module_fqn = self._get_module_fqn_from_symbol_fqn(new_fqn)
+        # The new fragment must be relative to the NEW module FQN, which is passed in.
         if new_module_fqn and new_fqn.startswith(new_module_fqn + "."):
             new_fragment = new_fqn.split(new_module_fqn + ".", 1)[1]
-        
+
         # Handle renaming of a module itself
-        if old_fqn == module_fqn:
+        if old_fqn == old_module_fqn:
             new_fragment = None
 
         return old_fragment, new_fragment
@@ -65,7 +63,8 @@ class SidecarUpdateMixin:
         self,
         data: Dict[str, Any],
         sidecar_path: Path,
-        module_fqn: Optional[str],
+        old_module_fqn: Optional[str],
+        new_module_fqn: Optional[str],
         old_fqn: str,
         new_fqn: str,
         old_file_path: Optional[str] = None,
@@ -75,7 +74,7 @@ class SidecarUpdateMixin:
         Dispatcher for sidecar updates based on file type.
         """
         old_fragment, new_fragment = self._calculate_fragments(
-            module_fqn, old_fqn, new_fqn
+            old_module_fqn, new_module_fqn, old_fqn, new_fqn
         )
 
         if sidecar_path.suffix == ".json":
