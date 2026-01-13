@@ -59,14 +59,24 @@ class SemanticGraph:
     def find_usages(self, target_fqn: str) -> List[UsageLocation]:
         usages = []
 
-        # 1. Find all references (usages)
-        db_refs = self.index_store.find_references(target_fqn)
+        # 0. Resolve Symbol ID (SURI) from FQN if possible
+        target_id = None
+        symbol_res = self.index_store.find_symbol_by_fqn(target_fqn)
+        if symbol_res:
+            symbol_record, _ = symbol_res
+            target_id = symbol_record.id
+
+        # 1. Find all references (usages) by FQN or ID
+        db_refs = self.index_store.find_references(target_fqn, target_id=target_id)
         for ref, file_path_str in db_refs:
             abs_path = self.root_path / file_path_str
             try:
                 ref_type = ReferenceType(ref.kind)
             except ValueError:
-                ref_type = ReferenceType.SYMBOL  # Fallback
+                # If kind is unknown to ReferenceType, fallback based on context or keep generic
+                # For now, fallback to SYMBOL if not recognized, but ideally we should match kinds.
+                # Sidecar kinds (json_suri, yaml_fqn) are added to ReferenceType enum.
+                ref_type = ReferenceType.SYMBOL
 
             usages.append(
                 UsageLocation(
@@ -76,7 +86,7 @@ class SemanticGraph:
                     end_lineno=ref.end_lineno,
                     end_col_offset=ref.end_col_offset,
                     ref_type=ref_type,
-                    target_node_fqn=ref.target_fqn,
+                    target_node_fqn=ref.target_fqn or target_fqn, # Fallback if target_fqn is NULL (SURI refs)
                 )
             )
 
