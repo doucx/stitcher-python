@@ -15,9 +15,51 @@ from stitcher.config import StitcherConfig
 log = logging.getLogger(__name__)
 
 
+def find_workspace_root(start_path: Path) -> Path:
+    """Finds the workspace root by searching upwards for key markers."""
+    current_dir = start_path.resolve()
+    while current_dir.parent != current_dir:
+        # Marker 1: .git directory
+        if (current_dir / ".git").is_dir():
+            return current_dir
+
+        # Marker 2: pyproject.toml with [tool.uv.workspace]
+        pyproject_path = current_dir / "pyproject.toml"
+        if pyproject_path.is_file():
+            try:
+                with pyproject_path.open("rb") as f:
+                    data = tomllib.load(f)
+                if (
+                    "tool" in data
+                    and "uv" in data["tool"]
+                    and "workspace" in data["tool"]["uv"]
+                ):
+                    return current_dir
+            except (tomllib.TOMLDecodeError, OSError):
+                # Ignore malformed or unreadable toml files
+                pass
+
+        current_dir = current_dir.parent
+
+    # If no markers found up to the root, the starting directory is the best guess.
+    return start_path.resolve()
+
+
+def find_package_root(file_path: Path) -> Optional[Path]:
+    """Finds the nearest package root (containing pyproject.toml) for a given file."""
+    current_dir = file_path.resolve().parent
+    while current_dir.parent != current_dir:
+        if (current_dir / "pyproject.toml").is_file():
+            return current_dir
+        current_dir = current_dir.parent
+    return None
+
+
 class Workspace:
-    def __init__(self, root_path: Path, config: Optional[StitcherConfig] = None):
-        self.root_path = root_path
+    def __init__(
+        self, root_path: Optional[Path] = None, config: Optional[StitcherConfig] = None
+    ):
+        self.root_path = root_path or find_workspace_root(Path.cwd())
         self.config = config
         # 'cascade' -> {'/path/to/cascade-application/src', '/path/to/cascade-engine/src'}
         self.import_to_source_dirs: Dict[str, Set[Path]] = defaultdict(set)
@@ -27,6 +69,19 @@ class Workspace:
             self._build_from_config()
         else:
             self._discover_packages()
+
+    def find_package_root(self, file_path: Path) -> Optional[Path]:
+        """Public method to access the package root finding logic."""
+        return find_package_root(file_path)
+
+    def get_suri_path(self, absolute_path: Path) -> str:
+        """Calculates the SURI-compatible relative path from the workspace root."""
+        try:
+            return absolute_path.resolve().relative_to(self.root_path).as_posix()
+        except ValueError:
+            raise ValueError(
+                f"Path {absolute_path} is not inside the workspace root {self.root_path}"
+            )
 
     def _build_from_config(self) -> None:
         if not self.config:

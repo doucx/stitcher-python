@@ -1,21 +1,269 @@
-# 📸 Snapshot Capture
+好的，我们开始实施 `stitcher.lock` 模式的路线图。第一步是构建基础，增强 `stitcher-workspace` 包的能力，为全局 SURI 架构提供一个稳定、可靠的路径计算基准。
 
-### 💬 备注:
-style: ruff and stitcher
+我将按照路线图 3.1 节的规划，为 `Workspace` 组件实现锚点增强。
 
-检测到工作区发生变更。
+## [WIP] feat(workspace): 实现工作区与包的根目录发现机制
 
-### 📝 变更文件摘要:
-```
-.../src/stitcher/app/services/doc_manager.json          | 17 ++++++++++++++---
- .../stitcher-spec/src/stitcher/spec/managers.json       |  8 ++++++++
- packages/stitcher-application/src/stitcher/app/core.py  |  2 --
- .../src/stitcher/app/services/doc_manager.py            | 15 +++++----------
- .../src/stitcher/app/services/doc_manager.stitcher.yaml |  8 +++++---
- .../stitcher-application/tests/unit/test_doc_manager.py |  3 +--
- .../stitcher-application/tests/unit/test_doc_overlay.py |  2 +-
- .../tests/integration/test_fidelity_principles.py       |  5 +++--
- .../src/stitcher/lang/sidecar/adapter.py                | 12 ++++--------
- .../tests/unit/test_sidecar_adapter.py                  |  9 ++++++---
- 10 files changed, 47 insertions(+), 34 deletions(-)
-```
+### 用户需求
+
+根据 `stitcher.lock` 模式实施路线图，我们需要完成 3.1 阶段（基础设施层：Workspace 锚点增强）的任务。这要求我们为 `stitcher-workspace` 组件添加发现工作区根目录、包根目录以及计算 SURI 相对路径的能力。
+
+### 评论
+
+这是整个 `stitcher.lock` 架构重构的基石。通过建立一个确定性的、全系统共享的工作区根（Workspace Root）概念，并提供必要的路径演算工具，我们能从根本上消除路径模糊性。这是实现布局无关（Layout Agnostic）和 Monorepo 友好的 SURI 系统的关键第一步。
+
+### 目标
+
+1.  **实现 `find_workspace_root` 函数**：该函数能够通过向上查找 `.git` 目录或包含 `[tool.uv.workspace]` 的 `pyproject.toml` 文件，来自动、可靠地定位项目的根目录。
+2.  **实现 `find_package_root` 函数**：该函数能够根据给定的文件路径，向上查找到最近的、包含 `pyproject.toml` 的目录，从而确定该文件所属的包。
+3.  **增强 `Workspace` 类**：
+    *   使其在未提供根路径时，能自动调用 `find_workspace_root` 进行初始化。
+    *   提供 `find_package_root` 和 `get_suri_path` 公共方法，将新的路径计算能力暴露给系统的其他部分。
+
+### 基本原理
+
+当前的 `Workspace` 类依赖于外部传入一个明确的 `root_path`。这种方式在复杂的 Monorepo 环境中可能会导致不一致，因为不同命令的调用起点可能不同。
+
+本次重构将该逻辑内聚到 `Workspace` 模块自身。通过实现一套基于标准项目标记（`.git`、`pyproject.toml`）的发现算法，`Workspace` 实例能够自我定位，从而为整个应用提供一个单一、不可变的路径基准。`get_suri_path` 方法则直接服务于新的全局 SURI 规范，确保所有 SURI 中的路径部分都是相对于这个唯一的 Workspace Root 计算的。
+
+### 标签
+
+#intent/build #flow/ready #priority/high #comp/workspace #concept/config #scope/api #ai/instruct #task/domain/refactor #task/object/suri-architecture #task/action/implementation #task/state/begin
+
+---
+
+### Script
+
+#### Acts 1: 更新 Workspace 实现
+
+我将重写 `workspace.py` 文件，加入新的根目录发现逻辑和路径计算方法。
+
+~~~~~act
+write_file
+packages/stitcher-workspace/src/stitcher/workspace/workspace.py
+~~~~~
+~~~~~python
+import logging
+import os
+import subprocess
+from collections import defaultdict
+from pathlib import Path
+from typing import Dict, List, Set, Optional
+
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib  # type: ignore
+
+from stitcher.config import StitcherConfig
+
+log = logging.getLogger(__name__)
+
+
+def find_workspace_root(start_path: Path) -> Path:
+    """Finds the workspace root by searching upwards for key markers."""
+    current_dir = start_path.resolve()
+    while current_dir.parent != current_dir:
+        # Marker 1: .git directory
+        if (current_dir / ".git").is_dir():
+            return current_dir
+
+        # Marker 2: pyproject.toml with [tool.uv.workspace]
+        pyproject_path = current_dir / "pyproject.toml"
+        if pyproject_path.is_file():
+            try:
+                with pyproject_path.open("rb") as f:
+                    data = tomllib.load(f)
+                if (
+                    "tool" in data
+                    and "uv" in data["tool"]
+                    and "workspace" in data["tool"]["uv"]
+                ):
+                    return current_dir
+            except (tomllib.TOMLDecodeError, OSError):
+                # Ignore malformed or unreadable toml files
+                pass
+
+        current_dir = current_dir.parent
+
+    # If no markers found up to the root, the starting directory is the best guess.
+    return start_path.resolve()
+
+
+def find_package_root(file_path: Path) -> Optional[Path]:
+    """Finds the nearest package root (containing pyproject.toml) for a given file."""
+    current_dir = file_path.resolve().parent
+    while current_dir.parent != current_dir:
+        if (current_dir / "pyproject.toml").is_file():
+            return current_dir
+        current_dir = current_dir.parent
+    return None
+
+
+class Workspace:
+    def __init__(
+        self, root_path: Optional[Path] = None, config: Optional[StitcherConfig] = None
+    ):
+        self.root_path = root_path or find_workspace_root(Path.cwd())
+        self.config = config
+        # 'cascade' -> {'/path/to/cascade-application/src', '/path/to/cascade-engine/src'}
+        self.import_to_source_dirs: Dict[str, Set[Path]] = defaultdict(set)
+        self.peripheral_source_dirs: Set[Path] = set()
+
+        if self.config:
+            self._build_from_config()
+        else:
+            self._discover_packages()
+
+    def find_package_root(self, file_path: Path) -> Optional[Path]:
+        """Public method to access the package root finding logic."""
+        return find_package_root(file_path)
+
+    def get_suri_path(self, absolute_path: Path) -> str:
+        """Calculates the SURI-compatible relative path from the workspace root."""
+        try:
+            return absolute_path.resolve().relative_to(self.root_path).as_posix()
+        except ValueError:
+            raise ValueError(
+                f"Path {absolute_path} is not inside the workspace root {self.root_path}"
+            )
+
+    def _build_from_config(self) -> None:
+        if not self.config:
+            return
+
+        # Process main scan paths
+        for path_str in self.config.scan_paths:
+            code_dir = self.root_path / path_str
+            if code_dir.is_dir():
+                import_names = self._get_top_level_importables(code_dir)
+                for import_name in import_names:
+                    self.import_to_source_dirs[import_name].add(code_dir)
+
+        # Process peripheral paths
+        for path_str in self.config.peripheral_paths:
+            p_path = self.root_path / path_str
+            if p_path.exists():
+                self.peripheral_source_dirs.add(p_path)
+
+    def _discover_packages(self) -> None:
+        for pyproject_path in self.root_path.glob("**/pyproject.toml"):
+            try:
+                with pyproject_path.open("rb") as f:
+                    tomllib.load(f)
+
+                pkg_root = pyproject_path.parent
+                code_dirs = self._find_code_dirs(pkg_root)
+
+                for code_dir in code_dirs:
+                    import_names = self._get_top_level_importables(code_dir)
+                    for import_name in import_names:
+                        self.import_to_source_dirs[import_name].add(code_dir)
+
+            except Exception as e:
+                log.warning(f"Could not process {pyproject_path}: {e}")
+
+    def _get_top_level_importables(self, src_path: Path) -> List[str]:
+        names: Set[str] = set()
+        if not src_path.is_dir():
+            return []
+
+        for item in src_path.iterdir():
+            if (
+                item.is_dir()
+                and item.name.isidentifier()
+                and item.name != "__pycache__"
+            ):
+                names.add(item.name)
+            elif (
+                item.is_file()
+                and item.name.endswith(".py")
+                and item.stem.isidentifier()
+            ):
+                names.add(item.stem)
+        return list(names)
+
+    def _find_code_dirs(self, pkg_root: Path) -> List[Path]:
+        dirs: Set[Path] = set()
+        src_dir = pkg_root / "src"
+        if src_dir.is_dir():
+            dirs.add(src_dir)
+        tests_dir = pkg_root / "tests"
+        if tests_dir.is_dir():
+            dirs.add(tests_dir)
+        is_flat_layout = any(
+            (item.is_dir() and (item / "__init__.py").exists())
+            or (item.is_file() and item.name.endswith(".py"))
+            for item in pkg_root.iterdir()
+            if item.name not in {".venv", "src", "tests"}
+        )
+        if is_flat_layout or not dirs:
+            dirs.add(pkg_root)
+        return list(dirs)
+
+    def get_search_paths(self) -> List[Path]:
+        all_paths: Set[Path] = set()
+        for paths in self.import_to_source_dirs.values():
+            all_paths.update(paths)
+        all_paths.update(self.peripheral_source_dirs)
+        all_paths.add(self.root_path)
+        return sorted(list(all_paths))
+
+    def is_peripheral(self, file_path: Path) -> bool:
+        abs_file_path = file_path.resolve()
+        for p_dir in self.peripheral_source_dirs:
+            # Path.is_relative_to is available in Python 3.9+
+            try:
+                abs_file_path.relative_to(p_dir.resolve())
+                return True
+            except ValueError:
+                continue
+        return False
+
+    def discover_files(self) -> Set[str]:
+        paths: Set[str] = set()
+        used_git = False
+
+        # Strategy 1: Git
+        if (self.root_path / ".git").exists():
+            try:
+                # ls-files --cached (tracked) --others (untracked) --exclude-standard (respect .gitignore)
+                result = subprocess.run(
+                    ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+                    cwd=self.root_path,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                paths = set(
+                    line.strip() for line in result.stdout.splitlines() if line.strip()
+                )
+                used_git = True
+            except subprocess.CalledProcessError:
+                log.warning("Git discovery failed, falling back to OS walk.")
+
+        # Strategy 2: Fallback OS Walk
+        if not used_git:
+            for root, dirs, files in os.walk(self.root_path):
+                # Skip hidden dirs
+                dirs[:] = [d for d in dirs if not d.startswith(".")]
+
+                for file in files:
+                    if file.startswith("."):
+                        continue
+                    abs_path = Path(root) / file
+                    rel_path = abs_path.relative_to(self.root_path).as_posix()
+                    paths.add(rel_path)
+
+        # Global Filter: Exclude .stitcher directory
+        final_paths = {
+            p for p in paths if not p.startswith(".stitcher/") and p != ".stitcher"
+        }
+        return final_paths
+~~~~~
+
+### 下一步建议
+
+基础设施已经就位。下一步，我们将进入**协议层**，即实施路线图的 3.2 阶段：**全局 SURI 规范化**。
+
+我将修改 `stitcher-lang-python` 包中的 `SURIGenerator`，使其强制使用我们刚刚在 `Workspace` 中实现的、基于 Workspace Root 的相对路径，从而确保 SURI 的全局唯一性和稳定性。
