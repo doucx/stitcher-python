@@ -174,6 +174,23 @@ class SidecarAdapter(LanguageAdapter):
         self._yaml.dump(self._to_literal_strings(data), string_stream)
         return string_stream.getvalue()
 
+    def load_raw_data(self, path: Path) -> Dict[str, Any]:
+        if not path.exists():
+            return {}
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                # ruamel.yaml.load returns a special dict-like object that preserves structure
+                raw_data = self._yaml.load(f)
+            return raw_data if isinstance(raw_data, dict) else {}
+        except Exception:
+            return {}
+
+    def dump_raw_data_to_string(self, data: Dict[str, Any]) -> str:
+        """Dumps data while preserving formatting, for high-fidelity updates."""
+        string_stream = io.StringIO()
+        self._yaml.dump(data, string_stream)
+        return string_stream.getvalue()
+
     def serialize_ir(
         self, ir: DocstringIR, serializer: DocstringSerializerProtocol
     ) -> Union[str, Dict[str, Any]]:

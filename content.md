@@ -1,6 +1,6 @@
 好的，我们立即开始执行路线图的第二步。
 
-我的分析显示，`DocumentManager` 已经正确地将其所有 I/O 操作委托给了新的 `SidecarAdapter`，因此我们无需对其进行修改。我们的任务将聚焦于彻底移除 `stitcher-common` 中陈旧的 `YamlAdapter` 及其所有引用，完成架构的净化。
+我的分析确认，`DocumentManager` 已正确解耦，现在我们的核心任务是根除遗留的 `YamlAdapter` 及其在 `stitcher-refactor` 和测试代码中的残留引用，以完成架构净化。
 
 ## [WIP] refactor(arch): 净化 I/O 职责并移除旧的 YamlAdapter
 
@@ -14,9 +14,11 @@
 
 ### 目标
 
-1.  从 `stitcher.common` 的 `__init__.py` 中移除对旧 `YamlAdapter` 的导入及其在 `__all__` 中的导出。
-2.  物理删除 `packages/stitcher-common/src/stitcher/common/adapters/yaml_adapter.py` 文件。
-3.  完成此步骤后，整个项目将不再有任何对旧 `YamlAdapter` 的依赖。
+1.  为 `SidecarAdapter` 增加通用的、高保真的数据加载和转储方法，以满足重构引擎的需求。
+2.  重构 `stitcher-refactor` 的 `Planner`，使其使用新的 `SidecarAdapter`。
+3.  重构受影响的单元测试，使其也使用新的 `SidecarAdapter`，确保测试与生产代码的一致性。
+4.  物理删除 `stitcher-common` 中的旧 `YamlAdapter` 及其所有引用。
+5.  删除 `stitcher-refactor` 中已废弃的 `updater.py` 模块。
 
 ### 基本原理
 
@@ -24,59 +26,413 @@
 
 ### 标签
 
-#intent/refine #flow/ready #priority/high #comp/common #comp/lang-sidecar #scope/core #ai/instruct #task/domain/architecture #task/object/sidecar-adapter #task/action/refactor #task/state/continue
+#intent/refine #flow/ready #priority/high #comp/common #comp/refactor #comp/lang-sidecar #scope/core #ai/instruct #task/domain/architecture #task/object/sidecar-adapter #task/action/refactor #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 清理 `stitcher-common` 中的引用
+#### Acts 1: 增强 `SidecarAdapter` 以支持通用 I/O
 
-我将首先修改 `__init__.py` 文件，移除对即将被删除的 `YamlAdapter` 的所有引用。
-
-~~~~~act
-patch_file
-packages/stitcher-common/src/stitcher/common/__init__.py
-~~~~~
-~~~~~python.old
-from stitcher.spec.persistence import DocumentAdapter
-from .adapters.yaml_adapter import YamlAdapter
-~~~~~
-~~~~~python.new
-from stitcher.spec.persistence import DocumentAdapter
-~~~~~
+我将为 `SidecarAdapter` 添加 `load_raw_data` 和 `dump_raw_data_to_string` 方法，使其能够处理通用的、高保真的 YAML 读写任务。
 
 ~~~~~act
 patch_file
-packages/stitcher-common/src/stitcher/common/__init__.py
+packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/adapter.py
 ~~~~~
 ~~~~~python.old
-__all__ = [
-    "bus",
-    "stitcher_operator",
-    "format_docstring",
-    "parse_docstring",
-    "DocumentAdapter",
-    "YamlAdapter",
-]
+    def dump_to_string(self, data: Dict[str, Any]) -> str:
+        string_stream = io.StringIO()
+        self._yaml.dump(self._to_literal_strings(data), string_stream)
+        return string_stream.getvalue()
+
+    def serialize_ir(
+        self, ir: DocstringIR, serializer: DocstringSerializerProtocol
+    ) -> Union[str, Dict[str, Any]]:
+        return serializer.to_yaml(ir)
 ~~~~~
 ~~~~~python.new
-__all__ = [
-    "bus",
-    "stitcher_operator",
-    "format_docstring",
-    "parse_docstring",
-    "DocumentAdapter",
-]
+    def dump_to_string(self, data: Dict[str, Any]) -> str:
+        string_stream = io.StringIO()
+        self._yaml.dump(self._to_literal_strings(data), string_stream)
+        return string_stream.getvalue()
+
+    def load_raw_data(self, path: Path) -> Dict[str, Any]:
+        if not path.exists():
+            return {}
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                # ruamel.yaml.load returns a special dict-like object that preserves structure
+                raw_data = self._yaml.load(f)
+            return raw_data if isinstance(raw_data, dict) else {}
+        except Exception:
+            return {}
+
+    def dump_raw_data_to_string(self, data: Dict[str, Any]) -> str:
+        """Dumps data while preserving formatting, for high-fidelity updates."""
+        string_stream = io.StringIO()
+        self._yaml.dump(data, string_stream)
+        return string_stream.getvalue()
+
+    def serialize_ir(
+        self, ir: DocstringIR, serializer: DocstringSerializerProtocol
+    ) -> Union[str, Dict[str, Any]]:
+        return serializer.to_yaml(ir)
 ~~~~~
 
-#### Acts 2: 物理删除旧的 `YamlAdapter`
+#### Acts 2: 更新 `stitcher-refactor` 的依赖
 
-现在，在所有引用都已清理干净后，我将物理删除这个冗余的文件。
+现在，我将重构 `Planner` 以使用我们刚刚增强的 `SidecarAdapter`。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+~~~~~
+~~~~~python.old
+from collections import defaultdict
+from pathlib import Path
+from typing import List, Dict, DefaultDict, TYPE_CHECKING
+
+from stitcher.common.adapters.yaml_adapter import YamlAdapter
+import json
+
+if TYPE_CHECKING:
+    from stitcher.refactor.migration import MigrationSpec
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import (
+    FileOp,
+    MoveFileOp,
+    WriteFileOp,
+    DeleteFileOp,
+    DeleteDirectoryOp,
+)
+from stitcher.refactor.engine.intent import (
+    RefactorIntent,
+    RenameIntent,
+    SidecarUpdateIntent,
+    MoveFileIntent,
+    DeleteFileIntent,
+    ScaffoldIntent,
+    DeleteDirectoryIntent,
+)
+from stitcher.refactor.engine.renamer import GlobalBatchRenamer
+from stitcher.lang.sidecar import SidecarTransformer, SidecarTransformContext
+from .utils import path_to_fqn
+
+
+class Planner:
+    def plan(self, spec: "MigrationSpec", ctx: RefactorContext) -> List[FileOp]:
+        all_ops: List[FileOp] = []
+
+        # --- 1. Intent Collection ---
+        all_intents: List[RefactorIntent] = []
+        for operation in spec.operations:
+            all_intents.extend(operation.collect_intents(ctx))
+
+        # --- 2. Intent Aggregation & Processing ---
+
+        # Aggregate renames for batch processing
+        rename_map: Dict[str, str] = {}
+        for intent in all_intents:
+            if isinstance(intent, RenameIntent):
+                # TODO: Handle rename chains (A->B, B->C should become A->C)
+                rename_map[intent.old_fqn] = intent.new_fqn
+
+        # Process symbol renames in code
+        renamer = GlobalBatchRenamer(rename_map, ctx)
+        all_ops.extend(renamer.analyze())
+
+        # Build a map of module renames from move intents. This is the source of truth
+        # for determining the new module FQN context.
+        module_rename_map: Dict[str, str] = {}
+        for intent in all_intents:
+            if isinstance(intent, MoveFileIntent):
+                old_mod_fqn = path_to_fqn(intent.src_path, ctx.graph.search_paths)
+                new_mod_fqn = path_to_fqn(intent.dest_path, ctx.graph.search_paths)
+                if old_mod_fqn and new_mod_fqn:
+                    module_rename_map[old_mod_fqn] = new_mod_fqn
+
+        # Aggregate and process sidecar updates
+        sidecar_updates: DefaultDict[Path, List[SidecarUpdateIntent]] = defaultdict(
+            list
+        )
+        for intent in all_intents:
+            if isinstance(intent, SidecarUpdateIntent):
+                sidecar_updates[intent.sidecar_path].append(intent)
+
+        # TODO: Inject real adapters instead of instantiating them here.
+        yaml_adapter = YamlAdapter()
+        sidecar_transformer = SidecarTransformer()
+        for path, intents in sidecar_updates.items():
+            # Load the sidecar file only once
+            is_yaml = path.suffix == ".yaml"
+            data = (
+                yaml_adapter.load(path)
+                if is_yaml
+                else json.loads(path.read_text("utf-8"))
+            )
+
+            # Apply all intents for this file
+            for intent in intents:
+                old_module_fqn = intent.module_fqn
+                new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
+
+                transform_ctx = SidecarTransformContext(
+                    old_module_fqn=old_module_fqn,
+                    new_module_fqn=new_module_fqn,
+                    old_fqn=intent.old_fqn,
+                    new_fqn=intent.new_fqn,
+                    old_file_path=intent.old_file_path,
+                    new_file_path=intent.new_file_path,
+                )
+                data = sidecar_transformer.transform(path, data, transform_ctx)
+
+            # Dump the final state
+            content = (
+                yaml_adapter.dump(data)
+                if is_yaml
+                else json.dumps(data, indent=2, sort_keys=True)
+            )
+            all_ops.append(WriteFileOp(path.relative_to(ctx.graph.root_path), content))
+
+        # Process simple filesystem intents
+        for intent in all_intents:
+            if isinstance(intent, MoveFileIntent):
+                all_ops.append(
+                    MoveFileOp(
+                        intent.src_path.relative_to(ctx.graph.root_path),
+                        intent.dest_path.relative_to(ctx.graph.root_path),
+                    )
+                )
+            elif isinstance(intent, DeleteFileIntent):
+                all_ops.append(
+                    DeleteFileOp(intent.path.relative_to(ctx.graph.root_path))
+                )
+            elif isinstance(intent, DeleteDirectoryIntent):
+                all_ops.append(
+                    DeleteDirectoryOp(intent.path.relative_to(ctx.graph.root_path))
+                )
+            elif isinstance(intent, ScaffoldIntent):
+                all_ops.append(
+                    WriteFileOp(
+                        intent.path.relative_to(ctx.graph.root_path), intent.content
+                    )
+                )
+
+        return all_ops
+~~~~~
+~~~~~python.new
+from collections import defaultdict
+from pathlib import Path
+from typing import List, Dict, DefaultDict, TYPE_CHECKING
+import json
+
+if TYPE_CHECKING:
+    from stitcher.refactor.migration import MigrationSpec
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import (
+    FileOp,
+    MoveFileOp,
+    WriteFileOp,
+    DeleteFileOp,
+    DeleteDirectoryOp,
+)
+from stitcher.refactor.engine.intent import (
+    RefactorIntent,
+    RenameIntent,
+    SidecarUpdateIntent,
+    MoveFileIntent,
+    DeleteFileIntent,
+    ScaffoldIntent,
+    DeleteDirectoryIntent,
+)
+from stitcher.refactor.engine.renamer import GlobalBatchRenamer
+from stitcher.lang.sidecar import (
+    SidecarTransformer,
+    SidecarTransformContext,
+    SidecarAdapter,
+)
+from .utils import path_to_fqn
+
+
+class Planner:
+    def plan(self, spec: "MigrationSpec", ctx: RefactorContext) -> List[FileOp]:
+        all_ops: List[FileOp] = []
+
+        # --- 1. Intent Collection ---
+        all_intents: List[RefactorIntent] = []
+        for operation in spec.operations:
+            all_intents.extend(operation.collect_intents(ctx))
+
+        # --- 2. Intent Aggregation & Processing ---
+
+        # Aggregate renames for batch processing
+        rename_map: Dict[str, str] = {}
+        for intent in all_intents:
+            if isinstance(intent, RenameIntent):
+                # TODO: Handle rename chains (A->B, B->C should become A->C)
+                rename_map[intent.old_fqn] = intent.new_fqn
+
+        # Process symbol renames in code
+        renamer = GlobalBatchRenamer(rename_map, ctx)
+        all_ops.extend(renamer.analyze())
+
+        # Build a map of module renames from move intents. This is the source of truth
+        # for determining the new module FQN context.
+        module_rename_map: Dict[str, str] = {}
+        for intent in all_intents:
+            if isinstance(intent, MoveFileIntent):
+                old_mod_fqn = path_to_fqn(intent.src_path, ctx.graph.search_paths)
+                new_mod_fqn = path_to_fqn(intent.dest_path, ctx.graph.search_paths)
+                if old_mod_fqn and new_mod_fqn:
+                    module_rename_map[old_mod_fqn] = new_mod_fqn
+
+        # Aggregate and process sidecar updates
+        sidecar_updates: DefaultDict[Path, List[SidecarUpdateIntent]] = defaultdict(
+            list
+        )
+        for intent in all_intents:
+            if isinstance(intent, SidecarUpdateIntent):
+                sidecar_updates[intent.sidecar_path].append(intent)
+
+        sidecar_adapter = SidecarAdapter(ctx.workspace.root_path)
+        sidecar_transformer = SidecarTransformer()
+        for path, intents in sidecar_updates.items():
+            # Load the sidecar file only once
+            is_yaml = path.suffix in [".yaml", ".yml"]
+            data = (
+                sidecar_adapter.load_raw_data(path)
+                if is_yaml
+                else json.loads(path.read_text("utf-8"))
+            )
+
+            # Apply all intents for this file
+            for intent in intents:
+                old_module_fqn = intent.module_fqn
+                new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
+
+                transform_ctx = SidecarTransformContext(
+                    old_module_fqn=old_module_fqn,
+                    new_module_fqn=new_module_fqn,
+                    old_fqn=intent.old_fqn,
+                    new_fqn=intent.new_fqn,
+                    old_file_path=intent.old_file_path,
+                    new_file_path=intent.new_file_path,
+                )
+                data = sidecar_transformer.transform(path, data, transform_ctx)
+
+            # Dump the final state
+            content = (
+                sidecar_adapter.dump_raw_data_to_string(data)
+                if is_yaml
+                else json.dumps(data, indent=2, sort_keys=True)
+            )
+            all_ops.append(WriteFileOp(path.relative_to(ctx.graph.root_path), content))
+
+        # Process simple filesystem intents
+        for intent in all_intents:
+            if isinstance(intent, MoveFileIntent):
+                all_ops.append(
+                    MoveFileOp(
+                        intent.src_path.relative_to(ctx.graph.root_path),
+                        intent.dest_path.relative_to(ctx.graph.root_path),
+                    )
+                )
+            elif isinstance(intent, DeleteFileIntent):
+                all_ops.append(
+                    DeleteFileOp(intent.path.relative_to(ctx.graph.root_path))
+                )
+            elif isinstance(intent, DeleteDirectoryIntent):
+                all_ops.append(
+                    DeleteDirectoryOp(intent.path.relative_to(ctx.graph.root_path))
+                )
+            elif isinstance(intent, ScaffoldIntent):
+                all_ops.append(
+                    WriteFileOp(
+                        intent.path.relative_to(ctx.graph.root_path), intent.content
+                    )
+                )
+
+        return all_ops
+~~~~~
+
+#### Acts 3: 更新测试用例
+
+我将更新 `test_doc_overlay.py`，使其使用 `SidecarAdapter` 和 `DocstringIR` 来准备测试数据，这使测试更加健壮和真实。
+
+~~~~~act
+write_file
+packages/stitcher-application/tests/unit/test_doc_overlay.py
+~~~~~
+~~~~~python
+from pathlib import Path
+
+from stitcher.app.services import DocumentManager
+from stitcher.lang.sidecar import SidecarAdapter
+from stitcher.lang.python.docstring import RawSerializer
+from stitcher.spec import ModuleDef, FunctionDef, DocstringIR
+
+
+def test_apply_docs_overlay(tmp_path: Path):
+    # 1. Setup IR with "Source Docs"
+    module = ModuleDef(
+        file_path="src/main.py",
+        docstring="Source Module Doc",
+        functions=[FunctionDef(name="func", docstring="Source Func Doc")],
+    )
+
+    # 2. Setup External Docs using the correct SidecarAdapter
+    doc_file = tmp_path / "src" / "main.stitcher.yaml"
+    adapter = SidecarAdapter(root_path=tmp_path)
+    serializer = RawSerializer()
+    external_irs = {
+        "__doc__": DocstringIR(summary="YAML Module Doc"),
+        "func": DocstringIR(summary="YAML Func Doc"),
+    }
+    adapter.save_doc_irs(doc_file, external_irs, serializer)
+
+    # 3. Apply
+    manager = DocumentManager(root_path=tmp_path)
+    # The manager needs the correct serializer strategy to parse the file.
+    manager.set_strategy(serializer.parser, serializer)
+    manager.apply_docs_to_module(module)
+
+    # 4. Assert IR is updated
+    assert module.docstring == "YAML Module Doc"
+    assert module.functions[0].docstring == "YAML Func Doc"
+
+
+def test_apply_docs_partial_overlay(tmp_path: Path):
+    module = ModuleDef(
+        file_path="src/main.py",
+        functions=[
+            FunctionDef(name="func1", docstring="Source 1"),
+            FunctionDef(name="func2", docstring="Source 2"),
+        ],
+    )
+
+    doc_file = tmp_path / "src" / "main.stitcher.yaml"
+    adapter = SidecarAdapter(root_path=tmp_path)
+    serializer = RawSerializer()
+    # Only overriding func1
+    external_irs = {"func1": DocstringIR(summary="YAML 1")}
+    adapter.save_doc_irs(doc_file, external_irs, serializer)
+
+    manager = DocumentManager(root_path=tmp_path)
+    manager.set_strategy(serializer.parser, serializer)
+    manager.apply_docs_to_module(module)
+
+    assert module.functions[0].docstring == "YAML 1"
+    assert module.functions[1].docstring == "Source 2"
+~~~~~
+
+#### Acts 4: 删除废弃的模块
+
+我将删除 `stitcher-refactor` 中不再使用的 `updater.py` 文件。
 
 ~~~~~act
 delete_file
-packages/stitcher-common/src/stitcher/common/adapters/yaml_adapter.py
+packages/stitcher-refactor/src/stitcher/refactor/sidecar/updater.py
 ~~~~~
 
 ### 下一步建议
