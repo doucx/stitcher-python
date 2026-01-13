@@ -6,8 +6,8 @@ from ruamel.yaml.error import YAMLError
 
 def parse_doc_references(content: str) -> List[Tuple[str, int, int]]:
     """
-    Parses a Stitcher YAML Doc file and returns a list of (fqn, lineno, col_offset)
-    for all top-level keys.
+    Parses a Stitcher YAML Doc file and returns a list of (fragment, lineno, col_offset)
+    for all top-level keys, which are expected to be short symbol names (fragments).
     """
     yaml = YAML()
     try:
@@ -64,6 +64,3 @@ def parse_signature_references(content: str) -> List[Tuple[str, int, int]]:
             references.append((suri, i + 1, col))
             
     return references
-
-# Alias for backward compatibility if needed, though we should update callers.
-parse_sidecar_references = parse_doc_references
