@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 from ruamel.yaml import YAML
 from stitcher.spec import ModuleDef, FunctionDef, ClassDef, Attribute
 from stitcher.app.services import DocumentManager

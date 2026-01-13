@@ -1,6 +1,6 @@
 import io
 from pathlib import Path
-from typing import List, Tuple, Dict, Optional, Union, Any
+from typing import List, Tuple, Dict, Union, Any
 
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import LiteralScalarString
@@ -106,9 +106,7 @@ class SidecarAdapter(LanguageAdapter):
             if not isinstance(raw_data, dict):
                 return {}
 
-            return {
-                fqn: serializer.from_yaml(val) for fqn, val in raw_data.items()
-            }
+            return {fqn: serializer.from_yaml(val) for fqn, val in raw_data.items()}
         except Exception:
             return {}
 
@@ -160,9 +158,7 @@ class SidecarAdapter(LanguageAdapter):
             # --- CREATE PATH ---
             # For new files, create a clean, sorted baseline for predictability.
             sorted_irs = dict(sorted(irs.items()))
-            yaml_data = {
-                fqn: serializer.to_yaml(ir) for fqn, ir in sorted_irs.items()
-            }
+            yaml_data = {fqn: serializer.to_yaml(ir) for fqn, ir in sorted_irs.items()}
             formatted_data = self._to_literal_strings(yaml_data)
             string_stream = io.StringIO()
             self._yaml.dump(formatted_data, string_stream)

@@ -1,4 +1,3 @@
-import pytest
 from typer.testing import CliRunner
 from textwrap import dedent
 
@@ -135,4 +134,6 @@ def test_check_does_not_reformat_file_on_success(tmp_path, monkeypatch):
 
     # The critical assertion: the file content must not have changed.
     content_after = yaml_path.read_text()
-    assert content_before == content_after, "Check command incorrectly reformatted the YAML file."
+    assert content_before == content_after, (
+        "Check command incorrectly reformatted the YAML file."
+    )

@@ -138,13 +138,16 @@ def test_save_doc_irs_update_path_preserves_order_and_comments(tmp_path: Path):
     doc_path = tmp_path / "existing_module.stitcher.yaml"
 
     # Create an initial file with specific order and comments
-    initial_content = dedent("""
+    initial_content = (
+        dedent("""
         # A special comment that must be preserved
         z_function: |-
           Original doc for Z
         a_function: |-
           Original doc for A
-    """).strip() + "\n"
+    """).strip()
+        + "\n"
+    )
     doc_path.write_text(initial_content)
 
     # New/updated IRs to "pump"

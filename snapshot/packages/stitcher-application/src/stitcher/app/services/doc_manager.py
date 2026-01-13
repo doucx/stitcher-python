@@ -40,7 +40,6 @@ class DocumentManager:
         return self._sidecar_adapter.serialize_ir(ir, self.serializer)
 
     def _deserialize_ir(self, data: Union[str, Dict[str, Any]]) -> DocstringIR:
-        """Internal method for testing strategy-based deserialization."""
         return self.serializer.from_yaml(data)
 
     def serialize_ir(self, ir: DocstringIR) -> Union[str, Dict[str, Any]]:
@@ -54,12 +53,10 @@ class DocumentManager:
         return self._sidecar_adapter.dump_to_string(data)
 
     def load_raw_data(self, file_path: str) -> Dict[str, Any]:
-        """Loads raw YAML data with high fidelity using the sidecar adapter."""
         doc_path = self.resolver.get_doc_path(self.root_path / file_path)
         return self._sidecar_adapter.load_raw_data(doc_path)
 
     def dump_raw_data_to_string(self, data: Dict[str, Any]) -> str:
-        """Dumps raw YAML data with high fidelity using the sidecar adapter."""
         return self._sidecar_adapter.dump_raw_data_to_string(data)
 
     def _extract_from_function(
@@ -321,7 +318,9 @@ class DocumentManager:
         if updated_keys and not dry_run:
             module_path = self.root_path / module.file_path
             output_path = module_path.with_suffix(".stitcher.yaml")
-            self._sidecar_adapter.save_doc_irs(output_path, new_yaml_docs_ir, self.serializer)
+            self._sidecar_adapter.save_doc_irs(
+                output_path, new_yaml_docs_ir, self.serializer
+            )
 
         return {
             "success": True,
@@ -371,14 +370,10 @@ class DocumentManager:
     def compute_yaml_hashes_for_path(self, file_path: str) -> Dict[str, str]:
         if not file_path:
             return {}
-        module_path = self.root_path / file_path
-        doc_path = self.resolver.get_doc_path(module_path)
 
         irs = self.load_docs_for_path(file_path)
 
-        return {
-            fqn: self.compute_ir_hash(ir) for fqn, ir in irs.items()
-        }
+        return {fqn: self.compute_ir_hash(ir) for fqn, ir in irs.items()}
 
     def compute_yaml_content_hashes(self, module: ModuleDef) -> Dict[str, str]:
         return self.compute_yaml_hashes_for_path(module.file_path)

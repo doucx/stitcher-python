@@ -227,8 +227,6 @@ class StitcherApp:
         if not index_stats["success"]:
             self.scanner.had_errors = True
 
-        modified_paths = index_stats.get("modified_paths", set())
-
         configs, _ = self._load_configs()
         all_results: List[FileCheckResult] = []
 
