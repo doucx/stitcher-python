@@ -50,7 +50,7 @@ class SidecarTransformer:
             context.new_fqn,
         )
 
-        if sidecar_path.suffix == ".json":
+        if sidecar_path.suffix in (".json", ".lock"):
             return self._transform_json_data(
                 data,
                 context.old_file_path,
@@ -114,7 +114,7 @@ class SidecarTransformer:
             original_path, original_fragment = path, fragment
             current_path, current_fragment = path, fragment
 
-            if old_file_path and new_file_path and current_path == old_file_path:
+            if old_file_path and new_file_path and str(current_path) == str(old_file_path):
                 current_path = new_file_path
 
             if (
