@@ -118,28 +118,56 @@ class SidecarAdapter(LanguageAdapter):
         irs: Dict[str, DocstringIR],
         serializer: DocstringSerializerProtocol,
     ) -> None:
-        sorted_irs = dict(sorted(irs.items()))
-        yaml_data = {fqn: serializer.to_yaml(ir) for fqn, ir in sorted_irs.items()}
-        
-        # Enforce block scalar style for all string values
-        formatted_data = self._to_literal_strings(yaml_data)
-
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        original_content = ""
         if path.exists():
+            # --- UPDATE PATH ---
+            # Load existing content to preserve formatting, comments, and key order.
             try:
+                with path.open("r", encoding="utf-8") as f:
+                    data = self._yaml.load(f)
                 original_content = path.read_text("utf-8")
-            except (OSError, UnicodeDecodeError):
-                pass
+            except Exception:
+                # If we can't read/parse, treat it as a new file creation.
+                data = {}
+                original_content = ""
 
-        string_stream = io.StringIO()
-        self._yaml.dump(formatted_data, string_stream)
-        new_content = string_stream.getvalue()
+            if not isinstance(data, dict):
+                data = {}
 
-        if original_content != new_content:
+            # Update the loaded data with new/modified IRs.
+            # NO SORTING is applied to preserve original key order.
+            # New keys will be appended by ruamel.yaml.
+            for fqn, ir in irs.items():
+                yaml_val = serializer.to_yaml(ir)
+                if isinstance(yaml_val, str):
+                    formatted_val = LiteralScalarString(yaml_val)
+                elif isinstance(yaml_val, dict):
+                    formatted_val = self._to_literal_strings(yaml_val)
+                else:
+                    formatted_val = yaml_val
+                data[fqn] = formatted_val
+
+            string_stream = io.StringIO()
+            self._yaml.dump(data, string_stream)
+            new_content = string_stream.getvalue()
+
+            # Compare with original content to avoid unnecessary writes/mtime changes.
+            if original_content != new_content:
+                with path.open("w", encoding="utf-8") as f:
+                    f.write(new_content)
+        else:
+            # --- CREATE PATH ---
+            # For new files, create a clean, sorted baseline for predictability.
+            sorted_irs = dict(sorted(irs.items()))
+            yaml_data = {
+                fqn: serializer.to_yaml(ir) for fqn, ir in sorted_irs.items()
+            }
+            formatted_data = self._to_literal_strings(yaml_data)
+            string_stream = io.StringIO()
+            self._yaml.dump(formatted_data, string_stream)
             with path.open("w", encoding="utf-8") as f:
-                f.write(new_content)
+                f.write(string_stream.getvalue())
 
     def dump_to_string(self, data: Dict[str, Any]) -> str:
         string_stream = io.StringIO()
