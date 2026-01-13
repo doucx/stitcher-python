@@ -1,57 +1,183 @@
-测试已全部通过。现在我们将这些增强功能作为一个逻辑单元进行提交，标志着 IR 解析器对复杂 Python 赋值语法的支持达到了预期的 MVP 水准。
+根据全量测试的反馈，由于我们加强了 `stitcher-workspace` 的发现逻辑（禁止静默回退），现有的集成测试环境因为缺失 `.git` 目录或 `[tool.uv.workspace]` 标记而无法被识别为合法的工作区。
 
-## [COMMIT] feat(lang-python): 增强 IR 解析器以支持解包赋值和星号解包
+我们将通过为测试用的 `WorkspaceFactory` 增加 `.init_git()` 调用来修复这些测试，确保它们符合“确定性工作区”的要求。
 
-### 用户需求
-1.  支持解包赋值（如 `x, y = 1, 2`）。
-2.  支持带星号的解包赋值（如 `x, *y = [1, 2, 3]`）。
-3.  确保嵌套类定义不会导致解析器状态混乱或符号泄露。
+## [WIP] fix(tests): 修复集成测试以符合确定性工作区发现规则
 
-### 评论
-这是对 `stitcher-lang-python` 静态分析能力的重大补全。通过支持递归解析赋值目标，我们能够更准确地捕捉库的公共 API 表面，减少因代码风格差异导致的索引遗漏。
+### 错误分析
+在之前的重构中，我们强化了 `find_workspace_root` 的逻辑：如果没有找到 `.git` 或特定的 `pyproject.toml` 配置，系统将抛出错误。
+目前的集成测试中，`WorkspaceFactory` 创建的临时目录是一个平铺的文件夹，缺乏这些标识符，导致 CLI 在尝试定位工作区根目录时失败。
 
 ### 目标
-1.  将 `visitors.py` 和对应的单元测试 `test_visitors.py` 提交至仓库。
-2.  确保 `[COMMIT]` 节点在历史图中清晰地标记了这一功能点的完成。
-
-### 基本原理
-我们遵循“先建立测试，再修复实现”的 TDD 流程。最终实现利用了 LibCST `Tuple`/`List` 元素包装器的通用性，通过递归处理 `.value` 属性，以最简洁的代码覆盖了所有解包场景。
+1.  在所有失败的集成测试中，为 `WorkspaceFactory` 链增加 `.init_git()` 调用。
+2.  确保 `stitcher-cli` 的集成测试能够在模拟的 Git 仓库中运行。
 
 ### 标签
-#intent/build #flow/ready #priority/high #comp/lang-python #concept/parser #scope/core #ai/refine #task/domain/analysis #task/object/ir-parser #task/action/enhancement #task/state/end
+#intent/fix #flow/ready #priority/critical #comp/tests #comp/workspace #scope/core #ai/refine #task/domain/testing #task/object/integration-tests #task/action/fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 提交代码与测试
-
-我们将相关变更添加到暂存区并创建提交。
+#### Acts 1: 修复 `test_coverage_command.py`
 
 ~~~~~act
-git_add
-packages/stitcher-lang-python/src/stitcher/lang/python/analysis/visitors.py
-packages/stitcher-lang-python/tests/analysis/unit/cst/test_visitors.py
+patch_file
+packages/stitcher-cli/tests/integration/test_coverage_command.py
 ~~~~~
+~~~~~python.old
+    # 1. Setup a workspace with diverse documentation coverage
+    ws_root = (
+        WorkspaceFactory(tmp_path)
+        .with_config({"scan_paths": ["src"]})
+~~~~~
+~~~~~python.new
+    # 1. Setup a workspace with diverse documentation coverage
+    ws_root = (
+        WorkspaceFactory(tmp_path)
+        .init_git()
+        .with_config({"scan_paths": ["src"]})
+~~~~~
+
+#### Acts 2: 修复 `test_fidelity_principles.py`
 
 ~~~~~act
-git_commit
+patch_file
+packages/stitcher-cli/tests/integration/test_fidelity_principles.py
 ~~~~~
-~~~~~text
-feat(lang-python): enhance IR parser to support unpacking and starred assignments
+~~~~~python.old
+    comments are preserved, and new keys are appended.
+    """
+    # 1. ARRANGE
+    # Create a workspace with an existing, custom-formatted .stitcher.yaml
+    # and a new function in the source code to be pumped.
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+~~~~~
+~~~~~python.new
+    comments are preserved, and new keys are appended.
+    """
+    # 1. ARRANGE
+    # Create a workspace with an existing, custom-formatted .stitcher.yaml
+    # and a new function in the source code to be pumped.
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.init_git()
+        .with_config({"scan_paths": ["src"]})
+~~~~~
+~~~~~python.old
+    # 1. ARRANGE
+    # Create a workspace, run `init`, and then `strip` to get a truly
+    # clean state (docs only in YAML).
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+~~~~~
+~~~~~python.new
+    # 1. ARRANGE
+    # Create a workspace, run `init`, and then `strip` to get a truly
+    # clean state (docs only in YAML).
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.init_git()
+        .with_config({"scan_paths": ["src"]})
+~~~~~
 
-This commit enhances the `IRBuildingVisitor` to recursively resolve assignment targets.
-Previously, only simple name assignments (e.g., `x = 1`) were captured. Now, the parser
-correctly identifies symbols in unpacking and starred assignments:
+#### Acts 3: 修复 `test_pump_strip_interaction.py`
 
-- Supports tuple/list unpacking: `x, y = 1, 2`
-- Supports starred unpacking: `head, *tail = items`
-- Robustly handles nested classes by preventing symbol leakage to top-level IR
+~~~~~act
+patch_file
+packages/stitcher-cli/tests/integration/test_pump_strip_interaction.py
+~~~~~
+~~~~~python.old
+def test_pump_prompts_for_strip_when_redundant(tmp_path, monkeypatch):
+    """
+    Verifies that when 'pump' extracts docstrings (making source docs redundant),
+    it prompts the user to strip them, and performs the strip if confirmed.
+    """
+    # 1. Arrange
+    factory = WorkspaceFactory(tmp_path)
+    # Create a file with a docstring that will be extracted
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+~~~~~
+~~~~~python.new
+def test_pump_prompts_for_strip_when_redundant(tmp_path, monkeypatch):
+    """
+    Verifies that when 'pump' extracts docstrings (making source docs redundant),
+    it prompts the user to strip them, and performs the strip if confirmed.
+    """
+    # 1. Arrange
+    factory = WorkspaceFactory(tmp_path)
+    # Create a file with a docstring that will be extracted
+    project_root = (
+        factory.init_git()
+        .with_config({"scan_paths": ["src"]})
+~~~~~
+~~~~~python.old
+def test_pump_with_strip_flag_executes_strip(tmp_path, monkeypatch):
+    """
+    Verifies that 'pump --strip' directly triggers a strip operation and
+    emits the correct completion signal. This test bypasses interactive prompts.
+    """
+    # 1. Arrange
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.with_config({"scan_paths": ["src"]})
+~~~~~
+~~~~~python.new
+def test_pump_with_strip_flag_executes_strip(tmp_path, monkeypatch):
+    """
+    Verifies that 'pump --strip' directly triggers a strip operation and
+    emits the correct completion signal. This test bypasses interactive prompts.
+    """
+    # 1. Arrange
+    factory = WorkspaceFactory(tmp_path)
+    project_root = (
+        factory.init_git()
+        .with_config({"scan_paths": ["src"]})
+~~~~~
 
-Added unit tests in `test_visitors.py` to verify these capabilities.
+#### Acts 4: 修复 `test_refactor_command.py`
+
+~~~~~act
+patch_file
+packages/stitcher-cli/tests/integration/test_refactor_command.py
+~~~~~
+~~~~~python.old
+def test_refactor_apply_e2e(tmp_path, monkeypatch):
+    # 1. Arrange: Create a project and a migration script
+    factory = WorkspaceFactory(tmp_path)
+    # Project with a symbol to be renamed
+    (
+        factory.with_project_name("mypkg")
+~~~~~
+~~~~~python.new
+def test_refactor_apply_e2e(tmp_path, monkeypatch):
+    # 1. Arrange: Create a project and a migration script
+    factory = WorkspaceFactory(tmp_path)
+    # Project with a symbol to be renamed
+    (
+        factory.init_git()
+        .with_project_name("mypkg")
+~~~~~
+~~~~~python.old
+def test_refactor_apply_dry_run(tmp_path, monkeypatch):
+    # 1. Arrange
+    factory = WorkspaceFactory(tmp_path)
+    (
+        factory.with_project_name("mypkg")
+~~~~~
+~~~~~python.new
+def test_refactor_apply_dry_run(tmp_path, monkeypatch):
+    # 1. Arrange
+    factory = WorkspaceFactory(tmp_path)
+    (
+        factory.init_git()
+        .with_project_name("mypkg")
 ~~~~~
 
 ### 下一步建议
-
-- **方法内属性捕捉**: 目前 `IRBuildingVisitor` 仅解析模块和类层级的赋值。下一步可以研究如何通过 `UsageScanVisitor` 识别 `self.attr = value` 并将其作为类属性（Class Attribute）加入 IR。
-- **性能评估**: 随着递归解析逻辑的加入，可以针对包含极大规模常量列表（解包赋值）的文件进行性能测试。
+1.  **验证集成测试**: 重新运行 `packages/stitcher-cli` 下的集成测试，确保“无法定位工作区”的错误消失。
+2.  **检查测试独立性**: 确保 `init_git()` 在 `tmp_path` 下创建的 `.git` 不会干扰父目录（即项目本身）的 Git 状态。`WorkspaceFactory` 默认应该处理好了这一点。
