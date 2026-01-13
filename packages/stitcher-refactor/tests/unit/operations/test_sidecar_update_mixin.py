@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 from stitcher.refactor.operations.base import SidecarUpdateMixin
 
 
@@ -7,71 +8,131 @@ def mixin():
     return SidecarUpdateMixin()
 
 
-class TestSidecarUpdateMixin:
-    def test_update_exact_fqn_key(self, mixin):
-        data = {"mypkg.core.OldClass": "doc"}
+class TestJsonSuriUpdates:
+    def test_updates_suri_on_symbol_rename(self, mixin):
+        old_suri = "py://src/app.py#OldClass"
+        new_suri = "py://src/app.py#NewClass"
+        data = {old_suri: {"hash": "1"}}
         updated = mixin._update_sidecar_data(
-            data, None, "mypkg.core.OldClass", "mypkg.core.NewClass"
+            data,
+            Path("src/app.json"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
         )
-        assert updated == {"mypkg.core.NewClass": "doc"}
+        assert updated == {new_suri: {"hash": "1"}}
 
-    def test_update_cascading_fqn_key(self, mixin):
-        data = {"mypkg.core.OldClass.method": "doc"}
+    def test_updates_suri_on_nested_symbol_rename(self, mixin):
+        old_suri = "py://src/app.py#MyClass.old_method"
+        new_suri = "py://src/app.py#MyClass.new_method"
+        data = {old_suri: {"hash": "1"}}
         updated = mixin._update_sidecar_data(
-            data, None, "mypkg.core.OldClass", "mypkg.core.NewClass"
+            data,
+            Path("src/app.json"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.MyClass.old_method",
+            new_fqn="app.MyClass.new_method",
         )
-        assert updated == {"mypkg.core.NewClass.method": "doc"}
+        assert updated == {new_suri: {"hash": "1"}}
 
-    def test_update_short_name_key_with_module_context(self, mixin):
-        data = {"OldClass": "doc", "OldClass.method": "doc"}
+    def test_updates_suri_on_parent_rename(self, mixin):
+        old_suri = "py://src/app.py#OldClass.method"
+        new_suri = "py://src/app.py#NewClass.method"
+        data = {old_suri: {"hash": "1"}}
         updated = mixin._update_sidecar_data(
-            data, "mypkg.core", "mypkg.core.OldClass", "mypkg.core.NewClass"
+            data,
+            Path("src/app.json"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
         )
-        assert updated == {"NewClass": "doc", "NewClass.method": "doc"}
+        assert updated == {new_suri: {"hash": "1"}}
 
-    def test_update_short_name_to_fqn_on_module_move(self, mixin):
-        data = {"OldClass": "doc"}
+    def test_updates_suri_on_file_move(self, mixin):
+        old_suri = "py://src/old_path/app.py#MyClass"
+        new_suri = "py://src/new_path/app.py#MyClass"
+        data = {old_suri: {"hash": "1"}}
         updated = mixin._update_sidecar_data(
-            data, "mypkg.core", "mypkg.core.OldClass", "mypkg.utils.NewClass"
+            data,
+            Path("src/old_path/app.json"),
+            old_module_fqn="old_path.app",
+            new_module_fqn="new_path.app",
+            old_fqn="old_path.app.MyClass",
+            new_fqn="new_path.app.MyClass",
+            old_file_path="src/old_path/app.py",
+            new_file_path="src/new_path/app.py",
         )
-        # Key must become FQN because it's no longer in the same module
-        assert updated == {"mypkg.utils.NewClass": "doc"}
+        assert updated == {new_suri: {"hash": "1"}}
 
-    def test_no_change_for_unrelated_keys(self, mixin):
-        data = {"other.Class": "doc", "mypkg.core.AnotherClass": "doc"}
+    def test_updates_suri_on_combined_move_and_rename(self, mixin):
+        old_suri = "py://src/old_path/app.py#OldClass"
+        new_suri = "py://src/new_path/app.py#NewClass"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/old_path/app.json"),
+            old_module_fqn="old_path.app",
+            new_module_fqn="new_path.app",
+            old_fqn="old_path.app.OldClass",
+            new_fqn="new_path.app.NewClass",
+            old_file_path="src/old_path/app.py",
+            new_file_path="src/new_path/app.py",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
+
+
+class TestYamlFragmentUpdates:
+    def test_updates_fragment_on_symbol_rename(self, mixin):
+        data = {"OldClass": "doc", "Other": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {"NewClass": "doc", "Other": "doc"}
+
+    def test_updates_fragment_on_nested_symbol_rename(self, mixin):
+        data = {"MyClass.old_method": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.MyClass.old_method",
+            new_fqn="app.MyClass.new_method",
+        )
+        assert updated == {"MyClass.new_method": "doc"}
+
+    def test_updates_fragment_on_parent_rename(self, mixin):
+        data = {"OldClass.method": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {"NewClass.method": "doc"}
+
+    def test_does_not_update_fragment_on_pure_file_move(self, mixin):
+        data = {"MyClass": "doc"}
         original_data = data.copy()
         updated = mixin._update_sidecar_data(
-            data, "mypkg.core", "mypkg.core.OldClass", "mypkg.core.NewClass"
+            data,
+            Path("old_path/app.stitcher.yaml"),
+            old_module_fqn="old_path.app",
+            new_module_fqn="new_path.app",
+            old_fqn="old_path.app.MyClass",
+            new_fqn="new_path.app.MyClass", # Symbol name 'MyClass' is unchanged
+            old_file_path="old_path/app.py",
+            new_file_path="new_path/app.py",
         )
+        # The key is relative to the file, so a move should NOT change it.
         assert updated == original_data
-
-    def test_no_change_for_short_name_without_module_context(self, mixin):
-        data = {"OldClass": "doc"}
-        original_data = data.copy()
-        updated = mixin._update_sidecar_data(
-            data, None, "mypkg.core.OldClass", "mypkg.core.NewClass"
-        )
-        assert updated == original_data
-
-    def test_update_module_rename(self, mixin):
-        data = {
-            "mypkg.old_mod.MyClass": "doc",
-            "mypkg.old_mod.MyClass.method": "doc",
-            "mypkg.other_mod.MyClass": "doc",  # Should not change
-        }
-        updated = mixin._update_sidecar_data(
-            data, "mypkg.old_mod", "mypkg.old_mod", "mypkg.new_mod"
-        )
-        assert updated == {
-            "mypkg.new_mod.MyClass": "doc",
-            "mypkg.new_mod.MyClass.method": "doc",
-            "mypkg.other_mod.MyClass": "doc",
-        }
-
-    def test_update_short_name_when_module_is_renamed(self, mixin):
-        data = {"MyClass": "doc", "MyClass.method": "doc"}
-        updated = mixin._update_sidecar_data(
-            data, "mypkg.old_mod", "mypkg.old_mod", "mypkg.new_mod"
-        )
-        # When renaming the module itself, short names remain short names
-        assert updated == {"MyClass": "doc", "MyClass.method": "doc"}
