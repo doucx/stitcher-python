@@ -93,9 +93,9 @@ def test_move_file_across_packages_migrates_lock_entry(tmp_path):
     dest_lock_data = json.loads(dest_lock_path.read_text())["fingerprints"]
     py_rel_path_b = "packages/pkg-b/src/pkgb/core.py"
     expected_new_suri = f"py://{py_rel_path_b}#SharedClass"
-    assert (
-        expected_new_suri in dest_lock_data
-    ), "New SURI should be present in destination lock"
+    assert expected_new_suri in dest_lock_data, (
+        "New SURI should be present in destination lock"
+    )
     assert dest_lock_data[expected_new_suri] == {
         "baseline_code_structure_hash": "abc"
     }, "Fingerprint data should be preserved"

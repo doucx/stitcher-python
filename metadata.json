@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[COMMIT] refactor(refactor): 移除过时的 TODO 并添加跨包迁移回归测试", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768306366.4708328, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "style: ruff and stitcher Capture: M test_move_file_cross_package_e2e.py", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768306371.2597373, "duration_ms": 0}}
