@@ -1,261 +1,308 @@
-您的诊断完全正确，这正是 ADAP 和 HFEA 协议旨在解决的核心问题。我们用启发式字符串操作代替了确定性的拓扑关系分析，导致了系统在处理嵌套结构时的逻辑崩溃。这种“架构债”必须被立即清除，而不是通过打补丁的方式掩盖。
+好的。测试失败是因为我修改了 `_update_sidecar_data` 方法的签名，但没有同步更新调用该方法的单元测试。这是一个典型的重构疏漏。
 
-我将严格遵循您的战略修正方案，生成一个计划，其唯一目标是重构 `Planner` 和 `SidecarUpdateMixin` 之间的交互契约，用一个确定性的、上下文感知的接口取代非法的启发式推导。
+根据 `TypeError` 的明确提示，我需要将测试代码中所有对 `_update_sidecar_data` 的调用，把 `module_fqn` 参数重命名为 `old_module_fqn`，并根据测试场景补充 `new_module_fqn` 参数。
 
-## [WIP] refactor(refactor): Eliminate heuristic logic in sidecar updates
+我将生成一个新计划来修复这些单元测试。
+
+## [WIP] test(refactor): Update unit tests to match new sidecar update signature
 
 ### 错误分析
 
-当前 `stitcher-refactor` 引擎中的 `SidecarUpdateMixin` 违反了**“零启发式策略 (Zero Heuristics)”**原则。它使用了一个名为 `_get_module_fqn_from_symbol_fqn` 的非法启发式函数，试图通过简单的字符串切分来从一个完整的 FQN（如 `pkg.module.Class.method`）中推导出其所属的模块 FQN（错误地推导为 `pkg.module.Class`）。
+在上一个计划中，我重构了 `SidecarUpdateMixin._update_sidecar_data` 方法的签名，将 `module_fqn` 参数拆分为 `old_module_fqn` 和 `new_module_fqn`，以建立一个确定性的上下文传递契约。
 
-这种方法无法区分 FQN 中的模块边界和类边界，导致在重命名嵌套符号（如方法）时，计算出的新 Fragment（如 `new_method`）丢失了其父级上下文（应为 `Class.new_method`），从而引发了连锁的测试失败。
+然而，我遗漏了更新位于 `packages/stitcher-refactor/tests/unit/operations/test_sidecar_update_mixin.py` 中调用此方法的单元测试。因此，所有这些测试都因为 `TypeError: ... got an unexpected keyword argument 'module_fqn'` 而失败。
 
 ### 用户需求
 
-重构 `stitcher-refactor` 引擎，根除其对 FQN 字符串的启发式猜测，建立一个确定性的机制来处理符号重命名和移动时的 Sidecar 文件（`.json` 和 `.yaml`）更新。
+修复 `test_sidecar_update_mixin.py` 中的所有单元测试，使其调用 `_update_sidecar_data` 时使用新的、正确的参数签名。
 
 ### 评论
 
-这是一次至关重要的架构纠偏。用户的诊断精确地指出了问题的根源：将本应由规划层（Planner）承担的上下文推导责任错误地委托给了实现层（Mixin），并使用了不可靠的方法。本次重构将通过建立一个清晰的、确定性的契约来修正这一设计缺陷，是保障重构引擎长期稳定性的关键一步。
+这是一个标准的重构后清理工作。修复这些测试不仅是为了让测试套件通过，更是为了确保我们对新接口的假设（即 `Planner` 将如何提供上下文）在隔离环境中是正确和有效的。
 
 ### 目标
 
-1.  从 `SidecarUpdateMixin` 中彻底**移除**非法的启发式函数 `_get_module_fqn_from_symbol_fqn`。
-2.  **重构 `SidecarUpdateMixin` 的核心接口** (`_calculate_fragments` 和 `_update_sidecar_data`)，使其不再推导模块 FQN，而是显式地接收 `old_module_fqn` 和 `new_module_fqn` 作为上下文参数。
-3.  **增强 `Planner` 的职责**，使其在规划阶段利用全局意图信息（特别是 `MoveFileIntent`）来确定地计算出 `new_module_fqn`，并将其传递给 `Mixin`。
+1.  打开 `packages/stitcher-refactor/tests/unit/operations/test_sidecar_update_mixin.py` 文件。
+2.  在所有测试函数中，定位对 `mixin._update_sidecar_data` 的调用。
+3.  将 `module_fqn=...` 参数重命名为 `old_module_fqn=...`。
+4.  根据每个测试的逻辑场景，添加 `new_module_fqn=...` 参数。
+    -   对于纯**重命名**场景，`new_module_fqn` 应与 `old_module_fqn` 相同。
+    -   对于**文件移动**场景，`new_module_fqn` 应反映新的模块路径。
 
 ### 基本原理
 
-我们将遵循“关注点分离”原则，重新划分 `Planner` 和 `Mixin` 的职责：
-
--   **`Planner` (决策者)**: 作为拥有全局上下文（了解所有文件移动和符号重命名意图）的组件，`Planner` 是唯一有权确定模块 FQN 变更的实体。它将首先处理所有的 `MoveFileIntent`，构建一个从旧模块 FQN 到新模块 FQN 的确定性映射。
--   **`SidecarUpdateMixin` (执行者)**: 其职责被简化为一个纯粹的、无状态的工具。它只接收 `Planner` 提供的完整上下文（包括旧、新模块 FQN），然后执行简单的“减法”操作（`Fragment = FQN - Module_FQN`）来计算正确的 Fragment。
-
-这种模式用一个确定性的、自上而下的上下文传递，取代了脆弱的、自下而上的启发式猜测，从而根除了问题的源头。
+通过逐一修正测试用例的函数调用，使其与重构后的方法签名完全匹配，我们可以消除 `TypeError` 并验证新架构的逻辑正确性。这将为我们验证整个重构流程（从 `Planner` 到 `Mixin`）的集成行为铺平道路。
 
 ### 标签
 
-#intent/refine #flow/ready #priority/critical #concept/refactoring-engine #scope/core #ai/brainstorm #task/domain/refactoring #task/object/sidecar-updates #task/action/architectural-fix #task/state/begin
+#intent/tooling #flow/ready #priority/high #comp/tests #concept/refactoring-engine #scope/dx #ai/instruct #task/domain/refactoring #task/object/sidecar-updates #task/action/architectural-fix #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 重构 `SidecarUpdateMixin` 以接收确定性上下文
+#### Acts 1: 修复 `test_sidecar_update_mixin.py` 的单元测试
 
-我们将修改 `base.py`，移除启发式函数，并更新核心方法的签名以接收由 `Planner` 提供的 `new_module_fqn`。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/base.py
-~~~~~
-~~~~~python.old
-    def _get_module_fqn_from_symbol_fqn(self, fqn: str) -> Optional[str]:
-        if "." not in fqn:
-            return None
-        return fqn.rsplit(".", 1)[0]
-
-    def _calculate_fragments(
-        self, module_fqn: Optional[str], old_fqn: str, new_fqn: str
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Derives symbol fragments by stripping the module FQN prefix.
-        This correctly handles nested fragments like 'Class.method'.
-        """
-        # --- Calculate Old Fragment ---
-        old_fragment = old_fqn
-        # The module_fqn is the context of the sidecar file, which relates to the OLD state.
-        if module_fqn and old_fqn.startswith(module_fqn + "."):
-            old_fragment = old_fqn.split(module_fqn + ".", 1)[1]
-        elif module_fqn and old_fqn == module_fqn:
-            old_fragment = None  # Represents the module itself
-
-        # --- Calculate New Fragment ---
-        new_fragment = new_fqn
-        # The new fragment must be relative to the NEW module FQN.
-        new_module_fqn = self._get_module_fqn_from_symbol_fqn(new_fqn)
-        if new_module_fqn and new_fqn.startswith(new_module_fqn + "."):
-            new_fragment = new_fqn.split(new_module_fqn + ".", 1)[1]
-        
-        # Handle renaming of a module itself
-        if old_fqn == module_fqn:
-            new_fragment = None
-
-        return old_fragment, new_fragment
-
-    def _update_sidecar_data(
-        self,
-        data: Dict[str, Any],
-        sidecar_path: Path,
-        module_fqn: Optional[str],
-        old_fqn: str,
-        new_fqn: str,
-        old_file_path: Optional[str] = None,
-        new_file_path: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        Dispatcher for sidecar updates based on file type.
-        """
-        old_fragment, new_fragment = self._calculate_fragments(
-            module_fqn, old_fqn, new_fqn
-        )
-
-        if sidecar_path.suffix == ".json":
-            return self._update_json_data(
-~~~~~
-~~~~~python.new
-    def _calculate_fragments(
-        self,
-        old_module_fqn: Optional[str],
-        new_module_fqn: Optional[str],
-        old_fqn: str,
-        new_fqn: str,
-    ) -> Tuple[Optional[str], Optional[str]]:
-        """
-        Derives symbol fragments by stripping the module FQN prefix.
-        This correctly handles nested fragments like 'Class.method'.
-        """
-        # --- Calculate Old Fragment ---
-        old_fragment = old_fqn
-        # The module_fqn is the context of the sidecar file, which relates to the OLD state.
-        if old_module_fqn and old_fqn.startswith(old_module_fqn + "."):
-            old_fragment = old_fqn.split(old_module_fqn + ".", 1)[1]
-        elif old_module_fqn and old_fqn == old_module_fqn:
-            old_fragment = None  # Represents the module itself
-
-        # --- Calculate New Fragment ---
-        new_fragment = new_fqn
-        # The new fragment must be relative to the NEW module FQN, which is passed in.
-        if new_module_fqn and new_fqn.startswith(new_module_fqn + "."):
-            new_fragment = new_fqn.split(new_module_fqn + ".", 1)[1]
-
-        # Handle renaming of a module itself
-        if old_fqn == old_module_fqn:
-            new_fragment = None
-
-        return old_fragment, new_fragment
-
-    def _update_sidecar_data(
-        self,
-        data: Dict[str, Any],
-        sidecar_path: Path,
-        old_module_fqn: Optional[str],
-        new_module_fqn: Optional[str],
-        old_fqn: str,
-        new_fqn: str,
-        old_file_path: Optional[str] = None,
-        new_file_path: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """
-        Dispatcher for sidecar updates based on file type.
-        """
-        old_fragment, new_fragment = self._calculate_fragments(
-            old_module_fqn, new_module_fqn, old_fqn, new_fqn
-        )
-
-        if sidecar_path.suffix == ".json":
-            return self._update_json_data(
-~~~~~
-
-#### Acts 2: 更新 `Planner` 以计算并传递确定性上下文
-
-现在我们修改 `planner.py`，让它在处理 `SidecarUpdateIntent` 之前，先从 `MoveFileIntent` 中构建模块重命名映射，然后在调用 `_update_sidecar_data` 时传入正确的 `new_module_fqn`。
+我们将一次性更新整个测试文件，以匹配新的方法签名。
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+packages/stitcher-refactor/tests/unit/operations/test_sidecar_update_mixin.py
 ~~~~~
 ~~~~~python.old
-        # Aggregate and process sidecar updates
-        sidecar_updates: DefaultDict[Path, List[SidecarUpdateIntent]] = defaultdict(
-            list
+class TestJsonSuriUpdates:
+    def test_updates_suri_on_symbol_rename(self, mixin):
+        old_suri = "py://src/app.py#OldClass"
+        new_suri = "py://src/app.py#NewClass"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/app.json"),
+            module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
         )
-        for intent in all_intents:
-            if isinstance(intent, SidecarUpdateIntent):
-                sidecar_updates[intent.sidecar_path].append(intent)
+        assert updated == {new_suri: {"hash": "1"}}
 
-        # TODO: Inject real adapters instead of instantiating them here.
-        yaml_adapter = YamlAdapter()
-        for path, intents in sidecar_updates.items():
-            # Load the sidecar file only once
-            is_yaml = path.suffix == ".yaml"
-            data = (
-                yaml_adapter.load(path)
-                if is_yaml
-                else json.loads(path.read_text("utf-8"))
-            )
+    def test_updates_suri_on_nested_symbol_rename(self, mixin):
+        old_suri = "py://src/app.py#MyClass.old_method"
+        new_suri = "py://src/app.py#MyClass.new_method"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/app.json"),
+            module_fqn="app",
+            old_fqn="app.MyClass.old_method",
+            new_fqn="app.MyClass.new_method",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
 
-            # Apply all intents for this file
-            for intent in intents:
-                data = self._update_sidecar_data(
-                    data,
-                    intent.sidecar_path,
-                    intent.module_fqn,
-                    intent.old_fqn,
-                    intent.new_fqn,
-                    old_file_path=intent.old_file_path,
-                    new_file_path=intent.new_file_path,
-                )
+    def test_updates_suri_on_parent_rename(self, mixin):
+        old_suri = "py://src/app.py#OldClass.method"
+        new_suri = "py://src/app.py#NewClass.method"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/app.json"),
+            module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
 
-            # Dump the final state
-            content = (
+    def test_updates_suri_on_file_move(self, mixin):
+        old_suri = "py://src/old_path/app.py#MyClass"
+        new_suri = "py://src/new_path/app.py#MyClass"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/old_path/app.json"),
+            module_fqn="old_path.app",
+            old_fqn="old_path.app.MyClass",
+            new_fqn="new_path.app.MyClass",
+            old_file_path="src/old_path/app.py",
+            new_file_path="src/new_path/app.py",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
+
+    def test_updates_suri_on_combined_move_and_rename(self, mixin):
+        old_suri = "py://src/old_path/app.py#OldClass"
+        new_suri = "py://src/new_path/app.py#NewClass"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/old_path/app.json"),
+            module_fqn="old_path.app",
+            old_fqn="old_path.app.OldClass",
+            new_fqn="new_path.app.NewClass",
+            old_file_path="src/old_path/app.py",
+            new_file_path="src/new_path/app.py",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
+
+
+class TestYamlFragmentUpdates:
+    def test_updates_fragment_on_symbol_rename(self, mixin):
+        data = {"OldClass": "doc", "Other": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {"NewClass": "doc", "Other": "doc"}
+
+    def test_updates_fragment_on_nested_symbol_rename(self, mixin):
+        data = {"MyClass.old_method": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            module_fqn="app",
+            old_fqn="app.MyClass.old_method",
+            new_fqn="app.MyClass.new_method",
+        )
+        assert updated == {"MyClass.new_method": "doc"}
+
+    def test_updates_fragment_on_parent_rename(self, mixin):
+        data = {"OldClass.method": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {"NewClass.method": "doc"}
+
+    def test_does_not_update_fragment_on_pure_file_move(self, mixin):
+        data = {"MyClass": "doc"}
+        original_data = data.copy()
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("old_path/app.stitcher.yaml"),
+            module_fqn="old_path.app",
+            old_fqn="old_path.app.MyClass",
+            new_fqn="new_path.app.MyClass", # Symbol name 'MyClass' is unchanged
+            old_file_path="old_path/app.py",
+            new_file_path="new_path/app.py",
+        )
+        # The key is relative to the file, so a move should NOT change it.
+        assert updated == original_data
 ~~~~~
 ~~~~~python.new
-        # Build a map of module renames from move intents. This is the source of truth
-        # for determining the new module FQN context.
-        module_rename_map: Dict[str, str] = {}
-        for intent in all_intents:
-            if isinstance(intent, MoveFileIntent):
-                old_mod_fqn = self._path_to_fqn(intent.src_path, ctx.graph.search_paths)
-                new_mod_fqn = self._path_to_fqn(intent.dest_path, ctx.graph.search_paths)
-                if old_mod_fqn and new_mod_fqn:
-                    module_rename_map[old_mod_fqn] = new_mod_fqn
-
-        # Aggregate and process sidecar updates
-        sidecar_updates: DefaultDict[Path, List[SidecarUpdateIntent]] = defaultdict(
-            list
+class TestJsonSuriUpdates:
+    def test_updates_suri_on_symbol_rename(self, mixin):
+        old_suri = "py://src/app.py#OldClass"
+        new_suri = "py://src/app.py#NewClass"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/app.json"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
         )
-        for intent in all_intents:
-            if isinstance(intent, SidecarUpdateIntent):
-                sidecar_updates[intent.sidecar_path].append(intent)
+        assert updated == {new_suri: {"hash": "1"}}
 
-        # TODO: Inject real adapters instead of instantiating them here.
-        yaml_adapter = YamlAdapter()
-        for path, intents in sidecar_updates.items():
-            # Load the sidecar file only once
-            is_yaml = path.suffix == ".yaml"
-            data = (
-                yaml_adapter.load(path)
-                if is_yaml
-                else json.loads(path.read_text("utf-8"))
-            )
+    def test_updates_suri_on_nested_symbol_rename(self, mixin):
+        old_suri = "py://src/app.py#MyClass.old_method"
+        new_suri = "py://src/app.py#MyClass.new_method"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/app.json"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.MyClass.old_method",
+            new_fqn="app.MyClass.new_method",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
 
-            # Apply all intents for this file
-            for intent in intents:
-                old_module_fqn = intent.module_fqn
-                # For a given symbol, its new module FQN is either determined by a file move
-                # or it remains the same as the old one (in a pure rename scenario).
-                new_module_fqn = module_rename_map.get(
-                    old_module_fqn, old_module_fqn
-                )
+    def test_updates_suri_on_parent_rename(self, mixin):
+        old_suri = "py://src/app.py#OldClass.method"
+        new_suri = "py://src/app.py#NewClass.method"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/app.json"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
 
-                data = self._update_sidecar_data(
-                    data,
-                    intent.sidecar_path,
-                    old_module_fqn,
-                    new_module_fqn,
-                    intent.old_fqn,
-                    intent.new_fqn,
-                    old_file_path=intent.old_file_path,
-                    new_file_path=intent.new_file_path,
-                )
+    def test_updates_suri_on_file_move(self, mixin):
+        old_suri = "py://src/old_path/app.py#MyClass"
+        new_suri = "py://src/new_path/app.py#MyClass"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/old_path/app.json"),
+            old_module_fqn="old_path.app",
+            new_module_fqn="new_path.app",
+            old_fqn="old_path.app.MyClass",
+            new_fqn="new_path.app.MyClass",
+            old_file_path="src/old_path/app.py",
+            new_file_path="src/new_path/app.py",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
 
-            # Dump the final state
-            content = (
+    def test_updates_suri_on_combined_move_and_rename(self, mixin):
+        old_suri = "py://src/old_path/app.py#OldClass"
+        new_suri = "py://src/new_path/app.py#NewClass"
+        data = {old_suri: {"hash": "1"}}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("src/old_path/app.json"),
+            old_module_fqn="old_path.app",
+            new_module_fqn="new_path.app",
+            old_fqn="old_path.app.OldClass",
+            new_fqn="new_path.app.NewClass",
+            old_file_path="src/old_path/app.py",
+            new_file_path="src/new_path/app.py",
+        )
+        assert updated == {new_suri: {"hash": "1"}}
+
+
+class TestYamlFragmentUpdates:
+    def test_updates_fragment_on_symbol_rename(self, mixin):
+        data = {"OldClass": "doc", "Other": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {"NewClass": "doc", "Other": "doc"}
+
+    def test_updates_fragment_on_nested_symbol_rename(self, mixin):
+        data = {"MyClass.old_method": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.MyClass.old_method",
+            new_fqn="app.MyClass.new_method",
+        )
+        assert updated == {"MyClass.new_method": "doc"}
+
+    def test_updates_fragment_on_parent_rename(self, mixin):
+        data = {"OldClass.method": "doc"}
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("app.stitcher.yaml"),
+            old_module_fqn="app",
+            new_module_fqn="app",
+            old_fqn="app.OldClass",
+            new_fqn="app.NewClass",
+        )
+        assert updated == {"NewClass.method": "doc"}
+
+    def test_does_not_update_fragment_on_pure_file_move(self, mixin):
+        data = {"MyClass": "doc"}
+        original_data = data.copy()
+        updated = mixin._update_sidecar_data(
+            data,
+            Path("old_path/app.stitcher.yaml"),
+            old_module_fqn="old_path.app",
+            new_module_fqn="new_path.app",
+            old_fqn="old_path.app.MyClass",
+            new_fqn="new_path.app.MyClass", # Symbol name 'MyClass' is unchanged
+            old_file_path="old_path/app.py",
+            new_file_path="new_path/app.py",
+        )
+        # The key is relative to the file, so a move should NOT change it.
+        assert updated == original_data
 ~~~~~
 
 ### 下一步建议
 
-架构已修正。现在，我们可以重新运行之前失败的测试。如果这个计划是正确的，所有单元测试和集成测试都应该通过。
+单元测试已修复，现在它们正确地反映了新的、确定性的接口。
 
-一旦测试通过，我建议生成一个 `[COMMIT]` 计划，将这次关键的重构提交到版本控制中，并正式关闭这个架构缺陷。
+下一步是重新运行完整的测试套件。如果我们的架构修正和测试修复都正确无误，那么之前失败的所有测试（包括单元测试和集成测试 `test_rename_suri_update.py`）现在都应该通过了。

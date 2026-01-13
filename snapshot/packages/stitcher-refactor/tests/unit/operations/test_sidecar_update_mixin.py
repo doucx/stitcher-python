@@ -16,7 +16,8 @@ class TestJsonSuriUpdates:
         updated = mixin._update_sidecar_data(
             data,
             Path("src/app.json"),
-            module_fqn="app",
+            old_module_fqn="app",
+            new_module_fqn="app",
             old_fqn="app.OldClass",
             new_fqn="app.NewClass",
         )
@@ -29,7 +30,8 @@ class TestJsonSuriUpdates:
         updated = mixin._update_sidecar_data(
             data,
             Path("src/app.json"),
-            module_fqn="app",
+            old_module_fqn="app",
+            new_module_fqn="app",
             old_fqn="app.MyClass.old_method",
             new_fqn="app.MyClass.new_method",
         )
@@ -42,7 +44,8 @@ class TestJsonSuriUpdates:
         updated = mixin._update_sidecar_data(
             data,
             Path("src/app.json"),
-            module_fqn="app",
+            old_module_fqn="app",
+            new_module_fqn="app",
             old_fqn="app.OldClass",
             new_fqn="app.NewClass",
         )
@@ -55,7 +58,8 @@ class TestJsonSuriUpdates:
         updated = mixin._update_sidecar_data(
             data,
             Path("src/old_path/app.json"),
-            module_fqn="old_path.app",
+            old_module_fqn="old_path.app",
+            new_module_fqn="new_path.app",
             old_fqn="old_path.app.MyClass",
             new_fqn="new_path.app.MyClass",
             old_file_path="src/old_path/app.py",
@@ -70,7 +74,8 @@ class TestJsonSuriUpdates:
         updated = mixin._update_sidecar_data(
             data,
             Path("src/old_path/app.json"),
-            module_fqn="old_path.app",
+            old_module_fqn="old_path.app",
+            new_module_fqn="new_path.app",
             old_fqn="old_path.app.OldClass",
             new_fqn="new_path.app.NewClass",
             old_file_path="src/old_path/app.py",
@@ -85,7 +90,8 @@ class TestYamlFragmentUpdates:
         updated = mixin._update_sidecar_data(
             data,
             Path("app.stitcher.yaml"),
-            module_fqn="app",
+            old_module_fqn="app",
+            new_module_fqn="app",
             old_fqn="app.OldClass",
             new_fqn="app.NewClass",
         )
@@ -96,7 +102,8 @@ class TestYamlFragmentUpdates:
         updated = mixin._update_sidecar_data(
             data,
             Path("app.stitcher.yaml"),
-            module_fqn="app",
+            old_module_fqn="app",
+            new_module_fqn="app",
             old_fqn="app.MyClass.old_method",
             new_fqn="app.MyClass.new_method",
         )
@@ -107,7 +114,8 @@ class TestYamlFragmentUpdates:
         updated = mixin._update_sidecar_data(
             data,
             Path("app.stitcher.yaml"),
-            module_fqn="app",
+            old_module_fqn="app",
+            new_module_fqn="app",
             old_fqn="app.OldClass",
             new_fqn="app.NewClass",
         )
@@ -119,7 +127,8 @@ class TestYamlFragmentUpdates:
         updated = mixin._update_sidecar_data(
             data,
             Path("old_path/app.stitcher.yaml"),
-            module_fqn="old_path.app",
+            old_module_fqn="old_path.app",
+            new_module_fqn="new_path.app",
             old_fqn="old_path.app.MyClass",
             new_fqn="new_path.app.MyClass", # Symbol name 'MyClass' is unchanged
             old_file_path="old_path/app.py",
