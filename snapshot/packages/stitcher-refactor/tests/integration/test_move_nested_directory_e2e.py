@@ -34,7 +34,6 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
             # Key is Fragment
             {"InMemoryCache": "Doc for Cache"},
         )
-        )
         .with_source(
             "src/app.py",
             "from cascade.core.adapters.cache.in_memory import InMemoryCache",

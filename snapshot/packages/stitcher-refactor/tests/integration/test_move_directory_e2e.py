@@ -40,7 +40,6 @@ def test_move_directory_updates_all_contents_and_references(tmp_path):
             # Key is Fragment
             {"Helper": "Doc for Helper"},
         )
-        )
         .build()
     )
 

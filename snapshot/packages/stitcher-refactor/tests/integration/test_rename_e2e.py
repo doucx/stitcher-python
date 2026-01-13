@@ -49,7 +49,6 @@ def test_rename_symbol_end_to_end(tmp_path):
                 "old_func": "This is an old function.",
             },
         )
-        )
         .build()
     )
 

@@ -26,7 +26,6 @@ def test_rename_symbol_updates_suri_fragment_in_signatures(tmp_path):
         factory.with_pyproject(".")
         .with_source("src/mypkg/__init__.py", "")
         .with_source(rel_py_path, "class MyClass:\n    pass\n")
-        )
         .build()
     )
     
@@ -106,7 +105,6 @@ class MyClass:
     def old_method(self):
         pass
 """,
-        )
         )
         .build()
     )

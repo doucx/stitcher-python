@@ -27,7 +27,6 @@ def test_rename_symbol_in_monorepo_updates_all_references_and_sidecars(tmp_path)
             # Key is Fragment
             {"OldNameClass": "Docs for the old class."},
         )
-        )
         .with_source(
             "packages/pkg_a/tests/test_core.py",
             "from pkga_lib.core import OldNameClass\n\ndef test_local():\n    assert OldNameClass is not None",

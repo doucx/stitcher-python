@@ -39,7 +39,6 @@ def test_move_directory_in_monorepo_updates_cross_package_references(tmp_path):
             # Key is Fragment
             {"EngineLogic": "Core engine logic."},
         )
-        )
         # --- cascade-runtime package ---
         .with_pyproject("cascade-runtime")
         .with_source(
