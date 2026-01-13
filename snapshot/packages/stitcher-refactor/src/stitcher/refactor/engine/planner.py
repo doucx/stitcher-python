@@ -107,26 +107,29 @@ class Planner:
                     content, sidecar_rename_map, is_yaml=True
                 )
             elif file_path.suffix == ".json":
-                # For JSON, the key is the SURI. We need to construct the SURI rename map.
+                # For JSON, the key is the SURI. We construct the SURI rename map.
                 suri_rename_map = {}
                 for loc in locations:
+                    if not (loc.target_node_id and loc.target_node_fqn):
+                        continue
+
+                    old_suri = loc.target_node_id
                     old_fqn = loc.target_node_fqn
+
                     if old_fqn in rename_map:
                         new_fqn = rename_map[old_fqn]
-                        # This is a simplification. It doesn't handle module moves well.
-                        # It assumes the file path part of the SURI remains the same.
-                        symbol_record, _ = ctx.index_store.find_symbol_by_fqn(old_fqn)
-                        if symbol_record:
-                           old_suri = symbol_record.id
-                           new_suri = old_suri.replace(old_fqn, new_fqn) # this is very wrong
-                           # a suri is path#fragment, fqn is pkg.mod.Class
-                           # Correct way: find symbol, get path and old fragment.
-                           # Construct new SURI with same path and new fragment.
-                           # Let's assume for now renames are within the same module.
-                           old_frag = old_fqn.split(".")[-1]
-                           new_frag = new_fqn.split(".")[-1]
-                           if symbol_record and symbol_record.id:
-                               suri_rename_map[symbol_record.id] = symbol_record.id.replace(old_frag, new_frag)
+
+                        # Reconstruct SURI. This logic assumes a symbol rename, not a file move.
+                        # File moves are handled by MoveFileOperation generating cascading renames.
+                        try:
+                            path, old_fragment = SURIGenerator.parse(old_suri)
+                            _, new_fragment_base = SURIGenerator.parse(
+                                f"py://dummy#{new_fqn.replace('.', '#')}"
+                            )
+                            new_suri = SURIGenerator.for_symbol(path, new_fragment_base)
+                            suri_rename_map[old_suri] = new_suri
+                        except (ValueError, AttributeError):
+                            continue # Ignore malformed SURIs or FQNs
 
                 if suri_rename_map:
                     new_content = self._sidecar_updater.update_keys(

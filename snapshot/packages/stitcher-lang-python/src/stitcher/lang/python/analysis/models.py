@@ -19,7 +19,8 @@ class UsageLocation:
     end_lineno: int
     end_col_offset: int
     ref_type: ReferenceType
-    target_node_fqn: str
+    target_node_fqn: Optional[str]
+    target_node_id: Optional[str] = None
 
     @property
     def range_tuple(self) -> Tuple[int, int]:
