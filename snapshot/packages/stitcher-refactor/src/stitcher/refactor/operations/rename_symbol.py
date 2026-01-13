@@ -4,10 +4,12 @@ from .base import AbstractOperation
 from ..engine.utils import path_to_fqn
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.analysis.semantic import SymbolNode
+from stitcher.lang.python.uri import PythonURIGenerator
 from stitcher.refactor.engine.intent import (
     RefactorIntent,
     RenameIntent,
     SidecarUpdateIntent,
+    LockSymbolUpdateIntent,
 )
 
 
@@ -46,15 +48,42 @@ class RenameSymbolOperation(AbstractOperation):
                     )
                 )
 
-            # Signature file intent
-            sig_path = ctx.sidecar_manager.get_signature_path(definition_file_path)
-            if sig_path.exists():
+            # 3. Declare intent to update stitcher.lock (SURI rename)
+            # We calculate SURIs based on the definition file location.
+            # TODO: In Phase 3, inject URIGenerator via Context.
+            uri_gen = PythonURIGenerator()
+            rel_path = ctx.workspace.to_workspace_relative(definition_file_path)
+            
+            # Extract fragments (short names)
+            old_fragment = self.old_fqn.split(".")[-1]
+            new_fragment = self.new_fqn.split(".")[-1]
+            
+            # If the symbol is nested (e.g. Class.method), we need to be careful.
+            # However, for RenameSymbol, we usually get the full FQN.
+            # The fragment for SURI usually matches the logical path.
+            # But wait, definition_node.path gives the file.
+            # If we rename 'pkg.mod.Class', old_fragment is 'Class'.
+            # If we rename 'pkg.mod.Class.method', old_fragment is 'Class.method'?
+            # Stitcher Python Adapter SURI fragment logic:
+            # Top level function/class: "Func"
+            # Method: "Class.method"
+            # So if self.old_fqn is "a.b.Class.method", how do we know "Class.method" is the fragment?
+            # We rely on the module FQN.
+            
+            if module_fqn and self.old_fqn.startswith(module_fqn + "."):
+                old_suri_fragment = self.old_fqn[len(module_fqn) + 1 :]
+                new_suri_fragment = self.new_fqn[len(module_fqn) + 1 :]
+                
+                old_suri = uri_gen.generate_symbol_uri(rel_path, old_suri_fragment)
+                new_suri = uri_gen.generate_symbol_uri(rel_path, new_suri_fragment)
+                
+                owning_package = ctx.workspace.find_owning_package(definition_file_path)
+                
                 intents.append(
-                    SidecarUpdateIntent(
-                        sidecar_path=sig_path,
-                        module_fqn=module_fqn,
-                        old_fqn=self.old_fqn,
-                        new_fqn=self.new_fqn,
+                    LockSymbolUpdateIntent(
+                        package_root=owning_package,
+                        old_suri=old_suri,
+                        new_suri=new_suri,
                     )
                 )
 

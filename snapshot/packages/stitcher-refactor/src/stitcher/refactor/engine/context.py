@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from stitcher.refactor.sidecar.manager import SidecarManager
 from stitcher.workspace import Workspace
-from stitcher.spec import IndexStoreProtocol
+from stitcher.spec import IndexStoreProtocol, LockManagerProtocol
 from stitcher.analysis.semantic import SemanticGraph
 
 
@@ -12,3 +12,4 @@ class RefactorContext:
     graph: SemanticGraph
     sidecar_manager: SidecarManager
     index_store: IndexStoreProtocol
+    lock_manager: LockManagerProtocol
