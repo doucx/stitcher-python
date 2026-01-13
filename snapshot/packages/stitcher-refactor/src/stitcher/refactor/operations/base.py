@@ -13,12 +13,10 @@ class SidecarUpdateMixin:
         base_path = None
         for sp in sorted(search_paths, key=lambda p: len(p.parts), reverse=True):
             try:
-                # Use is_relative_to for modern Python
                 if path.is_relative_to(sp):
                     base_path = sp
                     break
             except (ValueError, AttributeError):
-                # Fallback for older Python or different path types
                 if str(path).startswith(str(sp)):
                     base_path = sp
                     break
@@ -30,6 +28,11 @@ class SidecarUpdateMixin:
         rel_path = path.relative_to(base_path)
         return path_to_logical_fqn(rel_path.as_posix())
 
+    def _get_module_fqn_from_symbol_fqn(self, fqn: str) -> Optional[str]:
+        if "." not in fqn:
+            return None
+        return fqn.rsplit(".", 1)[0]
+
     def _calculate_fragments(
         self, module_fqn: Optional[str], old_fqn: str, new_fqn: str
     ) -> Tuple[Optional[str], Optional[str]]:
@@ -37,34 +40,26 @@ class SidecarUpdateMixin:
         Derives symbol fragments by stripping the module FQN prefix.
         This correctly handles nested fragments like 'Class.method'.
         """
+        # --- Calculate Old Fragment ---
         old_fragment = old_fqn
+        # The module_fqn is the context of the sidecar file, which relates to the OLD state.
         if module_fqn and old_fqn.startswith(module_fqn + "."):
             old_fragment = old_fqn.split(module_fqn + ".", 1)[1]
+        elif module_fqn and old_fqn == module_fqn:
+            old_fragment = None  # Represents the module itself
 
+        # --- Calculate New Fragment ---
         new_fragment = new_fqn
-        new_module_prefix = ".".join(new_fqn.split(".")[:-1])
-        if module_fqn and new_module_prefix == module_fqn:
-            if new_fqn.startswith(module_fqn + "."):
-                new_fragment = new_fqn.split(module_fqn + ".", 1)[1]
+        # The new fragment must be relative to the NEW module FQN.
+        new_module_fqn = self._get_module_fqn_from_symbol_fqn(new_fqn)
+        if new_module_fqn and new_fqn.startswith(new_module_fqn + "."):
+            new_fragment = new_fqn.split(new_module_fqn + ".", 1)[1]
         
-        # If it's a move, the new_fqn will have a different module prefix.
-        # The fragment itself might be the same.
-        # e.g., old_fqn=a.b.C, new_fqn=x.y.C. The fragment is 'C'.
-        if old_fqn.split(".")[-1] == new_fqn.split(".")[-1]:
-             if module_fqn and old_fqn.startswith(module_fqn + "."):
-                  old_fragment = old_fqn.split(module_fqn + ".", 1)[1]
-             
-             new_mod_fqn = self._get_module_fqn_from_symbol_fqn(new_fqn)
-             if new_mod_fqn and new_fqn.startswith(new_mod_fqn + "."):
-                 new_fragment = new_fqn.split(new_mod_fqn + ".", 1)[1]
+        # Handle renaming of a module itself
+        if old_fqn == module_fqn:
+            new_fragment = None
 
         return old_fragment, new_fragment
-    
-    def _get_module_fqn_from_symbol_fqn(self, fqn: str) -> Optional[str]:
-        if "." not in fqn:
-            return None # Top-level module/file
-        return fqn.rsplit(".", 1)[0]
-
 
     def _update_sidecar_data(
         self,
