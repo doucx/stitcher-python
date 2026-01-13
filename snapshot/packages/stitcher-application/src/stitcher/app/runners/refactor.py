@@ -63,7 +63,7 @@ class RefactorRunner:
             bus.debug(
                 L.debug.log.refactor_workspace_paths, paths=workspace.get_search_paths()
             )
-            sidecar_manager = SidecarManager(self.root_path)
+            sidecar_manager = SidecarManager(workspace)
             graph = SemanticGraph(workspace, self.index_store)
 
             graph.load_from_workspace()

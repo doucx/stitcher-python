@@ -59,7 +59,7 @@ def test_rename_symbol_in_namespace_package_structure(tmp_path):
     # Load the namespace package. Griffe should traverse 'stitcher' -> 'core'
     graph.load("stitcher")
 
-    sidecar_manager = SidecarManager(root_path=project_root)
+    sidecar_manager = SidecarManager(workspace=workspace)
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,

@@ -38,7 +38,7 @@ def test_repro_sidecar_keys_should_remain_short_names_after_directory_move(tmp_p
     # Load top level to ensure graph coverage
     graph.load("mypkg")
 
-    sidecar_manager = SidecarManager(root_path=project_root)
+    sidecar_manager = SidecarManager(workspace=workspace)
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,

@@ -64,7 +64,7 @@ def test_move_file_in_monorepo_updates_tests_and_cross_package_imports(tmp_path)
     # Also load the test module from pkg_a
     graph.load("test_core")
 
-    sidecar_manager = SidecarManager(root_path=project_root)
+    sidecar_manager = SidecarManager(workspace=workspace)
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,
