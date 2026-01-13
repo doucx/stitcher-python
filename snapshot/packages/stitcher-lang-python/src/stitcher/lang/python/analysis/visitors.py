@@ -85,7 +85,7 @@ class IRBuildingVisitor(cst.CSTVisitor):
         return False
 
     def visit_Assign(self, node: cst.Assign) -> Optional[bool]:
-        # Handle: x = 1 or x, y = 1, 2
+        # Handle: x = 1 or x, y = 1, 2 or [a, *b] = ...
         if len(node.targets) != 1:
             return False
 
@@ -105,8 +105,11 @@ class IRBuildingVisitor(cst.CSTVisitor):
                     )
             elif isinstance(target, (cst.Tuple, cst.List)):
                 for element in target.elements:
-                    if isinstance(element, (cst.TupleElement, cst.ListElement)):
+                    if isinstance(element, cst.Element):
                         process_target(element.value)
+            elif isinstance(target, cst.StarredElement):
+                # Handle *y in [x, *y] = ...
+                process_target(target.value)
 
         process_target(target_node)
         return False
