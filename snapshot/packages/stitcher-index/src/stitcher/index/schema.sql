@@ -68,7 +68,8 @@ CREATE TABLE IF NOT EXISTS 'references' (
 
     -- The logical FQN of the target, extracted by the parser.
     -- e.g., "os.path.join"
-    target_fqn TEXT NOT NULL,
+    -- This can be NULL for references that are purely by ID (e.g. SURI in signatures).
+    target_fqn TEXT,
     
     -- The resolved SURI of the target symbol (FK to symbols.id).
     -- This is populated by the Linker phase. Can be NULL if unresolved.
