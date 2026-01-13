@@ -26,6 +26,8 @@ from .protocols import (
     DocstringSerializerProtocol,
     DifferProtocol,
     DocstringMergerProtocol,
+    LockManagerProtocol,
+    URIGeneratorProtocol,
 )
 from .storage import IndexStoreProtocol
 from .managers import DocumentManagerProtocol, SignatureManagerProtocol
