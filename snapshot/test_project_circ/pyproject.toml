@@ -1,0 +1,4 @@
+[tool.stitcher]
+scan_paths = [
+    "packages/pkg-a/src",
+]
