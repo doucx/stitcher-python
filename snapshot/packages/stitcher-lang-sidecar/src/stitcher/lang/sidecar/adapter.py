@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Union, Any
 
 from ruamel.yaml import YAML
+from ruamel.yaml.scalarstring import LiteralScalarString
+
 from stitcher.spec import DocstringIR
 from stitcher.spec.protocols import DocstringSerializerProtocol
 from stitcher.spec.registry import LanguageAdapter
@@ -27,6 +29,18 @@ class SidecarAdapter(LanguageAdapter):
         self._yaml.indent(mapping=2, sequence=4, offset=2)
         self._yaml.preserve_quotes = True
         self._yaml.width = 1000  # Avoid line wrapping for readability
+
+    def _to_literal_strings(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Recursively convert all string values to LiteralScalarString for block style."""
+        processed = {}
+        for k, v in data.items():
+            if isinstance(v, str):
+                processed[k] = LiteralScalarString(v)
+            elif isinstance(v, dict):
+                processed[k] = self._to_literal_strings(v)
+            else:
+                processed[k] = v
+        return processed
 
     def parse(
         self, file_path: Path, content: str
@@ -106,6 +120,9 @@ class SidecarAdapter(LanguageAdapter):
     ) -> None:
         sorted_irs = dict(sorted(irs.items()))
         yaml_data = {fqn: serializer.to_yaml(ir) for fqn, ir in sorted_irs.items()}
+        
+        # Enforce block scalar style for all string values
+        formatted_data = self._to_literal_strings(yaml_data)
 
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -117,7 +134,7 @@ class SidecarAdapter(LanguageAdapter):
                 pass
 
         string_stream = io.StringIO()
-        self._yaml.dump(yaml_data, string_stream)
+        self._yaml.dump(formatted_data, string_stream)
         new_content = string_stream.getvalue()
 
         if original_content != new_content:
@@ -126,7 +143,7 @@ class SidecarAdapter(LanguageAdapter):
 
     def dump_to_string(self, data: Dict[str, Any]) -> str:
         string_stream = io.StringIO()
-        self._yaml.dump(data, string_stream)
+        self._yaml.dump(self._to_literal_strings(data), string_stream)
         return string_stream.getvalue()
 
     def serialize_ir(

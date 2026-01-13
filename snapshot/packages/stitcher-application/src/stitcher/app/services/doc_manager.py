@@ -36,11 +36,18 @@ class DocumentManager:
         self.parser = parser
         self.serializer = serializer
 
-    def serialize_ir(self, ir: DocstringIR) -> Union[str, Dict[str, Any]]:
+    def _serialize_ir(self, ir: DocstringIR) -> Union[str, Dict[str, Any]]:
         return self._sidecar_adapter.serialize_ir(ir, self.serializer)
 
+    def _deserialize_ir(self, data: Union[str, Dict[str, Any]]) -> DocstringIR:
+        """Internal method for testing strategy-based deserialization."""
+        return self.serializer.from_yaml(data)
+
+    def serialize_ir(self, ir: DocstringIR) -> Union[str, Dict[str, Any]]:
+        return self._serialize_ir(ir)
+
     def compute_ir_hash(self, ir: DocstringIR) -> str:
-        serialized = self.serialize_ir(ir)
+        serialized = self._serialize_ir(ir)
         return self.compute_yaml_content_hash(serialized)
 
     def dump_data(self, data: Dict[str, Any]) -> str:
