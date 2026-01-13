@@ -30,7 +30,8 @@ from .runners import (
 from .runners.check.resolver import CheckResolver
 from .runners.check.reporter import CheckReporter
 from .runners.pump.executor import PumpExecutor
-from stitcher.analysis.engines import create_pump_engine, create_architecture_engine
+from stitcher.analysis.engines.pump import create_pump_engine
+from stitcher.analysis.engines.architecture import create_architecture_engine
 from stitcher.common.transaction import TransactionManager
 from typing import Callable
 from stitcher.analysis.schema import FileCheckResult
