@@ -1,666 +1,1175 @@
-## [WIP] refactor(refactor): 引入 LockUpdateIntent 并简化重构操作以适配新的 Lock 机制
+## [WIP] fix(tests): 修复 RefactorContext 初始化参数缺失导致的测试失败
 
 ## 标签
-#intent/refine #flow/ready #priority/high #comp/refactor #concept/state #scope/core
-#task/domain/refactoring #task/object/refactor-engine #task/action/simplify
-#task/state/begin
-
+#intent/fix #flow/ready #priority/high #comp/tests #concept/state #scope/core
+#task/domain/testing #task/object/test-suite #task/action/repair
+#task/state/continue
 
 ### 评论
-这是“重构引擎简化”阶段的核心工作。我们将彻底改变重构引擎处理元数据的方式，从直接操作分散的 `.json` 签名文件，转变为操作集中式的 `stitcher.lock` 文件。这涉及引入新的 Intent 类型、清理旧的 Operation 逻辑，并升级 Planner 以支持 Lock 文件的读写。
+由于我们在 `RefactorContext` 中引入了 `LockManagerProtocol`，所有直接实例化该上下文的测试用例都因缺少参数而崩溃。此外，`Planner` 中存在一个针对 `Optional[str]` 的字典查找类型错误。此计划旨在修复这些破坏性变更。
 
 ### 目标
-1.  **Context 升级**: 在 `RefactorContext` 中引入 `LockManagerProtocol`。
-2.  **Intent 定义**: 新增 `LockSymbolUpdateIntent` (用于重命名) 和 `LockPathUpdateIntent` (用于移动)。
-3.  **Operation 清理**: 修改 `RenameSymbolOperation`、`MoveFileOperation` 和 `MoveDirectoryOperation`，移除旧的 Signature `.json` 处理逻辑，改为生成新的 Lock Intents。
-4.  **Planner 升级**: 在 `Planner` 中实现对新 Lock Intents 的处理逻辑，包括加载、更新和保存 `stitcher.lock`。
+1.  **修复 Planner 类型错误**: 确保在查询重命名映射表时处理 `None` 值。
+2.  **修复单元测试**: 更新 `test_planner_merging.py` 和 `test_rename_operation.py` 中的 Mock Context，注入 Mock 的 `LockManager`。
+3.  **修复集成测试**: 批量更新所有集成测试，实例化 `LockFileManager` 并注入到 `RefactorContext`。
 
 ### 基本原理
-旧的架构中，每个源文件对应一个 `.json` 签名文件，重构时需要物理移动和更新这些文件，导致 IO 操作繁琐且容易出错。新的架构引入了 `stitcher.lock`，将所有指纹集中管理。因此，重构操作不再需要关心 `.json` 文件，只需要向 Planner 发送“更新 Lock 数据”的意图即可。这大大简化了 Operation 的逻辑，并将持久化复杂性隔离在 Planner 和 LockManager 中。
+为了使 CI 通过并验证新逻辑，必须同步更新测试代码。在集成测试中使用真实的 `LockFileManager` 也是验证新持久化层逻辑的关键步骤。
 
 ---
 
 ### Script
 
-#### Acts 1: 更新 RefactorContext
-
-我们需要在上下文对象中提供 `LockManager`，以便 Planner 和 Operation 使用（尽管 Operation 主要使用 Workspace 来定位 Package Root，但 Planner 需要 LockManager 来执行 IO）。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/context.py
-~~~~~
-~~~~~python.old
-from stitcher.spec import IndexStoreProtocol
-from stitcher.analysis.semantic import SemanticGraph
-
-
-@dataclass
-class RefactorContext:
-    workspace: Workspace
-    graph: SemanticGraph
-    sidecar_manager: SidecarManager
-    index_store: IndexStoreProtocol
-~~~~~
-~~~~~python.new
-from stitcher.spec import IndexStoreProtocol, LockManagerProtocol
-from stitcher.analysis.semantic import SemanticGraph
-
-
-@dataclass
-class RefactorContext:
-    workspace: Workspace
-    graph: SemanticGraph
-    sidecar_manager: SidecarManager
-    index_store: IndexStoreProtocol
-    lock_manager: LockManagerProtocol
-~~~~~
-
-#### Acts 2: 定义新的 Lock Intents
-
-引入 `LockSymbolUpdateIntent` 和 `LockPathUpdateIntent`。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/intent.py
-~~~~~
-~~~~~python.old
-    new_fqn: str
-    # New fields for SURI updates
-    old_file_path: Optional[str] = None
-    new_file_path: Optional[str] = None
-~~~~~
-~~~~~python.new
-    new_fqn: str
-    # New fields for SURI updates
-    old_file_path: Optional[str] = None
-    new_file_path: Optional[str] = None
-
-
-# --- Lock-level Intents ---
-
-
-@dataclass(frozen=True)
-class LockSymbolUpdateIntent(RefactorIntent):
-    """Represents a renaming of a symbol within the stitcher.lock file."""
-    package_root: Path
-    old_suri: str
-    new_suri: str
-
-
-@dataclass(frozen=True)
-class LockPathUpdateIntent(RefactorIntent):
-    """Represents a mass update of SURIs due to file/directory moves."""
-    package_root: Path
-    old_path_prefix: str  # Workspace-relative path prefix
-    new_path_prefix: str  # Workspace-relative path prefix
-~~~~~
-
-#### Acts 3: 改造 RenameSymbolOperation
-
-移除旧的 `.json` 逻辑，添加 SURI 计算和 `LockSymbolUpdateIntent` 生成。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/rename_symbol.py
-~~~~~
-~~~~~python.old
-from typing import List, Optional
-
-from .base import AbstractOperation
-from ..engine.utils import path_to_fqn
-from stitcher.refactor.engine.context import RefactorContext
-from stitcher.analysis.semantic import SymbolNode
-from stitcher.refactor.engine.intent import (
-    RefactorIntent,
-    RenameIntent,
-    SidecarUpdateIntent,
-)
-
-
-class RenameSymbolOperation(AbstractOperation):
-~~~~~
-~~~~~python.new
-from typing import List, Optional
-
-from .base import AbstractOperation
-from ..engine.utils import path_to_fqn
-from stitcher.refactor.engine.context import RefactorContext
-from stitcher.analysis.semantic import SymbolNode
-from stitcher.lang.python.uri import PythonURIGenerator
-from stitcher.refactor.engine.intent import (
-    RefactorIntent,
-    RenameIntent,
-    SidecarUpdateIntent,
-    LockSymbolUpdateIntent,
-)
-
-
-class RenameSymbolOperation(AbstractOperation):
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/rename_symbol.py
-~~~~~
-~~~~~python.old
-            doc_path = ctx.sidecar_manager.get_doc_path(definition_file_path)
-            if doc_path.exists():
-                intents.append(
-                    SidecarUpdateIntent(
-                        sidecar_path=doc_path,
-                        module_fqn=module_fqn,
-                        old_fqn=self.old_fqn,
-                        new_fqn=self.new_fqn,
-                    )
-                )
-
-            # Signature file intent
-            sig_path = ctx.sidecar_manager.get_signature_path(definition_file_path)
-            if sig_path.exists():
-                intents.append(
-                    SidecarUpdateIntent(
-                        sidecar_path=sig_path,
-                        module_fqn=module_fqn,
-                        old_fqn=self.old_fqn,
-                        new_fqn=self.new_fqn,
-                    )
-                )
-
-        return intents
-~~~~~
-~~~~~python.new
-            doc_path = ctx.sidecar_manager.get_doc_path(definition_file_path)
-            if doc_path.exists():
-                intents.append(
-                    SidecarUpdateIntent(
-                        sidecar_path=doc_path,
-                        module_fqn=module_fqn,
-                        old_fqn=self.old_fqn,
-                        new_fqn=self.new_fqn,
-                    )
-                )
-
-            # 3. Declare intent to update stitcher.lock (SURI rename)
-            # We calculate SURIs based on the definition file location.
-            # TODO: In Phase 3, inject URIGenerator via Context.
-            uri_gen = PythonURIGenerator()
-            rel_path = ctx.workspace.to_workspace_relative(definition_file_path)
-            
-            # Extract fragments (short names)
-            old_fragment = self.old_fqn.split(".")[-1]
-            new_fragment = self.new_fqn.split(".")[-1]
-            
-            # If the symbol is nested (e.g. Class.method), we need to be careful.
-            # However, for RenameSymbol, we usually get the full FQN.
-            # The fragment for SURI usually matches the logical path.
-            # But wait, definition_node.path gives the file.
-            # If we rename 'pkg.mod.Class', old_fragment is 'Class'.
-            # If we rename 'pkg.mod.Class.method', old_fragment is 'Class.method'?
-            # Stitcher Python Adapter SURI fragment logic:
-            # Top level function/class: "Func"
-            # Method: "Class.method"
-            # So if self.old_fqn is "a.b.Class.method", how do we know "Class.method" is the fragment?
-            # We rely on the module FQN.
-            
-            if module_fqn and self.old_fqn.startswith(module_fqn + "."):
-                old_suri_fragment = self.old_fqn[len(module_fqn) + 1 :]
-                new_suri_fragment = self.new_fqn[len(module_fqn) + 1 :]
-                
-                old_suri = uri_gen.generate_symbol_uri(rel_path, old_suri_fragment)
-                new_suri = uri_gen.generate_symbol_uri(rel_path, new_suri_fragment)
-                
-                owning_package = ctx.workspace.find_owning_package(definition_file_path)
-                
-                intents.append(
-                    LockSymbolUpdateIntent(
-                        package_root=owning_package,
-                        old_suri=old_suri,
-                        new_suri=new_suri,
-                    )
-                )
-
-        return intents
-~~~~~
-
-#### Acts 4: 改造 MoveFileOperation
-
-移除旧的 `.json` 逻辑，添加 `LockPathUpdateIntent`。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_file.py
-~~~~~
-~~~~~python.old
-    RefactorIntent,
-    RenameIntent,
-    MoveFileIntent,
-    ScaffoldIntent,
-    SidecarUpdateIntent,
-)
-~~~~~
-~~~~~python.new
-    RefactorIntent,
-    RenameIntent,
-    MoveFileIntent,
-    ScaffoldIntent,
-    SidecarUpdateIntent,
-    LockPathUpdateIntent,
-)
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_file.py
-~~~~~
-~~~~~python.old
-            doc_src_path = ctx.sidecar_manager.get_doc_path(src_path)
-            if doc_src_path.exists():
-                intents.append(
-                    SidecarUpdateIntent(
-                        sidecar_path=doc_src_path,
-                        module_fqn=old_module_fqn,
-                        old_fqn=old_module_fqn,
-                        new_fqn=new_module_fqn,
-                        old_file_path=rel_src_path,
-                        new_file_path=rel_dest_path,
-                    )
-                )
-
-            sig_src_path = ctx.sidecar_manager.get_signature_path(src_path)
-            if sig_src_path.exists():
-                intents.append(
-                    SidecarUpdateIntent(
-                        sidecar_path=sig_src_path,
-                        module_fqn=old_module_fqn,
-                        old_fqn=old_module_fqn,
-                        new_fqn=new_module_fqn,
-                        old_file_path=rel_src_path,
-                        new_file_path=rel_dest_path,
-                    )
-                )
-
-        # 3. Declare physical file move intents
-        intents.append(MoveFileIntent(src_path, dest_path))
-
-        yaml_src = ctx.sidecar_manager.get_doc_path(src_path)
-        if yaml_src.exists():
-            yaml_dest = ctx.sidecar_manager.get_doc_path(dest_path)
-            intents.append(MoveFileIntent(yaml_src, yaml_dest))
-
-        sig_src = ctx.sidecar_manager.get_signature_path(src_path)
-        if sig_src.exists():
-            sig_dest = ctx.sidecar_manager.get_signature_path(dest_path)
-            intents.append(MoveFileIntent(sig_src, sig_dest))
-
-        # 4. Declare scaffolding intents for __init__.py files
-~~~~~
-~~~~~python.new
-            doc_src_path = ctx.sidecar_manager.get_doc_path(src_path)
-            if doc_src_path.exists():
-                intents.append(
-                    SidecarUpdateIntent(
-                        sidecar_path=doc_src_path,
-                        module_fqn=old_module_fqn,
-                        old_fqn=old_module_fqn,
-                        new_fqn=new_module_fqn,
-                        old_file_path=rel_src_path,
-                        new_file_path=rel_dest_path,
-                    )
-                )
-
-        # 3. Declare Lock Update Intent (Mass update SURIs)
-        # Note: We need to update SURIs in the OLD package's lock file.
-        # If the file moves across packages, we technically need to move entries from one lock to another.
-        # LockPathUpdateIntent handles updating the path prefix. 
-        # But if package_root changes, we need to handle migration?
-        # For simplicity in this phase, we assume LockPathUpdateIntent updates paths within the same lock context
-        # OR Planner is smart enough to handle cross-package moves if we provide enough info.
-        # Current simplified strategy: Update SURIs in the source package's lock. 
-        # If it moves to a new package, the entries in the old lock will point to a path outside the old package root.
-        # This is valid for SURI (workspace relative), but 'stitcher.lock' usually scopes to the package.
-        # TODO: Handle Cross-Package Lock Migration. 
-        # For now, we just emit the intent on the source package.
-        
-        owning_package = ctx.workspace.find_owning_package(src_path)
-        intents.append(
-            LockPathUpdateIntent(
-                package_root=owning_package,
-                old_path_prefix=rel_src_path,
-                new_path_prefix=rel_dest_path,
-            )
-        )
-
-        # 4. Declare physical file move intents
-        intents.append(MoveFileIntent(src_path, dest_path))
-
-        yaml_src = ctx.sidecar_manager.get_doc_path(src_path)
-        if yaml_src.exists():
-            yaml_dest = ctx.sidecar_manager.get_doc_path(dest_path)
-            intents.append(MoveFileIntent(yaml_src, yaml_dest))
-
-        # 5. Declare scaffolding intents for __init__.py files
-~~~~~
-
-#### Acts 5: 改造 MoveDirectoryOperation
-
-同上，适配目录移动。
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_directory.py
-~~~~~
-~~~~~python.old
-    SidecarUpdateIntent,
-    DeleteDirectoryIntent,
-    ScaffoldIntent,
-)
-~~~~~
-~~~~~python.new
-    SidecarUpdateIntent,
-    DeleteDirectoryIntent,
-    ScaffoldIntent,
-    LockPathUpdateIntent,
-)
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_directory.py
-~~~~~
-~~~~~python.old
-            # Declare file move
-            intents.append(MoveFileIntent(src_item, dest_item))
-
-            # Declare sidecar content update & move intents
-            item_module_fqn = path_to_fqn(src_item, ctx.graph.search_paths)
-
-            doc_path = ctx.sidecar_manager.get_doc_path(src_item)
-            if doc_path.exists() and old_prefix and new_prefix:
-                processed_files.add(doc_path)
-                intents.append(
-                    SidecarUpdateIntent(
-                        doc_path,
-                        item_module_fqn,
-                        old_prefix,
-                        new_prefix,
-                        old_file_path=rel_src_path,
-                        new_file_path=rel_dest_path,
-                    )
-                )
-                intents.append(
-                    MoveFileIntent(
-                        doc_path, ctx.sidecar_manager.get_doc_path(dest_item)
-                    )
-                )
-
-            sig_path = ctx.sidecar_manager.get_signature_path(src_item)
-            if sig_path.exists() and old_prefix and new_prefix:
-                processed_files.add(sig_path)
-                intents.append(
-                    SidecarUpdateIntent(
-                        sig_path,
-                        item_module_fqn,
-                        old_prefix,
-                        new_prefix,
-                        old_file_path=rel_src_path,
-                        new_file_path=rel_dest_path,
-                    )
-                )
-                intents.append(
-                    MoveFileIntent(
-                        sig_path, ctx.sidecar_manager.get_signature_path(dest_item)
-                    )
-                )
-~~~~~
-~~~~~python.new
-            # Declare file move
-            intents.append(MoveFileIntent(src_item, dest_item))
-
-            # Declare sidecar content update & move intents
-            item_module_fqn = path_to_fqn(src_item, ctx.graph.search_paths)
-
-            doc_path = ctx.sidecar_manager.get_doc_path(src_item)
-            if doc_path.exists() and old_prefix and new_prefix:
-                processed_files.add(doc_path)
-                intents.append(
-                    SidecarUpdateIntent(
-                        doc_path,
-                        item_module_fqn,
-                        old_prefix,
-                        new_prefix,
-                        old_file_path=rel_src_path,
-                        new_file_path=rel_dest_path,
-                    )
-                )
-                intents.append(
-                    MoveFileIntent(
-                        doc_path, ctx.sidecar_manager.get_doc_path(dest_item)
-                    )
-                )
-        
-        # 3. Declare Lock Update Intent for the entire directory
-        rel_src_dir = ctx.workspace.to_workspace_relative(src_dir)
-        rel_dest_dir = ctx.workspace.to_workspace_relative(dest_dir)
-        owning_package = ctx.workspace.find_owning_package(src_dir)
-        
-        intents.append(
-            LockPathUpdateIntent(
-                package_root=owning_package,
-                old_path_prefix=rel_src_dir,
-                new_path_prefix=rel_dest_dir,
-            )
-        )
-
-        # 4. Process non-Python files
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/operations/move_directory.py
-~~~~~
-~~~~~python.old
-        # 3. Declare deletion of the source directory
-        intents.append(DeleteDirectoryIntent(src_dir))
-
-        # 4. Declare scaffolding of __init__.py files
-        intents.extend(self._scaffold_init_intents(dest_dir, ctx))
-
-        return intents
-~~~~~
-~~~~~python.new
-        # 5. Declare deletion of the source directory
-        intents.append(DeleteDirectoryIntent(src_dir))
-
-        # 6. Declare scaffolding of __init__.py files
-        intents.extend(self._scaffold_init_intents(dest_dir, ctx))
-
-        return intents
-~~~~~
-
-#### Acts 6: 升级 Planner
-
-这是最关键的一步。Planner 需要能够聚合 `Lock*Intent`，加载 Lock 文件，执行内存修改，并生成 `WriteFileOp`。
+#### Acts 1: 修复 Planner 中的类型错误
 
 ~~~~~act
 patch_file
 packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
 ~~~~~
 ~~~~~python.old
-    ScaffoldIntent,
-    DeleteDirectoryIntent,
-)
-from stitcher.refactor.engine.renamer import GlobalBatchRenamer
-from stitcher.lang.sidecar import (
-    SidecarTransformer,
-    SidecarTransformContext,
-    SidecarAdapter,
-)
-from .utils import path_to_fqn
-~~~~~
-~~~~~python.new
-    ScaffoldIntent,
-    DeleteDirectoryIntent,
-    LockSymbolUpdateIntent,
-    LockPathUpdateIntent,
-)
-from stitcher.refactor.engine.renamer import GlobalBatchRenamer
-from stitcher.lang.sidecar import (
-    SidecarTransformer,
-    SidecarTransformContext,
-    SidecarAdapter,
-)
-from stitcher.lang.python.uri import PythonURIGenerator
-from .utils import path_to_fqn
-~~~~~
-
-~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
-~~~~~
-~~~~~python.old
-            )
-            all_ops.append(WriteFileOp(path.relative_to(ctx.graph.root_path), content))
-
-        # Process simple filesystem intents
-        for intent in all_intents:
-            if isinstance(intent, MoveFileIntent):
-~~~~~
-~~~~~python.new
-            )
-            all_ops.append(WriteFileOp(path.relative_to(ctx.graph.root_path), content))
-
-        # --- Process Lock Update Intents ---
-        # Group updates by package root (stitcher.lock location)
-        lock_updates: DefaultDict[Path, List[RefactorIntent]] = defaultdict(list)
-        for intent in all_intents:
-            if isinstance(intent, (LockSymbolUpdateIntent, LockPathUpdateIntent)):
-                lock_updates[intent.package_root].append(intent)
-
-        for pkg_root, intents in lock_updates.items():
-            # Load existing lock data
-            # Dict[suri, Fingerprint]
-            lock_data = ctx.lock_manager.load(pkg_root)
-            modified = False
-
-            # We need to process path updates (Mass moves) first, then symbol updates
-            # Sort intents: LockPathUpdateIntent first
-            intents.sort(key=lambda x: 0 if isinstance(x, LockPathUpdateIntent) else 1)
-            
-            # Since we are iterating over the dict we are modifying, we collect updates first
-            # Or use a new dict. Rebuilding is safer.
-            # But wait, we have mixed intents.
-            # Let's do in-place updates carefully or build a transition map.
-            
-            # Strategy: Apply intents sequentially to the in-memory state
-            current_data = lock_data.copy()
-
+            # Apply all intents for this file
             for intent in intents:
-                next_data = {}
-                
-                if isinstance(intent, LockPathUpdateIntent):
-                    # Mass update based on path prefix
-                    # SURI format: py://<path>#<fragment>
-                    prefix = f"py://{intent.old_path_prefix}"
-                    new_prefix_str = f"py://{intent.new_path_prefix}"
-                    
-                    for suri, fp in current_data.items():
-                        # We match exact file path OR directory prefix
-                        # Exact file match: py://path/to/file.py#...
-                        # Dir match: py://path/to/dir/...
-                        
-                        path, fragment = PythonURIGenerator.parse(suri)
-                        
-                        # Check if 'path' matches 'intent.old_path_prefix'
-                        # Logic: 
-                        # 1. path == old_prefix (File move)
-                        # 2. path.startswith(old_prefix + "/") (Directory move)
-                        
-                        is_match = False
-                        new_path = path
-                        
-                        if path == intent.old_path_prefix:
-                            is_match = True
-                            new_path = intent.new_path_prefix
-                        elif path.startswith(intent.old_path_prefix + "/"):
-                            is_match = True
-                            suffix = path[len(intent.old_path_prefix):]
-                            new_path = intent.new_path_prefix + suffix
-                            
-                        if is_match:
-                            modified = True
-                            # Reconstruct SURI
-                            # TODO: Phase 3 inject generator
-                            uri_gen = PythonURIGenerator()
-                            new_suri = uri_gen.generate_symbol_uri(new_path, fragment) if fragment else uri_gen.generate_file_uri(new_path)
-                            next_data[new_suri] = fp
-                        else:
-                            # Keep as is
-                            next_data[suri] = fp
-                            
-                    current_data = next_data
+                old_module_fqn = intent.module_fqn
+                new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
 
-                elif isinstance(intent, LockSymbolUpdateIntent):
-                    # Single symbol rename
-                    # Note: old_suri might have been changed by a previous LockPathUpdateIntent!
-                    # This logic is complex if we mix moves and renames in one transaction.
-                    # But typically Refactor operations are atomic or sequential.
-                    # If we move file AND rename symbol in one go, we need to trace the identity.
-                    # Current implementation assumes old_suri in intent is valid for the current state.
-                    # But if we moved the file first, the SURI in 'current_data' has already changed.
-                    # The intent.old_suri was calculated based on the INITIAL state.
-                    
-                    # This implies we need to transform the intent's old_suri if it was affected by previous moves?
-                    # Or rely on the fact that RenameSymbolOperation calculates SURI based on definition node location?
-                    # If we move the file, the definition node location (path) changes.
-                    # Planner executes:
-                    # 1. Renamer (modifies source code)
-                    # 2. Sidecar Transformer (modifies sidecars)
-                    # 3. Lock Updates
-                    
-                    # If we have MoveFile(A->B) AND Rename(A.C->A.D), 
-                    # intents are generated from INITIAL state.
-                    # MoveFile generates LockPathUpdate(A->B).
-                    # Rename generates LockSymbolUpdate(A.C -> A.D) (Note: path is A).
-                    
-                    # If we apply PathUpdate first: A.C becomes B.C in `current_data`.
-                    # Then we try to apply SymbolUpdate(A.C->A.D).
-                    # A.C is no longer in `current_data`!
-                    
-                    # Solution: We need to check if intent.old_suri exists.
-                    # If not, check if it was moved? That's hard.
-                    
-                    # BETTER APPROACH:
-                    # RenameSymbolOperation updates the FRAGMENT.
-                    # MoveFileOperation updates the PATH.
-                    # SURIs are independent? No, SURI = Path + Fragment.
-                    
-                    # If we can't robustly compose them, we might assume user does one type of refactor at a time,
-                    # OR we implement a robust SURI tracking mechanism.
-                    # For now, let's implement basic handling and assume sequential consistency or disjoint operations.
-                    
-                    # For Rename, we just look for key.
-                    if intent.old_suri in current_data:
-                        fp = current_data.pop(intent.old_suri)
-                        current_data[intent.new_suri] = fp
-                        modified = True
-                    # Fallback: maybe it was moved? 
-                    # We skip complex resolution for MVP.
+                transform_ctx = SidecarTransformContext(
+~~~~~
+~~~~~python.new
+            # Apply all intents for this file
+            for intent in intents:
+                old_module_fqn = intent.module_fqn
+                if old_module_fqn is not None:
+                    new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
+                else:
+                    new_module_fqn = None
 
-            if modified:
-                content = ctx.lock_manager.serialize(current_data)
-                rel_lock_path = (pkg_root / "stitcher.lock").relative_to(ctx.graph.root_path)
-                all_ops.append(WriteFileOp(rel_lock_path, content))
+                transform_ctx = SidecarTransformContext(
+~~~~~
 
-        # Process simple filesystem intents
-        for intent in all_intents:
-            if isinstance(intent, MoveFileIntent):
+#### Acts 2: 修复单元测试 (Inject Mock LockManager)
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/unit/engine/test_planner_merging.py
+~~~~~
+~~~~~python.old
+from stitcher.analysis.semantic import SemanticGraph
+from stitcher.index.store import IndexStore
+from stitcher.lang.python.analysis.models import UsageLocation, ReferenceType
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.migration import MigrationSpec
+from stitcher.refactor.engine.planner import Planner
+from stitcher.common.transaction import WriteFileOp, MoveFileOp
+
+
+@pytest.fixture
+def mock_context(tmp_path: Path) -> Mock:
+    """Creates a mock RefactorContext with a mock graph."""
+    mock_index = Mock(spec=IndexStore)
+    mock_graph = MagicMock(spec=SemanticGraph)
+    mock_graph.root_path = tmp_path
+    mock_graph.search_paths = [tmp_path]
+
+    mock_workspace = MagicMock()
+    mock_workspace.root_path = tmp_path
+
+    ctx = Mock(spec=RefactorContext)
+    ctx.graph = mock_graph
+    ctx.index_store = mock_index
+    ctx.workspace = mock_workspace
+
+    # Mock SidecarManager to avoid AttributeError
+    mock_sidecar = Mock()
+    # Return non-existent paths so the operations skip sidecar logic
+    # and we focus purely on the code modification merging logic.
+    mock_sidecar.get_doc_path.return_value = tmp_path / "nonexistent.yaml"
+    mock_sidecar.get_signature_path.return_value = tmp_path / "nonexistent.json"
+    ctx.sidecar_manager = mock_sidecar
+
+    return ctx
+~~~~~
+~~~~~python.new
+from stitcher.analysis.semantic import SemanticGraph
+from stitcher.index.store import IndexStore
+from stitcher.spec import LockManagerProtocol
+from stitcher.lang.python.analysis.models import UsageLocation, ReferenceType
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.migration import MigrationSpec
+from stitcher.refactor.engine.planner import Planner
+from stitcher.common.transaction import WriteFileOp, MoveFileOp
+
+
+@pytest.fixture
+def mock_context(tmp_path: Path) -> Mock:
+    """Creates a mock RefactorContext with a mock graph."""
+    mock_index = Mock(spec=IndexStore)
+    mock_graph = MagicMock(spec=SemanticGraph)
+    mock_graph.root_path = tmp_path
+    mock_graph.search_paths = [tmp_path]
+
+    mock_workspace = MagicMock()
+    mock_workspace.root_path = tmp_path
+    # mock find_owning_package to return root
+    mock_workspace.find_owning_package.return_value = tmp_path
+    mock_workspace.to_workspace_relative.side_effect = lambda p: str(p)
+
+    ctx = Mock(spec=RefactorContext)
+    ctx.graph = mock_graph
+    ctx.index_store = mock_index
+    ctx.workspace = mock_workspace
+
+    # Mock SidecarManager
+    mock_sidecar = Mock()
+    mock_sidecar.get_doc_path.return_value = tmp_path / "nonexistent.yaml"
+    mock_sidecar.get_signature_path.return_value = tmp_path / "nonexistent.json"
+    ctx.sidecar_manager = mock_sidecar
+
+    # Mock LockManager
+    mock_lock = Mock(spec=LockManagerProtocol)
+    mock_lock.load.return_value = {}
+    ctx.lock_manager = mock_lock
+
+    return ctx
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/unit/test_rename_operation.py
+~~~~~
+~~~~~python.old
+    mock_workspace = Mock(spec=Workspace)
+    mock_workspace.root_path = tmp_path
+    mock_sidecar_manager = Mock(spec=SidecarManager)
+    mock_sidecar_manager.get_doc_path.return_value.exists.return_value = False
+    mock_sidecar_manager.get_signature_path.return_value.exists.return_value = False
+
+    ctx = RefactorContext(
+        graph=mock_graph,
+        workspace=mock_workspace,
+        sidecar_manager=mock_sidecar_manager,
+        index_store=mock_index,
+    )
+
+    # 2. Define Test Data
+~~~~~
+~~~~~python.new
+    mock_workspace = Mock(spec=Workspace)
+    mock_workspace.root_path = tmp_path
+    mock_workspace.to_workspace_relative.side_effect = lambda p: str(p)
+    
+    mock_sidecar_manager = Mock(spec=SidecarManager)
+    mock_sidecar_manager.get_doc_path.return_value.exists.return_value = False
+    mock_sidecar_manager.get_signature_path.return_value.exists.return_value = False
+
+    # Mock LockManager
+    from stitcher.spec import LockManagerProtocol
+    mock_lock = Mock(spec=LockManagerProtocol)
+
+    ctx = RefactorContext(
+        graph=mock_graph,
+        workspace=mock_workspace,
+        sidecar_manager=mock_sidecar_manager,
+        index_store=mock_index,
+        lock_manager=mock_lock,
+    )
+
+    # 2. Define Test Data
+~~~~~
+
+#### Acts 3: 批量修复集成测试 (Inject Real LockManager)
+
+我将使用 `sed` 风格的替换逻辑来处理大量的集成测试文件。
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/src/stitcher/refactor/tests/integration/test_repro_sidecar_fqn.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+
+
+def test_repro_sidecar_keys_should_remain_short_names_after_directory_move(tmp_path):
+~~~~~
+~~~~~python.new
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+
+
+def test_repro_sidecar_keys_should_remain_short_names_after_directory_move(tmp_path):
+~~~~~
+~~~~~python.old
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_bug_init_relative_import.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+
+
+def test_move_module_referenced_by_init_relative_import(tmp_path):
+~~~~~
+~~~~~python.new
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+
+
+def test_move_module_referenced_by_init_relative_import(tmp_path):
+~~~~~
+~~~~~python.old
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_bug_relative_import_refactor.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+
+
+def test_move_file_updates_relative_imports_and_scaffolds_init(tmp_path):
+~~~~~
+~~~~~python.new
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+
+
+def test_move_file_updates_relative_imports_and_scaffolds_init(tmp_path):
+~~~~~
+~~~~~python.old
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_debug_rename_failure.py
+~~~~~
+~~~~~python.old
+from stitcher.analysis.semantic import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import TransactionManager
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+from stitcher.common.transaction import WriteFileOp
+~~~~~
+~~~~~python.new
+from stitcher.analysis.semantic import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import TransactionManager
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+from stitcher.common.transaction import WriteFileOp
+~~~~~
+~~~~~python.old
+    graph.load("stitcher")
+
+    # 3. EXECUTE REFACTOR
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph.load("stitcher")
+
+    # 3. EXECUTE REFACTOR
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_fail_concurrent_move_and_rename.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    graph.load("mypkg")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    # Three operations touching the same file
+~~~~~
+~~~~~python.new
+    graph.load("mypkg")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    # Three operations touching the same file
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_monorepo_refactor_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    graph.load("pkga_lib")
+    graph.load("pkgb_app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph.load("pkga_lib")
+    graph.load("pkgb_app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_monorepo_refactor_with_tests_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    # Also load the test module from pkg_a
+    graph.load("test_core")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    # Also load the test module from pkg_a
+    graph.load("test_core")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_move_directory_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    DeleteDirectoryOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    DeleteDirectoryOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    graph.load("mypkg")
+    graph.load("app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph.load("mypkg")
+    graph.load("app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_move_directory_monorepo_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    DeleteDirectoryOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    DeleteDirectoryOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    # from the search paths provided by the Workspace.
+    graph.load("cascade")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    # from the search paths provided by the Workspace.
+    graph.load("cascade")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_move_file_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_file import MoveFileOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_move_nested_directory_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.common.transaction import (
+    DeleteDirectoryOp,
+    MoveFileOp,
+    TransactionManager,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.common.transaction import (
+    DeleteDirectoryOp,
+    MoveFileOp,
+    TransactionManager,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    graph.load("cascade")
+    graph.load("app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph.load("cascade")
+    graph.load("app")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import TransactionManager, WriteFileOp
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import TransactionManager, WriteFileOp
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    # 3. Planning Phase
+~~~~~
+~~~~~python.new
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    # 3. Planning Phase
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_namespace_pkg_failure.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import TransactionManager, WriteFileOp
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import TransactionManager, WriteFileOp
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    # Load the namespace package. Griffe should traverse 'stitcher' -> 'core'
+    graph.load("stitcher")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    # Rename MessageBus -> FeedbackBus
+~~~~~
+~~~~~python.new
+    # Load the namespace package. Griffe should traverse 'stitcher' -> 'core'
+    graph.load("stitcher")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    # Rename MessageBus -> FeedbackBus
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_suri_update.py
+~~~~~
+~~~~~python.old
+from stitcher.analysis.semantic import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import TransactionManager, WriteFileOp
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.analysis.semantic import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import TransactionManager, WriteFileOp
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    # 执行重命名
+~~~~~
+~~~~~python.new
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    # 执行重命名
+~~~~~
+~~~~~python.old
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_symbol_definition.py
+~~~~~
+~~~~~python.old
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.common.transaction import (
+    TransactionManager,
+    MoveFileOp,
+    WriteFileOp,
+)
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("common")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("common")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.old
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph = SemanticGraph(workspace=workspace, index_store=index_store)
+    graph.load("mypkg")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_symbol_monorepo_e2e.py
+~~~~~
+~~~~~python.old
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.analysis.semantic import SemanticGraph
+from stitcher.common.transaction import TransactionManager, WriteFileOp
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.analysis.semantic import SemanticGraph
+from stitcher.common.transaction import TransactionManager, WriteFileOp
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    graph.load("test_core")
+    graph.load("integration")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph.load("test_core")
+    graph.load("integration")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/tests/integration/test_rename_transformer_advanced.py
+~~~~~
+~~~~~python.old
+from stitcher.analysis.semantic import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import WriteFileOp
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.new
+from stitcher.analysis.semantic import SemanticGraph
+from stitcher.refactor.engine.context import RefactorContext
+from stitcher.common.transaction import WriteFileOp
+from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
+from stitcher.workspace import Workspace
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+~~~~~
+~~~~~python.old
+    graph.load("mypkg")
+    graph.load("main")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph.load("mypkg")
+    graph.load("main")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.old
+    graph.load("mypkg")
+    graph.load("main")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
+~~~~~
+~~~~~python.new
+    graph.load("mypkg")
+    graph.load("main")
+    sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
+    ctx = RefactorContext(
+        workspace=workspace,
+        graph=graph,
+        sidecar_manager=sidecar_manager,
+        index_store=index_store,
+        lock_manager=lock_manager,
+    )
+
+    from stitcher.refactor.migration import MigrationSpec
 ~~~~~
 
 ### 下一步建议
-
-现在基础架构已经支持新的 Lock 机制，下一步是**验证**。我们需要：
-1.  更新 `stitcher-refactor` 的测试套件，使其使用新的 `LockManager` 和 `stitcher.lock` 文件进行验证，而不是旧的 signatures JSON。这包括修改 `integration/` 下的所有 E2E 测试。
-2.  确保 `InitRunner` 和 `PumpRunner` 也被升级以使用新的机制（这是阶段 3 的任务，但在测试 Refactor 之前可能需要确保环境一致性）。
-
-此计划完成了阶段 4 的所有代码变更。测试修复将在后续计划中进行。
+一旦测试修复被应用，CI 应该能够通过。
+接下来的重点是将 `stitcher-application` 中的 `InitRunner`, `PumpRunner`, `CheckRunner` 迁移到新的 Lock 机制，彻底完成阶段 3。这将包括删除遗留的 `signatures/` 目录生成逻辑，全面转向 `stitcher.lock`。

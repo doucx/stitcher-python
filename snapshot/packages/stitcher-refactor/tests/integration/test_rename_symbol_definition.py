@@ -7,6 +7,7 @@ from stitcher.common.transaction import (
 )
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
 from stitcher.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory, create_populated_index
 

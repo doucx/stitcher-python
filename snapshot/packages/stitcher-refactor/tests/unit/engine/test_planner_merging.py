@@ -5,6 +5,7 @@ import pytest
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.analysis.semantic import SemanticGraph
 from stitcher.index.store import IndexStore
+from stitcher.spec import LockManagerProtocol
 from stitcher.lang.python.analysis.models import UsageLocation, ReferenceType
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.operations.move_file import MoveFileOperation
@@ -23,19 +24,25 @@ def mock_context(tmp_path: Path) -> Mock:
 
     mock_workspace = MagicMock()
     mock_workspace.root_path = tmp_path
+    # mock find_owning_package to return root
+    mock_workspace.find_owning_package.return_value = tmp_path
+    mock_workspace.to_workspace_relative.side_effect = lambda p: str(p)
 
     ctx = Mock(spec=RefactorContext)
     ctx.graph = mock_graph
     ctx.index_store = mock_index
     ctx.workspace = mock_workspace
 
-    # Mock SidecarManager to avoid AttributeError
+    # Mock SidecarManager
     mock_sidecar = Mock()
-    # Return non-existent paths so the operations skip sidecar logic
-    # and we focus purely on the code modification merging logic.
     mock_sidecar.get_doc_path.return_value = tmp_path / "nonexistent.yaml"
     mock_sidecar.get_signature_path.return_value = tmp_path / "nonexistent.json"
     ctx.sidecar_manager = mock_sidecar
+
+    # Mock LockManager
+    mock_lock = Mock(spec=LockManagerProtocol)
+    mock_lock.load.return_value = {}
+    ctx.lock_manager = mock_lock
 
     return ctx
 

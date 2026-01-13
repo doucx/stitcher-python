@@ -88,7 +88,10 @@ class Planner:
             # Apply all intents for this file
             for intent in intents:
                 old_module_fqn = intent.module_fqn
-                new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
+                if old_module_fqn is not None:
+                    new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
+                else:
+                    new_module_fqn = None
 
                 transform_ctx = SidecarTransformContext(
                     old_module_fqn=old_module_fqn,

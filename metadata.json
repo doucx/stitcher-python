@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] refactor(refactor): 引入 LockUpdateIntent 并简化重构操作以适配新的 Lock 机制", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768297367.6189408, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix(tests): 修复 RefactorContext 初始化参数缺失导致的测试失败", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768297557.5980127, "duration_ms": 0}}
