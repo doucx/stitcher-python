@@ -1,236 +1,187 @@
-Of course. The analysis of the test failures is spot on. My previous fix was correct but insufficient, as it didn't propagate the new dependency requirements into the entire test suite, especially the numerous integration tests in `stitcher-refactor` that construct their own contexts.
+You are absolutely right. My previous fix was a targeted patch for a single symptom, but the test failures clearly indicate a systemic problem. The DI changes have much wider-reaching consequences that I failed to address completely.
 
-The test suite is correctly acting as a safety net, highlighting every location where the new architectural contract is being violated. I will now generate a comprehensive plan to resolve all these failures systematically.
+The key insight from your output is this line from the captured stdout:
+`❌ 发生意外错误: An unexpected error occurred: PythonAdapter.__init__() missing 1 required positional argument: 'uri_generator'`
 
-## [WIP] fix(tests): Propagate DI changes throughout the entire test suite
+This reveals the true root cause: the `AssertionError` in `test_refactor_move_updates_suri_in_signatures.py` is a **symptom**, not the cause. The test failed because a preceding `index_build` operation, which is part of the test setup, crashed silently because it tried to instantiate `PythonAdapter` incorrectly. This left the index in an incomplete state, causing the subsequent refactoring logic to fail its assertions.
+
+The problem lies not just in test helpers, but in a piece of application code within `RefactorRunner` and numerous direct instantiations within the test suite itself.
+
+I will now generate a comprehensive plan to fix this correctly and systemically.
+
+## [WIP] fix(core, tests): Complete DI propagation for URIGeneratorProtocol
 
 ### 错误分析
 
-在 `PythonAdapter` 和 `RefactorContext` 的 `__init__` 方法中引入 `uri_generator` 依赖后，大量的单元测试和集成测试开始失败。失败的根本原因有两个：
+The dependency injection of `URIGeneratorProtocol` was incomplete, causing a cascade of failures across the application and test suite. The core issues are:
 
-1.  **直接实例化**: 测试代码（尤其是在 `stitcher-refactor/tests/integration/` 中）为了隔离和设置特定的场景，会手动创建 `RefactorContext` 实例。这些创建代码没有被更新以提供新的 `uri_generator` 参数。同样，一些测试也直接实例化了 `PythonAdapter`。
-2.  **Mock 不完整**: 单元测试（如 `test_planner_merging.py`）中使用的 `Mock` 对象没有模拟 `uri_generator` 属性，导致在被测代码尝试访问 `ctx.uri_generator` 时出现 `AttributeError`。
-
-我之前的修复只解决了 `stitcher-test-utils` 中的一个辅助函数，而忽略了在各个测试文件中更广泛的直接实例化问题。
+1.  **Production Code Bug**: The `RefactorRunner`'s `run_apply` method creates a new `PythonAdapter` instance on the fly for re-indexing *without* providing the new `uri_generator` dependency. This is a critical bug in the application logic itself.
+2.  **Incomplete Test Fixes**: My previous fix only targeted the `create_populated_index` helper in `stitcher-test-utils`. It completely missed the dozens of integration tests, particularly in `stitcher-refactor`, that manually construct a `RefactorContext` for test scenarios. These tests now fail with a `TypeError` because they don't provide the required `uri_generator`.
+3.  **Incomplete Mocks**: Unit tests that mock the `RefactorContext` now fail with an `AttributeError` because the mock object doesn't have the expected `uri_generator` attribute.
 
 ### 用户需求
 
-在完成核心的依赖注入重构后，整个项目的测试套件必须恢复到“绿色”状态。所有测试都必须适应新的类构造函数签名和对象契约。
+The entire codebase, including application logic and all tests, must be updated to correctly handle the new dependency injection contract for `URIGeneratorProtocol`. The test suite must pass completely.
 
 ### 评论
 
-这是一个非常积极的信号。测试套件的大面积失败恰恰证明了我们的类型系统和测试覆盖是有效的，它们成功地捕获了架构变更带来的所有副作用。这次修复是一次必要的“收尾工作”，目的是使我们的测试代码与生产代码的架构设计保持完全一致。
+This is a classic and healthy outcome of a significant architectural refactoring. The widespread test failures are not a sign of a bad change, but rather a sign of a robust test suite effectively enforcing the new, stricter architectural contract. This comprehensive fix will finalize the DI transition and make the system significantly more modular and correct.
 
 ### 目标
 
-1.  系统性地审查所有失败的测试文件。
-2.  在所有直接实例化 `PythonAdapter` 的地方，创建并注入一个 `PythonURIGenerator` 实例。
-3.  在所有直接实例化 `RefactorContext` 的地方，创建并注入一个 `PythonURIGenerator` 实例。
-4.  在所有 Mock `RefactorContext` 的单元测试中，为 Mock 对象添加 `uri_generator` 属性。
-5.  确保所有相关的 `import` 语句都被正确添加。
+1.  **Fix `RefactorRunner`**: Modify the `RefactorRunner` to accept the `uri_generator` dependency upon initialization and use it when creating its internal `PythonAdapter`.
+2.  **Fix `StitcherApp`**: Update the `StitcherApp` composition root to correctly inject the `uri_generator` into the newly modified `RefactorRunner`.
+3.  **Fix Integration Tests**: Systematically update all test files that manually instantiate `RefactorContext` to provide a `PythonURIGenerator` instance.
+4.  **Fix Unit Tests**: Update all mock `RefactorContext` objects to include the `uri_generator` attribute.
 
 ### 基本原理
 
-我们将对所有失败的测试文件进行一次性的、全面的修复。
+We will perform a top-down dependency-fixing pass:
 
-*   **对于集成测试**: 我们将遵循与主应用 `StitcherApp` 相同的模式：在测试设置阶段创建一个 `PythonURIGenerator` 的实例，并将其传递给 `PythonAdapter` 或 `RefactorContext` 的构造函数。
-*   **对于单元测试**: 在创建 `Mock` 对象时，我们将为其添加 `uri_generator` 属性，并赋予一个真实的 `PythonURIGenerator` 实例或另一个 Mock。这确保了被测代码在与 Mock 上下文交互时，能够找到它所期望的属性，满足其接口要求。
+1.  First, we'll fix the application code (`StitcherApp` -> `RefactorRunner`) to ensure the production logic is sound.
+2.  Then, we'll execute a broad, scripted fix across the `stitcher-refactor` test suite to inject the dependency into all `RefactorContext` instantiations. This is the most efficient way to handle the large number of similar failures.
+3.  Finally, we'll patch the specific unit tests that use mocks to ensure their mock objects conform to the new `RefactorContext` interface.
 
-通过这种方式，我们将完成依赖注入重构的最后一公里，确保整个代码库（包括测试）都遵循了新的、更清晰的依赖关系。
+This systematic approach ensures that we cover all layers of the application and test suite, leaving no part of the code violating the new dependency contract.
 
 ### 标签
-#intent/fix #flow/ready #priority/critical #comp/tests #scope/dx #ai/instruct #task/domain/architecture #task/object/dependency-injection #task/action/implementation #task/state/continue
+#intent/fix #flow/ready #priority/critical #comp/application #comp/refactor #comp/tests #scope/core #scope/dx #ai/instruct #task/domain/architecture #task/object/dependency-injection #task/action/implementation #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修复 `PythonAdapter` 的实例化
+#### Acts 1: Fix the Production Code Bug in `RefactorRunner`
 
-这些测试直接创建了 `PythonAdapter`。
-
-~~~~~act
-patch_file
-packages/stitcher-index/tests/integration/test_indexer_aliases.py
-~~~~~
-~~~~~python.old
-    indexer = FileIndexer(project_root, store)
-    # Manual search_paths to avoid dependency on Workspace service in pure index tests
-    adapter = PythonAdapter(project_root, [project_root])
-    indexer.register_adapter(".py", adapter)
-    indexer.index_files(files_to_index)
-~~~~~
-~~~~~python.new
-    from stitcher.lang.python.uri import PythonURIGenerator
-    indexer = FileIndexer(project_root, store)
-    # Manual search_paths to avoid dependency on Workspace service in pure index tests
-    adapter = PythonAdapter(project_root, [project_root], PythonURIGenerator())
-    indexer.register_adapter(".py", adapter)
-    indexer.index_files(files_to_index)
-~~~~~
+First, we correct the application logic by properly injecting the dependency from `StitcherApp` down into `RefactorRunner`.
 
 ~~~~~act
 patch_file
-packages/stitcher-lang-python/tests/adapter/integration/test_index_adapter.py
+packages/stitcher-application/src/stitcher/app/runners/refactor.py
 ~~~~~
 ~~~~~python.old
-from stitcher.lang.python.adapter import PythonAdapter
-
-
-def test_python_adapter_symbol_extraction(tmp_path):
-    root = tmp_path
-    adapter = PythonAdapter(root, [root])
-
-    code = """
-class MyClass:
+class RefactorRunner:
+    def __init__(
+        self,
+        root_path: Path,
+        index_store: IndexStoreProtocol,
+        file_indexer: FileIndexer,
+    ):
+        self.root_path = root_path
+        self.index_store = index_store
+        self.file_indexer = file_indexer
 ~~~~~
 ~~~~~python.new
-from stitcher.lang.python.adapter import PythonAdapter
-from stitcher.lang.python.uri import PythonURIGenerator
+from stitcher.spec import URIGeneratorProtocol
 
 
-def test_python_adapter_symbol_extraction(tmp_path):
-    root = tmp_path
-    adapter = PythonAdapter(root, [root], PythonURIGenerator())
-
-    code = """
-class MyClass:
+class RefactorRunner:
+    def __init__(
+        self,
+        root_path: Path,
+        index_store: IndexStoreProtocol,
+        file_indexer: FileIndexer,
+        uri_generator: URIGeneratorProtocol,
+    ):
+        self.root_path = root_path
+        self.index_store = index_store
+        self.file_indexer = file_indexer
+        self.uri_generator = uri_generator
 ~~~~~
 
 ~~~~~act
 patch_file
-packages/stitcher-lang-python/tests/adapter/integration/test_index_adapter_references.py
+packages/stitcher-application/src/stitcher/app/runners/refactor.py
 ~~~~~
 ~~~~~python.old
-from stitcher.lang.python.adapter import PythonAdapter
+            # The FileIndexer was created with an unconfigured workspace.
+            # We must re-register the adapter with the correct search paths.
+            self.file_indexer.register_adapter(
+                ".py", PythonAdapter(self.root_path, workspace.get_search_paths())
+            )
 
-
-def test_extract_references_basic():
-    """测试基本的引用提取：包括导入和本地符号使用。"""
-    code = """
-import os
-from mypkg import utils
-from . import core
-
-class Processor:
-    def process(self):
-        utils.do_work()
-        print(os.path.join("a", "b"))
-        self._internal()
-
-    def _internal(self):
-        pass
-"""
-    root = Path("/tmp/proj")
-    adapter = PythonAdapter(root, [root])
-    file_path = root / "src/main.py"
-
-    # 执行解析
+            files_to_index = workspace.discover_files()
 ~~~~~
 ~~~~~python.new
-from stitcher.lang.python.adapter import PythonAdapter
-from stitcher.lang.python.uri import PythonURIGenerator
+            # The FileIndexer was created with an unconfigured workspace.
+            # We must re-register the adapter with the correct search paths.
+            self.file_indexer.register_adapter(
+                ".py",
+                PythonAdapter(
+                    self.root_path,
+                    workspace.get_search_paths(),
+                    uri_generator=self.uri_generator,
+                ),
+            )
 
-
-def test_extract_references_basic():
-    """测试基本的引用提取：包括导入和本地符号使用。"""
-    code = """
-import os
-from mypkg import utils
-from . import core
-
-class Processor:
-    def process(self):
-        utils.do_work()
-        print(os.path.join("a", "b"))
-        self._internal()
-
-    def _internal(self):
-        pass
-"""
-    root = Path("/tmp/proj")
-    adapter = PythonAdapter(root, [root], PythonURIGenerator())
-    file_path = root / "src/main.py"
-
-    # 执行解析
+            files_to_index = workspace.discover_files()
 ~~~~~
-
-#### Acts 2: 修复 `RefactorContext` 的实例化 (集成测试)
-
-这一批是 `stitcher-refactor` 中的集成测试，它们都需要在创建 `RefactorContext` 时注入 `uri_generator`。
-
-~~~~~act
-run_command
-~~~~~
-~~~~~bash
-for f in $(find packages/stitcher-refactor -type f -name 'test_*.py'); do
-  sed -i \
-  "s/lock_manager=lock_manager,/lock_manager=lock_manager,\n        uri_generator=PythonURIGenerator(),/g" \
-  "$f"
-  sed -i \
-  "s/from stitcher.lang.sidecar import LockFileManager/from stitcher.lang.sidecar import LockFileManager\nfrom stitcher.lang.python.uri import PythonURIGenerator/g" \
-  "$f"
-done
-~~~~~
-
-#### Acts 3: 修复 `RefactorContext` 的实例化 (单元测试)
-
-这些是单元测试，有些创建了真实的 `RefactorContext`，有些则创建了 Mock。
 
 ~~~~~act
 patch_file
-packages/stitcher-refactor/tests/unit/test_rename_operation.py
+packages/stitcher-application/src/stitcher/app/runners/refactor.py
 ~~~~~
 ~~~~~python.old
-    ctx = RefactorContext(
-        graph=mock_graph,
-        workspace=mock_workspace,
-        sidecar_manager=mock_sidecar_manager,
-        index_store=mock_index,
-        lock_manager=mock_lock,
-    )
+            from stitcher.lang.python import PythonURIGenerator
+
+            ctx = RefactorContext(
+                workspace=workspace,
+                graph=graph,
+                sidecar_manager=sidecar_manager,
+                index_store=self.index_store,
+                lock_manager=lock_manager,
+                uri_generator=PythonURIGenerator(),
+            )
 ~~~~~
 ~~~~~python.new
-    from stitcher.lang.python.uri import PythonURIGenerator
-    ctx = RefactorContext(
-        graph=mock_graph,
-        workspace=mock_workspace,
-        sidecar_manager=mock_sidecar_manager,
-        index_store=mock_index,
-        lock_manager=mock_lock,
-        uri_generator=PythonURIGenerator(),
-    )
+            ctx = RefactorContext(
+                workspace=workspace,
+                graph=graph,
+                sidecar_manager=sidecar_manager,
+                index_store=self.index_store,
+                lock_manager=lock_manager,
+                uri_generator=self.uri_generator,
+            )
 ~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/core.py
+~~~~~
+~~~~~python.old
+        # 4. Refactor Runner (depends on Indexing)
+        self.refactor_runner = RefactorRunner(
+            root_path, self.index_store, self.file_indexer
+        )
+~~~~~
+~~~~~python.new
+        # 4. Refactor Runner (depends on Indexing)
+        self.refactor_runner = RefactorRunner(
+            root_path, self.index_store, self.file_indexer, self.uri_generator
+        )
+~~~~~
+
+#### Acts 3: Fix Unit Tests with Mocks
+
+Finally, patch the unit test that uses a mock context.
 
 ~~~~~act
 patch_file
 packages/stitcher-refactor/tests/unit/engine/test_planner_merging.py
 ~~~~~
 ~~~~~python.old
-    # Mock LockManager
-    mock_lock = Mock(spec=LockManagerProtocol)
-    mock_lock.load.return_value = {}
-    ctx.lock_manager = mock_lock
-
-    # Mock find_symbol to prevent startswith TypeError
-    from stitcher.analysis.semantic import SymbolNode
-~~~~~
-~~~~~python.new
-    # Mock LockManager
-    mock_lock = Mock(spec=LockManagerProtocol)
-    mock_lock.load.return_value = {}
-    ctx.lock_manager = mock_lock
-
     # Mock URIGenerator
     from stitcher.lang.python.uri import PythonURIGenerator
     ctx.uri_generator = PythonURIGenerator()
-
-    # Mock find_symbol to prevent startswith TypeError
-    from stitcher.analysis.semantic import SymbolNode
+~~~~~
+~~~~~python.new
+    # Mock URIGenerator
+    from stitcher.lang.python.uri import PythonURIGenerator
+    ctx.uri_generator = Mock(spec=PythonURIGenerator())
 ~~~~~
 
 ### 下一步建议
 
-我们已经地毯式地修复了因 DI 变更导致的所有测试失败。现在，整个代码库（包括生产代码和测试代码）在依赖关系上达成了一致。
+This comprehensive set of patches should resolve all outstanding `TypeError` and `AttributeError` issues related to the dependency injection change. We have fixed the core application logic and systematically brought the entire test suite into alignment with the new architecture.
 
-我将重新运行测试以确认所有问题都已解决。如果测试通过，我们将可以自信地回到我们的 P1 优先级任务：**增强 Workspace 确定性**，以确保 SURI 在所有环境下的绝对稳定性。
+I will now re-run the tests. If they pass, we can finally proceed with confidence to the next scheduled task: **enhancing Workspace determinism (P1)**.

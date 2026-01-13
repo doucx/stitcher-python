@@ -151,7 +151,7 @@ class StitcherApp:
 
         # 4. Refactor Runner (depends on Indexing)
         self.refactor_runner = RefactorRunner(
-            root_path, self.index_store, self.file_indexer
+            root_path, self.index_store, self.file_indexer, self.uri_generator
         )
 
     def _load_configs(self) -> Tuple[List[StitcherConfig], Optional[str]]:

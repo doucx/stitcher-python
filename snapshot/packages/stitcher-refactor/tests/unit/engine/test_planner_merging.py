@@ -46,7 +46,7 @@ def mock_context(tmp_path: Path) -> Mock:
 
     # Mock URIGenerator
     from stitcher.lang.python.uri import PythonURIGenerator
-    ctx.uri_generator = PythonURIGenerator()
+    ctx.uri_generator = Mock(spec=PythonURIGenerator())
 
     # Mock find_symbol to prevent startswith TypeError
     from stitcher.analysis.semantic import SymbolNode

@@ -19,16 +19,21 @@ from stitcher.lang.sidecar import LockFileManager
 from stitcher.lang.python import PythonAdapter
 
 
+from stitcher.spec import URIGeneratorProtocol
+
+
 class RefactorRunner:
     def __init__(
         self,
         root_path: Path,
         index_store: IndexStoreProtocol,
         file_indexer: FileIndexer,
+        uri_generator: URIGeneratorProtocol,
     ):
         self.root_path = root_path
         self.index_store = index_store
         self.file_indexer = file_indexer
+        self.uri_generator = uri_generator
 
     def run_apply(
         self,
@@ -53,7 +58,12 @@ class RefactorRunner:
             # The FileIndexer was created with an unconfigured workspace.
             # We must re-register the adapter with the correct search paths.
             self.file_indexer.register_adapter(
-                ".py", PythonAdapter(self.root_path, workspace.get_search_paths())
+                ".py",
+                PythonAdapter(
+                    self.root_path,
+                    workspace.get_search_paths(),
+                    uri_generator=self.uri_generator,
+                ),
             )
 
             files_to_index = workspace.discover_files()
@@ -73,15 +83,13 @@ class RefactorRunner:
             # The main app holds the URI generator instance.
             # In a full DI framework this would be resolved from a container.
             # For now, we manually construct it here.
-            from stitcher.lang.python import PythonURIGenerator
-
             ctx = RefactorContext(
                 workspace=workspace,
                 graph=graph,
                 sidecar_manager=sidecar_manager,
                 index_store=self.index_store,
                 lock_manager=lock_manager,
-                uri_generator=PythonURIGenerator(),
+                uri_generator=self.uri_generator,
             )
 
             # 2. Load and plan the migration
