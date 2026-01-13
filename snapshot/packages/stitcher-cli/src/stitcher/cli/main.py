@@ -29,7 +29,7 @@ def main(
     loglevel: LogLevel = typer.Option(
         LogLevel.INFO,
         "--loglevel",
-        help="Set the output verbosity.",
+        help=nexus(L.cli.option.loglevel.help),
         case_sensitive=False,
     ),
 ):
