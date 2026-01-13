@@ -22,12 +22,14 @@ def sample_module() -> ModuleDef:
 
 
 @pytest.fixture
-def executor(tmp_path) -> PumpExecutor:
+def executor(tmp_path, mocker) -> PumpExecutor:
     """A PumpExecutor instance for testing its internal methods."""
     return PumpExecutor(
         root_path=tmp_path,
+        workspace=mocker.create_autospec(Workspace, instance=True),
         doc_manager=DocumentManager(root_path=tmp_path),
-        sig_manager=MagicMock(),
+        lock_manager=mocker.create_autospec(LockManagerProtocol, instance=True),
+        uri_generator=mocker.create_autospec(URIGeneratorProtocol, instance=True),
         transformer=MagicMock(),
         merger=DocstringMerger(),
         fingerprint_strategy=MagicMock(),

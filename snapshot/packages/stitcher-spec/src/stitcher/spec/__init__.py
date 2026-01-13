@@ -47,7 +47,6 @@ __all__ = [
     "URIGeneratorProtocol",
     "LockManagerProtocol",
     "DocumentManagerProtocol",
-    "SignatureManagerProtocol",
     "DifferProtocol",
     "DocstringMergerProtocol",
     "IndexStoreProtocol",

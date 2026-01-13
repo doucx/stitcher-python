@@ -217,7 +217,7 @@ class PumpExecutor:
                 # To maintain transactionality, we write to the lock file via TM
                 # using the serialize() method we added to LockFileManager
                 lock_content = self.lock_manager.serialize(new_lock_data)
-                lock_path = pkg_root / self.lock_manager.LOCK_FILE_NAME
+                lock_path = pkg_root / "stitcher.lock"
                 tm.add_write(str(lock_path.relative_to(self.root_path)), lock_content)
 
         if strip_jobs:

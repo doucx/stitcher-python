@@ -12,9 +12,12 @@ from stitcher.spec import (
     FunctionDef,
     ResolutionAction,
     DocstringIR,
+    LockManagerProtocol,
+    URIGeneratorProtocol,
 )
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
+from stitcher.spec.managers import DocumentManagerProtocol
 from stitcher.common.transaction import TransactionManager
+from stitcher.workspace import Workspace
 
 
 @pytest.fixture
@@ -32,15 +35,10 @@ def mock_doc_manager(mocker) -> MagicMock:
 
 
 @pytest.fixture
-def mock_sig_manager(mocker, tmp_path: Path) -> MagicMock:
-    mock = mocker.create_autospec(SignatureManagerProtocol, instance=True)
-    # IMPORTANT: Return a real dict to avoid deepcopy issues with mocks.
-    mock.load_composite_hashes.return_value = {}
-    # Configure path generation to return a concrete Path
-    mock.get_signature_path.return_value = (
-        tmp_path / ".stitcher/signatures/src/main.json"
-    )
-    mock.serialize_hashes.return_value = "json content"
+def mock_lock_manager(mocker) -> MagicMock:
+    mock = mocker.create_autospec(LockManagerProtocol, instance=True)
+    mock.load.return_value = {}
+    mock.serialize.return_value = '{"version": "1.0", "fingerprints": {}}'
     return mock
 
 
@@ -49,13 +47,17 @@ def executor(
     tmp_path: Path,
     mocker,
     mock_doc_manager: DocumentManagerProtocol,
-    mock_sig_manager: SignatureManagerProtocol,
+    mock_lock_manager: LockManagerProtocol,
 ) -> PumpExecutor:
+    mock_workspace = mocker.create_autospec(Workspace, instance=True)
+    mock_workspace.find_owning_package.return_value = tmp_path
     # Use the real tmp_path instead of a MagicMock for root_path
     return PumpExecutor(
         root_path=tmp_path,
+        workspace=mock_workspace,
         doc_manager=mock_doc_manager,
-        sig_manager=mock_sig_manager,
+        lock_manager=mock_lock_manager,
+        uri_generator=mocker.create_autospec(URIGeneratorProtocol, instance=True),
         transformer=mocker.create_autospec(LanguageTransformerProtocol, instance=True),
         merger=mocker.create_autospec(DocstringMergerProtocol, instance=True),
         fingerprint_strategy=mocker.create_autospec(
@@ -79,8 +81,8 @@ def test_executor_hydrates_new_doc(
 
     # Assert YAML file is written to the correct relative path with ANY content
     mock_tm.add_write.assert_any_call("src/main.stitcher.yaml", ANY)
-    # Assert signature file is written to the correct relative path with ANY content
-    mock_tm.add_write.assert_any_call(".stitcher/signatures/src/main.json", ANY)
+    # Assert lock file is written to the correct relative path with ANY content
+    mock_tm.add_write.assert_any_call("stitcher.lock", ANY)
 
 
 def test_executor_overwrite_and_strip(
@@ -109,8 +111,8 @@ def test_executor_overwrite_and_strip(
 
     # Assert YAML is written
     mock_tm.add_write.assert_any_call("src/main.stitcher.yaml", ANY)
-    # Assert signature is written
-    mock_tm.add_write.assert_any_call(".stitcher/signatures/src/main.json", ANY)
+    # Assert lock file is written
+    mock_tm.add_write.assert_any_call("stitcher.lock", ANY)
     # Assert source file is stripped and written back
     executor.transformer.strip.assert_called_once()  # type: ignore[reportAttributeAccessIssue]
     mock_tm.add_write.assert_any_call("src/main.py", "stripped content")

@@ -6,10 +6,13 @@ from stitcher.spec import (
     ModuleDef,
     ResolutionAction,
     FingerprintStrategyProtocol,
+    LockManagerProtocol,
+    URIGeneratorProtocol,
 )
-from stitcher.spec.managers import DocumentManagerProtocol, SignatureManagerProtocol
+from stitcher.spec.managers import DocumentManagerProtocol
 from stitcher.spec.interaction import InteractionHandler, InteractionContext
 from stitcher.config import StitcherConfig
+from stitcher.workspace import Workspace
 from stitcher.common.transaction import TransactionManager
 from stitcher.analysis.engines import PumpEngine
 from needle.pointer import L
@@ -26,7 +29,9 @@ def test_runner_orchestrates_conflict_resolution_flow(tmp_path):
     mock_handler = create_autospec(InteractionHandler, instance=True)
     mock_tm = create_autospec(TransactionManager, instance=True)
     mock_doc_manager = create_autospec(DocumentManagerProtocol, instance=True)
-    mock_sig_manager = create_autospec(SignatureManagerProtocol, instance=True)
+    mock_lock_manager = create_autospec(LockManagerProtocol, instance=True)
+    mock_uri_generator = create_autospec(URIGeneratorProtocol, instance=True)
+    mock_workspace = create_autospec(Workspace, instance=True)
     mock_fingerprint_strategy = create_autospec(
         FingerprintStrategyProtocol, instance=True
     )
@@ -53,7 +58,9 @@ def test_runner_orchestrates_conflict_resolution_flow(tmp_path):
         executor=mock_executor,
         interaction_handler=mock_handler,
         doc_manager=mock_doc_manager,
-        sig_manager=mock_sig_manager,
+        lock_manager=mock_lock_manager,
+        uri_generator=mock_uri_generator,
+        workspace=mock_workspace,
         fingerprint_strategy=mock_fingerprint_strategy,
     )
     runner.run_batch(
