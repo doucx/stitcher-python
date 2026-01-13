@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] fix(test-utils): 升级 SpyBus 以模拟日志级别过滤", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768312579.010761, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix(tests): 修正 loglevel 测试中错误的断言逻辑", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768312718.2921124, "duration_ms": 0}}

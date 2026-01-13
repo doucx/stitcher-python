@@ -53,13 +53,14 @@ def test_loglevel_warning_hides_info_and_success(workspace_factory, monkeypatch)
 
     # A warning does not cause a failure exit code
     assert result.exit_code == 0
-    # INFO and SUCCESS messages should be hidden
+    # INFO and the final SUCCESS summary should be hidden
     assert_id_not_called(spy_bus, L.index.run.start)
     assert_id_not_called(spy_bus, L.check.run.success)
+    assert_id_not_called(spy_bus, L.check.run.success_with_warnings)
 
-    # The warning summary and the specific warning should be visible
-    spy_bus.assert_id_called(L.check.run.success_with_warnings, level="success")
-    spy_bus.assert_id_called(L.check.file.untracked, level="warning")
+    # However, the specific WARNING messages should be visible.
+    spy_bus.assert_id_called(L.check.file.warn, level="warning")
+    spy_bus.assert_id_called(L.check.file.untracked_with_details, level="warning")
 
 
 def test_loglevel_debug_shows_debug_messages(workspace_factory, monkeypatch):
