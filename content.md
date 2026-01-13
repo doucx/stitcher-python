@@ -1,92 +1,51 @@
-非常抱歉，我在使用 LibCST API 时出现了记忆偏差。在 `libcst` 中，`Tuple` 和 `List` 的子元素统一使用 `cst.Element` 类型，而没有 `TupleElement` 这种特定类型。
+好的，我们将针对星号解包（Starred Unpacking）增加专门的测试用例，以验证 `IRBuildingVisitor` 对复杂赋值语法的支持深度。
 
-我已经根据 `libcst` 的实际定义修正了 `visitors.py` 的解析逻辑。
+## [WIP] test(lang-python): 增加星号解包赋值的 IR 解析测试
 
-## [WIP] fix(lang-python): 修正 IR 解析器中的 LibCST 类型引用错误
+### 用户需求
+验证解析器是否能正确识别 `x, *y = ...` 这种包含星号解包的赋值语句中的所有符号。
 
-### 错误分析
-测试失败原因是 `AttributeError: module 'libcst' has no attribute 'TupleElement'`。在 LibCST 的抽象语法树中，`Tuple`、`List` 和 `Set` 容器内的包装对象统称为 `Element`。
+### 评论
+星号解包在处理可变长度序列或忽略剩余项时非常常见（如 `head, *tail = items`）。确保 `y` 也能被识别为属性，是保证索引完备性的要求。
 
 ### 目标
-1.  将 `IRBuildingVisitor.visit_Assign` 内部的递归处理逻辑修正为使用 `cst.Element`。
-2.  增加对 `cst.StarredElement` 的支持，以便处理 `x, *y = 1, 2, 3` 这种包含星号解包的赋值。
+在 `test_visitors.py` 中增加 `test_parse_starred_unpacking` 测试用例。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/lang-python #concept/parser #scope/core #ai/refine #task/domain/analysis #task/object/ir-parser #task/action/fix #task/state/continue
+#intent/tooling #flow/ready #priority/medium #comp/lang-python #concept/parser #scope/tests #task/domain/testing #task/object/ir-parser #task/action/test-enhancement #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修正 `visitors.py` 中的解析逻辑
+#### Acts 1: 增加星号解包测试用例
 
-我们将 `TupleElement` 和 `ListElement` 替换为正确的 `cst.Element`，并增加对 `StarredElement` 的支持。
+我们在 `packages/stitcher-lang-python/tests/analysis/unit/cst/test_visitors.py` 的 `TestParser` 类中增加该用例。
 
 ~~~~~act
 patch_file
-packages/stitcher-lang-python/src/stitcher/lang/python/analysis/visitors.py
+packages/stitcher-lang-python/tests/analysis/unit/cst/test_visitors.py
 ~~~~~
 ~~~~~python.old
-    def visit_Assign(self, node: cst.Assign) -> Optional[bool]:
-        # Handle: x = 1 or x, y = 1, 2
-        if len(node.targets) != 1:
-            return False
-
-        target_node = node.targets[0].target
-        value_code = self._dummy_module.code_for_node(node.value).strip()
-        loc = self._extract_location(node)
-
-        def process_target(target: cst.CSTNode):
-            if isinstance(target, cst.Name):
-                name = target.value
-                # Special handling for __all__
-                if name == "__all__" and not self._class_stack:
-                    self.dunder_all = value_code
-                else:
-                    self._add_attribute(
-                        Attribute(name=name, annotation=None, value=value_code, location=loc)
-                    )
-            elif isinstance(target, (cst.Tuple, cst.List)):
-                for element in target.elements:
-                    if isinstance(element, (cst.TupleElement, cst.ListElement)):
-                        process_target(element.value)
-
-        process_target(target_node)
-        return False
+        method_names = {m.name for m in outer.methods}
+        assert "outer_method" in method_names
+        assert "inner_method" not in method_names
 ~~~~~
 ~~~~~python.new
-    def visit_Assign(self, node: cst.Assign) -> Optional[bool]:
-        # Handle: x = 1 or x, y = 1, 2 or [a, *b] = ...
-        if len(node.targets) != 1:
-            return False
+        method_names = {m.name for m in outer.methods}
+        assert "outer_method" in method_names
+        assert "inner_method" not in method_names
 
-        target_node = node.targets[0].target
-        value_code = self._dummy_module.code_for_node(node.value).strip()
-        loc = self._extract_location(node)
-
-        def process_target(target: cst.CSTNode):
-            if isinstance(target, cst.Name):
-                name = target.value
-                # Special handling for __all__
-                if name == "__all__" and not self._class_stack:
-                    self.dunder_all = value_code
-                else:
-                    self._add_attribute(
-                        Attribute(name=name, annotation=None, value=value_code, location=loc)
-                    )
-            elif isinstance(target, (cst.Tuple, cst.List)):
-                for element in target.elements:
-                    if isinstance(element, cst.Element):
-                        process_target(element.value)
-            elif isinstance(target, cst.StarredElement):
-                # Handle *y in [x, *y] = ...
-                process_target(target.value)
-
-        process_target(target_node)
-        return False
+    def test_parse_starred_unpacking(self):
+        code = "x, *y = 1, 2, 3"
+        module = parse_source_code(code)
+        
+        attr_names = {a.name for a in module.attributes}
+        assert "x" in attr_names
+        assert "y" in attr_names
 ~~~~~
 
 ### 下一步建议
 
-1.  **重新运行测试**: 再次执行 `pytest packages/stitcher-lang-python/tests/analysis/unit/cst/test_visitors.py`，确认 `test_parse_unpacking_assignment` 现在能够通过。
-2.  **增加星号解包测试**: 如果上面的测试通过，建议在 `test_visitors.py` 中增加一个 `x, *y = 1, 2, 3` 的用例，以验证 `StarredElement` 的支持情况。
+1.  **运行完整测试套件**: 执行 `pytest packages/stitcher-lang-python/tests/analysis/unit/cst/test_visitors.py` 确保所有 7 个测试（包含新加的 3 个：解包赋值、嵌套类鲁棒性、星号解包）全部通过。
+2.  **验证 FQN 生成**: 如果赋值位于类内部，需确保解包出的属性能够正确生成类前缀的 FQN（例如 `MyClass.x`），这可以通过在 `TestParser` 中增加一个类内部解包赋值的用例来验证。

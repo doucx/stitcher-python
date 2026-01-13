@@ -76,3 +76,11 @@ class Outer:
         method_names = {m.name for m in outer.methods}
         assert "outer_method" in method_names
         assert "inner_method" not in method_names
+
+    def test_parse_starred_unpacking(self):
+        code = "x, *y = 1, 2, 3"
+        module = parse_source_code(code)
+        
+        attr_names = {a.name for a in module.attributes}
+        assert "x" in attr_names
+        assert "y" in attr_names
