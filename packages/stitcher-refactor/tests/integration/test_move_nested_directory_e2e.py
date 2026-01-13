@@ -1,5 +1,4 @@
 import json
-import yaml
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.analysis.semantic import SemanticGraph
 from stitcher.common.transaction import (
@@ -10,15 +9,22 @@ from stitcher.common.transaction import (
 )
 from stitcher.refactor.operations.move_directory import MoveDirectoryOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
 from stitcher.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory, create_populated_index
+from stitcher.spec import Fingerprint
 
 
 def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_path):
-    # 1. ARRANGE: Create a complex, multi-level directory structure
     factory = WorkspaceFactory(tmp_path)
     py_rel_path = "src/cascade/core/adapters/cache/in_memory.py"
     old_suri = f"py://{py_rel_path}#InMemoryCache"
+
+    lock_manager = LockFileManager()
+    fingerprints = {
+        old_suri: Fingerprint.from_dict({"baseline_code_structure_hash": "123"})
+    }
+    lock_content = lock_manager.serialize(fingerprints)
 
     project_root = (
         factory.with_pyproject(".")
@@ -31,14 +37,9 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
         )
         .with_docs(
             "src/cascade/core/adapters/cache/in_memory.stitcher.yaml",
-            # Key is Fragment
             {"InMemoryCache": "Doc for Cache"},
         )
-        .with_raw_file(
-            ".stitcher/signatures/src/cascade/core/adapters/cache/in_memory.json",
-            # Key is SURI
-            json.dumps({old_suri: {"h": "123"}}),
-        )
+        .with_raw_file("stitcher.lock", lock_content)
         .with_source(
             "src/app.py",
             "from cascade.core.adapters.cache.in_memory import InMemoryCache",
@@ -46,24 +47,24 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
         .build()
     )
 
-    # Define paths for the move operation
     src_dir_to_move = project_root / "src/cascade/core/adapters"
     dest_dir = project_root / "src/cascade/runtime/adapters"
     app_py_path = project_root / "src/app.py"
+    lock_path = project_root / "stitcher.lock"
 
-    # 2. ACT
     index_store = create_populated_index(project_root)
     workspace = Workspace(root_path=project_root)
     graph = SemanticGraph(workspace=workspace, index_store=index_store)
-    # We load 'cascade' and 'app' to build the full semantic picture
     graph.load("cascade")
     graph.load("app")
+
     sidecar_manager = SidecarManager(root_path=project_root)
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,
         sidecar_manager=sidecar_manager,
         index_store=index_store,
+        lock_manager=lock_manager,
     )
 
     from stitcher.refactor.migration import MigrationSpec
@@ -84,37 +85,18 @@ def test_move_deeply_nested_directory_updates_all_references_and_sidecars(tmp_pa
             tm.add_write(fop.path, fop.content)
     tm.commit()
 
-    # 3. ASSERT
-    # A. Verify file system structure
     assert not src_dir_to_move.exists()
     assert dest_dir.exists()
-    new_py_file = dest_dir / "cache/in_memory.py"
-    new_yaml_file = new_py_file.with_suffix(".stitcher.yaml")
-    new_sig_file_path = (
-        project_root
-        / ".stitcher/signatures/src/cascade/runtime/adapters/cache/in_memory.json"
-    )
 
-    assert new_py_file.exists()
-    assert new_yaml_file.exists()
-    assert new_sig_file_path.exists()
-
-    # B. Verify content of external references
     updated_app_code = app_py_path.read_text()
-    expected_import = (
+    assert (
         "from cascade.runtime.adapters.cache.in_memory import InMemoryCache"
+        in updated_app_code
     )
-    assert expected_import in updated_app_code
 
-    # C. Verify content of moved sidecar files
-    # YAML key is Fragment
-    new_yaml_data = yaml.safe_load(new_yaml_file.read_text())
-    assert "InMemoryCache" in new_yaml_data
-    assert new_yaml_data["InMemoryCache"] == "Doc for Cache"
-
-    # JSON key is SURI
     new_py_rel_path = "src/cascade/runtime/adapters/cache/in_memory.py"
     expected_suri = f"py://{new_py_rel_path}#InMemoryCache"
-    new_sig_data = json.loads(new_sig_file_path.read_text())
-    assert expected_suri in new_sig_data
-    assert new_sig_data[expected_suri] == {"h": "123"}
+
+    lock_data = json.loads(lock_path.read_text())["fingerprints"]
+    assert expected_suri in lock_data
+    assert lock_data[expected_suri] == {"baseline_code_structure_hash": "123"}

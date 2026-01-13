@@ -15,6 +15,7 @@ from stitcher.refactor.engine import (
 from stitcher.refactor.migration import MigrationLoader, MigrationError
 from stitcher.workspace import Workspace
 from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
 from stitcher.lang.python import PythonAdapter
 
 
@@ -64,6 +65,7 @@ class RefactorRunner:
                 L.debug.log.refactor_workspace_paths, paths=workspace.get_search_paths()
             )
             sidecar_manager = SidecarManager(self.root_path)
+            lock_manager = LockFileManager()
             graph = SemanticGraph(workspace, self.index_store)
 
             graph.load_from_workspace()
@@ -73,6 +75,7 @@ class RefactorRunner:
                 graph=graph,
                 sidecar_manager=sidecar_manager,
                 index_store=self.index_store,
+                lock_manager=lock_manager,
             )
 
             # 2. Load and plan the migration

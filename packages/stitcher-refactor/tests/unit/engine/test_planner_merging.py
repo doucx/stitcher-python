@@ -5,6 +5,7 @@ import pytest
 from stitcher.refactor.engine.context import RefactorContext
 from stitcher.analysis.semantic import SemanticGraph
 from stitcher.index.store import IndexStore
+from stitcher.spec import LockManagerProtocol
 from stitcher.lang.python.analysis.models import UsageLocation, ReferenceType
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.operations.move_file import MoveFileOperation
@@ -23,39 +24,49 @@ def mock_context(tmp_path: Path) -> Mock:
 
     mock_workspace = MagicMock()
     mock_workspace.root_path = tmp_path
+    # mock find_owning_package to return root
+    mock_workspace.find_owning_package.return_value = tmp_path
+    mock_workspace.to_workspace_relative.side_effect = lambda p: str(p)
 
     ctx = Mock(spec=RefactorContext)
     ctx.graph = mock_graph
     ctx.index_store = mock_index
     ctx.workspace = mock_workspace
 
-    # Mock SidecarManager to avoid AttributeError
+    # Mock SidecarManager
     mock_sidecar = Mock()
-    # Return non-existent paths so the operations skip sidecar logic
-    # and we focus purely on the code modification merging logic.
     mock_sidecar.get_doc_path.return_value = tmp_path / "nonexistent.yaml"
     mock_sidecar.get_signature_path.return_value = tmp_path / "nonexistent.json"
     ctx.sidecar_manager = mock_sidecar
+
+    # Mock LockManager
+    mock_lock = Mock(spec=LockManagerProtocol)
+    mock_lock.load.return_value = {}
+    ctx.lock_manager = mock_lock
+
+    # Mock find_symbol to prevent startswith TypeError
+    from stitcher.analysis.semantic import SymbolNode
+
+    mock_node = Mock(spec=SymbolNode)
+    mock_node.path = tmp_path / "app.py"  # a valid path
+    mock_graph.find_symbol.return_value = mock_node
 
     return ctx
 
 
 def test_planner_merges_rename_operations_for_same_file(mock_context: Mock):
     """
-    CRITICAL: This test verifies that the Planner can merge multiple rename
-    operations that affect the SAME file into a SINGLE WriteFileOp.
-    This prevents the "Lost Edit" bug.
+    Verifies that the Planner merges multiple renames affecting the same source file
+    into a single WriteFileOp, and also produces a WriteFileOp for the lock file.
     """
     # 1. ARRANGE
     file_path = mock_context.graph.root_path / "app.py"
     original_content = "class OldClass: pass\ndef old_func(): pass"
 
-    # Define two rename operations
     op1 = RenameSymbolOperation("app.OldClass", "app.NewClass")
     op2 = RenameSymbolOperation("app.old_func", "app.new_func")
     spec = MigrationSpec().add(op1).add(op2)
 
-    # Mock find_usages to return locations for BOTH symbols in the same file
     def mock_find_usages(fqn):
         if fqn == "app.OldClass":
             return [
@@ -73,7 +84,6 @@ def test_planner_merges_rename_operations_for_same_file(mock_context: Mock):
 
     mock_context.graph.find_usages.side_effect = mock_find_usages
 
-    # Mock file reading
     from unittest.mock import patch
 
     with patch.object(Path, "read_text", return_value=original_content):
@@ -82,22 +92,22 @@ def test_planner_merges_rename_operations_for_same_file(mock_context: Mock):
         file_ops = planner.plan(spec, mock_context)
 
     # 3. ASSERT
-    # There should be exactly ONE operation: a single WriteFileOp for app.py
-    assert len(file_ops) == 1, "Planner should merge writes to the same file."
-    write_op = file_ops[0]
-    assert isinstance(write_op, WriteFileOp)
-    assert write_op.path == Path("app.py")
+    # Expect 2 ops: one for the source file, one for the lock file.
+    assert len(file_ops) == 2
 
-    # The content of the WriteFileOp should contain BOTH changes
-    final_content = write_op.content
+    write_ops = {op.path.name: op for op in file_ops if isinstance(op, WriteFileOp)}
+    assert "app.py" in write_ops
+    assert "stitcher.lock" in write_ops
+
+    final_content = write_ops["app.py"].content
     assert "class NewClass: pass" in final_content
     assert "def new_func(): pass" in final_content
 
 
 def test_planner_handles_move_and_rename_on_same_file(mock_context: Mock):
     """
-    Verifies that a file move and symbol renames within that file are planned correctly,
-    resulting in a MoveOp and a single WriteOp with merged content.
+    Verifies a file move and symbol rename are planned correctly, resulting
+    in a MoveOp, a WriteOp for the code, and a WriteOp for the lock file.
     """
     # 1. ARRANGE
     src_path_rel = Path("app.py")
@@ -105,14 +115,12 @@ def test_planner_handles_move_and_rename_on_same_file(mock_context: Mock):
     src_path_abs = mock_context.graph.root_path / src_path_rel
     original_content = "class OldClass: pass"
 
-    # Define operations
     move_op = MoveFileOperation(
         src_path_abs, mock_context.graph.root_path / dest_path_rel
     )
     rename_op = RenameSymbolOperation("app.OldClass", "new_app.NewClass")
     spec = MigrationSpec().add(move_op).add(rename_op)
 
-    # Mock find_usages
     mock_context.graph.find_usages.return_value = [
         UsageLocation(src_path_abs, 1, 6, 1, 14, ReferenceType.SYMBOL, "app.OldClass")
     ]
@@ -125,21 +133,20 @@ def test_planner_handles_move_and_rename_on_same_file(mock_context: Mock):
         file_ops = planner.plan(spec, mock_context)
 
     # 3. ASSERT
-    # We expect two ops: one MoveFileOp and one WriteFileOp
-    assert len(file_ops) == 2
+    # Expect 3 ops: MoveOp (code), WriteOp (code), WriteOp (lock)
+    assert len(file_ops) == 3
 
     move_ops = [op for op in file_ops if isinstance(op, MoveFileOp)]
-    write_ops = [op for op in file_ops if isinstance(op, WriteFileOp)]
+    write_ops = {op.path.name: op for op in file_ops if isinstance(op, WriteFileOp)}
 
     assert len(move_ops) == 1
-    assert len(write_ops) == 1
+    assert len(write_ops) == 2
+    assert "app.py" in write_ops
+    assert "stitcher.lock" in write_ops
 
-    # Verify the MoveOp
     assert move_ops[0].path == src_path_rel
     assert move_ops[0].dest == dest_path_rel
 
-    # Verify the WriteOp
-    # The planner generates the write for the ORIGINAL path. The TransactionManager
-    # is responsible for rebasing it to the new path.
-    assert write_ops[0].path == src_path_rel
-    assert "class NewClass: pass" in write_ops[0].content
+    # The write op for code should target the original path.
+    # The TransactionManager will rebase this write if needed.
+    assert "class NewClass: pass" in write_ops["app.py"].content

@@ -10,6 +10,7 @@ from stitcher.refactor.engine.intent import (
     MoveFileIntent,
     ScaffoldIntent,
     SidecarUpdateIntent,
+    LockPathUpdateIntent,
 )
 
 
@@ -65,20 +66,29 @@ class MoveFileOperation(AbstractOperation):
                     )
                 )
 
-            sig_src_path = ctx.sidecar_manager.get_signature_path(src_path)
-            if sig_src_path.exists():
-                intents.append(
-                    SidecarUpdateIntent(
-                        sidecar_path=sig_src_path,
-                        module_fqn=old_module_fqn,
-                        old_fqn=old_module_fqn,
-                        new_fqn=new_module_fqn,
-                        old_file_path=rel_src_path,
-                        new_file_path=rel_dest_path,
-                    )
-                )
+        # 3. Declare Lock Update Intent (Mass update SURIs)
+        # Note: We need to update SURIs in the OLD package's lock file.
+        # If the file moves across packages, we technically need to move entries from one lock to another.
+        # LockPathUpdateIntent handles updating the path prefix.
+        # But if package_root changes, we need to handle migration?
+        # For simplicity in this phase, we assume LockPathUpdateIntent updates paths within the same lock context
+        # OR Planner is smart enough to handle cross-package moves if we provide enough info.
+        # Current simplified strategy: Update SURIs in the source package's lock.
+        # If it moves to a new package, the entries in the old lock will point to a path outside the old package root.
+        # This is valid for SURI (workspace relative), but 'stitcher.lock' usually scopes to the package.
+        # TODO: Handle Cross-Package Lock Migration.
+        # For now, we just emit the intent on the source package.
 
-        # 3. Declare physical file move intents
+        owning_package = ctx.workspace.find_owning_package(src_path)
+        intents.append(
+            LockPathUpdateIntent(
+                package_root=owning_package,
+                old_path_prefix=rel_src_path,
+                new_path_prefix=rel_dest_path,
+            )
+        )
+
+        # 4. Declare physical file move intents
         intents.append(MoveFileIntent(src_path, dest_path))
 
         yaml_src = ctx.sidecar_manager.get_doc_path(src_path)
@@ -86,12 +96,7 @@ class MoveFileOperation(AbstractOperation):
             yaml_dest = ctx.sidecar_manager.get_doc_path(dest_path)
             intents.append(MoveFileIntent(yaml_src, yaml_dest))
 
-        sig_src = ctx.sidecar_manager.get_signature_path(src_path)
-        if sig_src.exists():
-            sig_dest = ctx.sidecar_manager.get_signature_path(dest_path)
-            intents.append(MoveFileIntent(sig_src, sig_dest))
-
-        # 4. Declare scaffolding intents for __init__.py files
+        # 5. Declare scaffolding intents for __init__.py files
         intents.extend(self._scaffold_init_intents(dest_path, ctx))
 
         return intents

@@ -9,6 +9,7 @@ from stitcher.common.transaction import (
 from stitcher.refactor.operations.move_file import MoveFileOperation
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
 from stitcher.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory, create_populated_index
 
@@ -65,11 +66,13 @@ def old_func():
     graph.load("mypkg")
 
     sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,
         sidecar_manager=sidecar_manager,
         index_store=index_store,
+        lock_manager=lock_manager,
     )
 
     # Three operations touching the same file

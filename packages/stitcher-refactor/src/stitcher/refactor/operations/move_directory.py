@@ -11,6 +11,7 @@ from stitcher.refactor.engine.intent import (
     SidecarUpdateIntent,
     DeleteDirectoryIntent,
     ScaffoldIntent,
+    LockPathUpdateIntent,
 )
 
 
@@ -83,24 +84,20 @@ class MoveDirectoryOperation(AbstractOperation):
                     )
                 )
 
-            sig_path = ctx.sidecar_manager.get_signature_path(src_item)
-            if sig_path.exists() and old_prefix and new_prefix:
-                processed_files.add(sig_path)
-                intents.append(
-                    SidecarUpdateIntent(
-                        sig_path,
-                        item_module_fqn,
-                        old_prefix,
-                        new_prefix,
-                        old_file_path=rel_src_path,
-                        new_file_path=rel_dest_path,
-                    )
-                )
-                intents.append(
-                    MoveFileIntent(
-                        sig_path, ctx.sidecar_manager.get_signature_path(dest_item)
-                    )
-                )
+        # 3. Declare Lock Update Intent for the entire directory
+        rel_src_dir = ctx.workspace.to_workspace_relative(src_dir)
+        rel_dest_dir = ctx.workspace.to_workspace_relative(dest_dir)
+        owning_package = ctx.workspace.find_owning_package(src_dir)
+
+        intents.append(
+            LockPathUpdateIntent(
+                package_root=owning_package,
+                old_path_prefix=rel_src_dir,
+                new_path_prefix=rel_dest_dir,
+            )
+        )
+
+        # 4. Process non-Python files
 
         # Process non-Python files
         for src_item in all_files:
@@ -110,10 +107,10 @@ class MoveDirectoryOperation(AbstractOperation):
             dest_item = dest_dir / relative_path
             intents.append(MoveFileIntent(src_item, dest_item))
 
-        # 3. Declare deletion of the source directory
+        # 5. Declare deletion of the source directory
         intents.append(DeleteDirectoryIntent(src_dir))
 
-        # 4. Declare scaffolding of __init__.py files
+        # 6. Declare scaffolding of __init__.py files
         intents.extend(self._scaffold_init_intents(dest_dir, ctx))
 
         return intents

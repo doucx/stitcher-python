@@ -7,6 +7,7 @@ from stitcher.common.transaction import (
 )
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
 from stitcher.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory, create_populated_index
 
@@ -37,11 +38,13 @@ def test_rename_operation_succeeds_in_renaming_symbol_definition_simple(tmp_path
     graph = SemanticGraph(workspace=workspace, index_store=index_store)
     graph.load("common")
     sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,
         sidecar_manager=sidecar_manager,
         index_store=index_store,
+        lock_manager=lock_manager,
     )
 
     from stitcher.refactor.migration import MigrationSpec
@@ -101,11 +104,13 @@ def test_rename_operation_succeeds_in_renaming_symbol_definition(tmp_path):
     graph = SemanticGraph(workspace=workspace, index_store=index_store)
     graph.load("mypkg")
     sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,
         sidecar_manager=sidecar_manager,
         index_store=index_store,
+        lock_manager=lock_manager,
     )
 
     from stitcher.refactor.migration import MigrationSpec

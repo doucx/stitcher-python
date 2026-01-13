@@ -60,3 +60,20 @@ class SidecarUpdateIntent(RefactorIntent):
     # New fields for SURI updates
     old_file_path: Optional[str] = None
     new_file_path: Optional[str] = None
+
+
+# --- Lock-level Intents ---
+
+
+@dataclass(frozen=True)
+class LockSymbolUpdateIntent(RefactorIntent):
+    package_root: Path
+    old_suri: str
+    new_suri: str
+
+
+@dataclass(frozen=True)
+class LockPathUpdateIntent(RefactorIntent):
+    package_root: Path
+    old_path_prefix: str  # Workspace-relative path prefix
+    new_path_prefix: str  # Workspace-relative path prefix

@@ -7,6 +7,7 @@ from stitcher.common.transaction import (
 )
 from stitcher.refactor.operations.move_file import MoveFileOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
 from stitcher.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory, create_populated_index
 
@@ -39,11 +40,13 @@ def test_move_module_referenced_by_init_relative_import(tmp_path):
     graph.load("mypkg")
 
     sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,
         sidecar_manager=sidecar_manager,
         index_store=index_store,
+        lock_manager=lock_manager,
     )
 
     from stitcher.refactor.migration import MigrationSpec

@@ -3,6 +3,7 @@ from stitcher.refactor.engine.context import RefactorContext
 from stitcher.common.transaction import TransactionManager, WriteFileOp
 from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.refactor.sidecar.manager import SidecarManager
+from stitcher.lang.sidecar import LockFileManager
 from stitcher.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory, create_populated_index
 
@@ -60,11 +61,13 @@ def test_rename_symbol_in_namespace_package_structure(tmp_path):
     graph.load("stitcher")
 
     sidecar_manager = SidecarManager(root_path=project_root)
+    lock_manager = LockFileManager()
     ctx = RefactorContext(
         workspace=workspace,
         graph=graph,
         sidecar_manager=sidecar_manager,
         index_store=index_store,
+        lock_manager=lock_manager,
     )
 
     # Rename MessageBus -> FeedbackBus
