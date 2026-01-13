@@ -13,21 +13,12 @@ from stitcher.workspace import Workspace
 from stitcher.test_utils import WorkspaceFactory, create_populated_index
 
 
+from stitcher.test_utils import WorkspaceFactory, create_populated_index
+
+
 def test_move_file_in_monorepo_updates_cross_package_imports(tmp_path):
     # 1. ARRANGE: Build a monorepo workspace
-    # packages/
-    #   pkg_a/
-    #     src/
-    #       pkga_lib/
-    #         __init__.py
-    #         core.py  (defines SharedClass)
-    #   pkg_b/
-    #     src/
-    #       pkgb_app/
-    #         __init__.py
-    #         main.py (imports SharedClass from pkga_lib.core)
     factory = WorkspaceFactory(tmp_path)
-    # --- Define identifiers based on the new ontology ---
     py_rel_path = "packages/pkg_a/src/pkga_lib/core.py"
     old_suri = f"py://{py_rel_path}#SharedClass"
 
@@ -37,9 +28,7 @@ def test_move_file_in_monorepo_updates_cross_package_imports(tmp_path):
         .with_source("packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass")
         .with_docs(
             "packages/pkg_a/src/pkga_lib/core.stitcher.yaml",
-            # Key is now Fragment
             {"SharedClass": "A shared class."},
-        )
         )
         .with_pyproject("packages/pkg_b")
         .with_source("packages/pkg_b/src/pkgb_app/__init__.py", "")
