@@ -1,87 +1,57 @@
-分析显示，测试失败的原因在于我对 LibCST 中 `Tuple` 和 `List` 容器成员的识别逻辑不完整。
+测试已全部通过。现在我们将这些增强功能作为一个逻辑单元进行提交，标志着 IR 解析器对复杂 Python 赋值语法的支持达到了预期的 MVP 水准。
 
-在 LibCST 中，`Tuple.elements` 列表包含的对象可能是 `cst.Element`（普通项），也可能是 `cst.StarredElement`（带星号的项）。
+## [COMMIT] feat(lang-python): 增强 IR 解析器以支持解包赋值和星号解包
 
-在我之前的实现中：
-```python
-            elif isinstance(target, (cst.Tuple, cst.List)):
-                for element in target.elements:
-                    if isinstance(element, cst.Element): # ⚠️ 这里的判断跳过了 StarredElement
-                        process_target(element.value)
-```
-由于 `cst.Element` 和 `cst.StarredElement` 在 LibCST 中是平级的（都继承自 `BaseElement`），`isinstance(element, cst.Element)` 对于星号项会返回 `False`，导致星号后面的符号（如 `y`）被漏掉。
+### 用户需求
+1.  支持解包赋值（如 `x, y = 1, 2`）。
+2.  支持带星号的解包赋值（如 `x, *y = [1, 2, 3]`）。
+3.  确保嵌套类定义不会导致解析器状态混乱或符号泄露。
 
-## [WIP] fix(lang-python): 修正解析器以支持赋值中的星号解包
+### 评论
+这是对 `stitcher-lang-python` 静态分析能力的重大补全。通过支持递归解析赋值目标，我们能够更准确地捕捉库的公共 API 表面，减少因代码风格差异导致的索引遗漏。
 
 ### 目标
-1.  修正 `IRBuildingVisitor.visit_Assign` 中的迭代逻辑，确保同时解包 `Element` 和 `StarredElement`。
-2.  通过测试验证 `x, *y = ...` 能正确识别出 `x` 和 `y`。
+1.  将 `visitors.py` 和对应的单元测试 `test_visitors.py` 提交至仓库。
+2.  确保 `[COMMIT]` 节点在历史图中清晰地标记了这一功能点的完成。
 
 ### 基本原理
-由于 `Tuple` 和 `List` 的所有成员（无论是普通项还是星号项）在 LibCST 中都具有 `.value` 属性，我们可以直接递归调用 `process_target(element.value)`，而无需进行复杂的子类型判断。
+我们遵循“先建立测试，再修复实现”的 TDD 流程。最终实现利用了 LibCST `Tuple`/`List` 元素包装器的通用性，通过递归处理 `.value` 属性，以最简洁的代码覆盖了所有解包场景。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/lang-python #concept/parser #scope/core #ai/refine #task/domain/analysis #task/object/ir-parser #task/action/fix #task/state/end
+#intent/build #flow/ready #priority/high #comp/lang-python #concept/parser #scope/core #ai/refine #task/domain/analysis #task/object/ir-parser #task/action/enhancement #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 修正 `visitors.py` 中的解包迭代逻辑
+#### Acts 1: 提交代码与测试
 
-我们将修正循环逻辑，使其能够处理容器中的所有元素。
+我们将相关变更添加到暂存区并创建提交。
 
 ~~~~~act
-patch_file
+git_add
 packages/stitcher-lang-python/src/stitcher/lang/python/analysis/visitors.py
+packages/stitcher-lang-python/tests/analysis/unit/cst/test_visitors.py
 ~~~~~
-~~~~~python.old
-        def process_target(target: cst.CSTNode):
-            if isinstance(target, cst.Name):
-                name = target.value
-                # Special handling for __all__
-                if name == "__all__" and not self._class_stack:
-                    self.dunder_all = value_code
-                else:
-                    self._add_attribute(
-                        Attribute(name=name, annotation=None, value=value_code, location=loc)
-                    )
-            elif isinstance(target, (cst.Tuple, cst.List)):
-                for element in target.elements:
-                    if isinstance(element, cst.Element):
-                        process_target(element.value)
-            elif isinstance(target, cst.StarredElement):
-                # Handle *y in [x, *y] = ...
-                process_target(target.value)
 
-        process_target(target_node)
+~~~~~act
+git_commit
 ~~~~~
-~~~~~python.new
-        def process_target(target: cst.CSTNode):
-            if isinstance(target, cst.Name):
-                name = target.value
-                # Special handling for __all__
-                if name == "__all__" and not self._class_stack:
-                    self.dunder_all = value_code
-                else:
-                    self._add_attribute(
-                        Attribute(name=name, annotation=None, value=value_code, location=loc)
-                    )
-            elif isinstance(target, (cst.Tuple, cst.List)):
-                for element in target.elements:
-                    # In LibCST, elements of Tuple/List are wrappers (Element or StarredElement).
-                    # Both have a .value attribute containing the actual expression.
-                    process_target(element.value)
-            elif isinstance(target, cst.StarredElement):
-                # This handles cases where StarredElement might be passed directly 
-                # (though usually it's handled by the parent container's loop).
-                process_target(target.value)
+~~~~~text
+feat(lang-python): enhance IR parser to support unpacking and starred assignments
 
-        process_target(target_node)
+This commit enhances the `IRBuildingVisitor` to recursively resolve assignment targets.
+Previously, only simple name assignments (e.g., `x = 1`) were captured. Now, the parser
+correctly identifies symbols in unpacking and starred assignments:
+
+- Supports tuple/list unpacking: `x, y = 1, 2`
+- Supports starred unpacking: `head, *tail = items`
+- Robustly handles nested classes by preventing symbol leakage to top-level IR
+
+Added unit tests in `test_visitors.py` to verify these capabilities.
 ~~~~~
 
 ### 下一步建议
 
-1.  **最终测试验证**: 再次执行 `pytest packages/stitcher-lang-python/tests/analysis/unit/cst/test_visitors.py`。现在所有 7 个测试（包括 `test_parse_starred_unpacking`）都应该通过。
-2.  **完成任务序列**: 由于本阶段（强化解析器能力）的目标已达成，且代码处于稳定状态，建议进行一次 Git Commit。
-3.  **后续扩展**: 考虑增加对 `Attribute` 赋值的支持（例如 `self.x = 1`），这需要 `UsageScanVisitor` 与 `IRBuildingVisitor` 的进一步协同。
+- **方法内属性捕捉**: 目前 `IRBuildingVisitor` 仅解析模块和类层级的赋值。下一步可以研究如何通过 `UsageScanVisitor` 识别 `self.attr = value` 并将其作为类属性（Class Attribute）加入 IR。
+- **性能评估**: 随着递归解析逻辑的加入，可以针对包含极大规模常量列表（解包赋值）的文件进行性能测试。
