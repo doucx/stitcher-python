@@ -4,10 +4,8 @@
 
 ### 📝 变更文件摘要:
 ```
-.../stitcher-application/src/stitcher/app/services/doc_manager.py     | 2 +-
- packages/stitcher-lang-python/src/stitcher/lang/python/uri.py         | 4 ++--
- packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py | 2 +-
- packages/stitcher-refactor/src/stitcher/refactor/sidecar/manager.py   | 2 +-
- pyproject.toml                                                        | 2 +-
- 5 files changed, 6 insertions(+), 6 deletions(-)
+.../stitcher-lang-python/src/stitcher/lang/python/uri.py     |  2 +-
+ .../src/stitcher/lang/sidecar/transform.py                   |  2 +-
+ .../src/stitcher/refactor/engine/planner.py                  | 12 ++++++------
+ 3 files changed, 8 insertions(+), 8 deletions(-)
 ```

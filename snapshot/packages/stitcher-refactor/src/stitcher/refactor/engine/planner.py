@@ -3,12 +3,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import List, Dict, DefaultDict, TYPE_CHECKING
 import json
-
-if TYPE_CHECKING:
-    from stitcher.refactor.migration import MigrationSpec
-from stitcher.refactor.engine.context import RefactorContext
-
-log = logging.getLogger(__name__)
 from stitcher.common.transaction import (
     FileOp,
     MoveFileOp,
@@ -32,6 +26,12 @@ from stitcher.lang.sidecar import (
     SidecarAdapter,
 )
 from .utils import path_to_fqn
+
+if TYPE_CHECKING:
+    from stitcher.refactor.migration import MigrationSpec
+from stitcher.refactor.engine.context import RefactorContext
+
+log = logging.getLogger(__name__)
 
 
 class Planner:

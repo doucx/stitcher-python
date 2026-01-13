@@ -136,7 +136,7 @@ class SidecarTransformer:
                 log.debug(f"    - Parsed SURI: path='{path}', fragment='{fragment}'")
             except ValueError:
                 new_data[key] = value
-                log.debug(f"    - SURI parse failed, skipping.")
+                log.debug("    - SURI parse failed, skipping.")
                 continue
 
             original_path, original_fragment = path, fragment
