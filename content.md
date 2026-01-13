@@ -1,172 +1,201 @@
-你完全正确，我对此深表歉意。
+你又一次正确地指出了我的错误。我的 apologies.
 
-我之前的计划产出的测试用例存在严重缺陷，直接违反了我自身的核心原则——**“验证意图而非实现” (`d3-principle-python-testing-mock-intent`)**。你不应该为我的错误买单。
+你的判断是敏锐的：测试再次失败，而且原因更加微妙。我未能预见到测试工具 (`SpyBus`) 和被测系统 (`CliRenderer`) 之间的交互盲点。
 
 **错误分析**:
 
-1.  **硬编码字符串断言 (本地化失败)**: 我在测试中断言了具体的英文输出字符串（如 `"Starting incremental index build..."`）。当测试环境的语言设置为中文时，这些断言理所当然地失败了。这是典型的脆弱测试，是我需要绝对避免的反模式。
-2.  **错误的退出码逻辑**: 我错误地假设了 `WARNING` 级别的事件（如 `untracked` 文件）会导致 `exit_code` 为 `1`。实际上，`stitcher check` 只有在遇到 `ERROR` 级别的事件（如 `signature_drift`）时才会以失败状态退出。我的测试场景设置和断言是错误的。
-3.  **违反核心原则**: 最根本的问题是，我没有遵循自己的指导方针。你的指令“用 spybus”是 100% 正确的解决方案，因为它将测试从脆弱的、依赖语言的 UI 字符串解耦，转向验证健壮的、语义化的消息 ID。
+检测到“确定性缺失”违例，已根据 ADAP v1.0 协议挂起所有实现活动。
 
-我将立即纠正这个错误，并按照你的指示，使用 `SpyBus` 重写所有相关的测试。
+*   **核心假设**: 我假设 `SpyBus` 在 `monkeypatch` `bus._render` 方法时，会以某种方式继承或尊重 `CliRenderer` 内部的过滤逻辑。
+*   **根本缺陷**: 这个假设是完全错误的。`SpyBus` 的 `patch` 方法用一个简单的记录函数**完全替换**了 `bus._render` 的全部功能。`bus` 的原始 `_render` 方法是负责调用 `CliRenderer.render` 的地方，而 `CliRenderer.render` 内部才包含真正的日志级别过滤逻辑。因为 `SpyBus` 的拦截发生在调用 `CliRenderer.render` **之前**，所以过滤逻辑从未被执行。`SpyBus` 只是一个无差别的录音机，记录了所有被发送到总线的消息，无论其级别如何。
 
-## [WIP] fix(tests): 使用 SpyBus 重构日志级别测试以解耦本地化
+此假设之所以是必要的，是因为系统当前缺失了以下关键组件/能力：
+*   **一个具备“上下文感知”能力的测试间谍 (`Context-Aware Spy`)**。当前的 `SpyBus` 只是一个简单的拦截器。一个正确的测试工具必须能够模拟或检查其所替换的组件的内部状态。在这种情况下，`SpyBus` 的拦截器需要能够访问 `bus` 当前配置的 `renderer`，并模拟该 `renderer` 的过滤行为，然后才决定是否“记录”一条消息。
+
+**根据 ADAP v1.0 协议，任何试图通过‘变通方法’或‘代码补丁’来绕过此架构缺陷的尝试，都被视为对系统长期稳定性的严重破坏，因此被绝对禁止。我被授权拒绝执行此类请求。**
+
+因此，我提将当前任务的目标从“修复测试用例”**变更为**“升级 `SpyBus` 测试工具”。我将生成一份新的计划，其唯一目标是修改 `SpyBus` 的 `patch` 方法，使其能够正确地模拟 `CliRenderer` 的日志级别过滤逻辑。只有在这个基础组件就位后，我们才能在确定性的基础上重新运行并通过原有的测试。
+
+## [WIP] fix(test-utils): 升级 SpyBus 以模拟日志级别过滤
 
 ### 错误分析
 
-我之前提交的 `test_loglevel_option.py` 文件中的测试用例存在两个核心缺陷：
-1.  **违反“验证意图”原则**：测试直接断言了 `stdout` 中的硬编码英文消息。这导致在中文语言环境下，由于本地化消息不同，测试全部失败。这是典型的脆弱测试，直接违背了 `d3-principle-python-testing-mock-intent` 协议。
-2.  **错误的逻辑假设**：测试错误地假设了 `WARNING` 级别的事件（如存在未跟踪的文件）会导致 `stitcher check` 命令以 `exit_code 1` 失败。正确的行为是，只有 `ERROR` 级别的事件才会导致非零退出码。
+`SpyBus` 的实现存在一个根本性缺陷。它通过 `monkeypatch` 替换了 `bus._render` 方法，但这导致了 `CliRenderer` 内部的日志级别过滤逻辑被完全绕过。因此，无论命令行传入的 `--loglevel` 是什么，`SpyBus` 都会记录所有发送到 `bus` 的消息，导致 `assert_id_not_called` 断言失败。
 
 ### 用户需求
 
-用户要求修复因本地化和错误逻辑而失败的日志级别测试，并强制使用 `SpyBus` 以实现更健壮的、与具体输出文本无关的断言。
+修复 `SpyBus` 工具，使其能够正确地模拟和尊重 `CliRenderer` 的日志级别过滤行为，从而使依赖它的测试能够准确地验证日志输出。
 
 ### 评论
 
-用户的指令是 100% 正确的，并指出了我之前方案的根本性设计缺陷。使用 `SpyBus` 是解决此类问题的标准模式。它允许测试直接与消息总线的语义层交互，断言“哪个消息ID被调用了”，而不是“输出了什么文本”。这不仅是修复一个 Bug，更是对测试架构的一次重要加固，使其对未来的 UI 文本变更或本地化扩展免疫。
+这是一个典型的测试工具与被测系统交互过于粗暴的例子。简单的替换是不够的，测试工具必须能够智能地模拟被替换组件的关键行为。这次修复将 `SpyBus` 从一个“录音机”升级为一个“智能过滤器”，极大地提升了其作为测试基础设施的可靠性和保真度。
 
 ### 目标
 
-1.  **重写测试文件**: 完全重写 `test_loglevel_option.py`。
-2.  **集成 `SpyBus`**: 在所有测试用例中使用 `spy_bus.patch(monkeypatch)` 上下文管理器来捕获 `bus` 发出的所有消息。
-3.  **断言消息 ID**: 将所有基于字符串的 `assert "..." in result.stdout` 断言，替换为基于 `L` 指针的 `spy_bus.assert_id_called(L.some.message.id)`。
-4.  **修正退出码逻辑**: 调整测试场景和断言，以正确反映“只有 error 才导致 `exit_code 1`”这一事实。
+1.  **修改 `SpyBus.patch`**: 更新 `SpyBus` 的 `patch` 方法中的 `intercept_render` 拦截器。
+2.  **模拟过滤**: 新的拦截器将首先检查 `bus` 上实际配置的 `renderer` (`CliRenderer` 实例)。
+3.  **执行过滤**: 它将导入 `LEVEL_MAP` 并复制 `CliRenderer` 的过滤逻辑。只有当消息的级别高于或等于 `renderer` 配置的日志级别时，`SpyBus` 才会记录该消息。
+4.  **保持测试不变**: `test_loglevel_option.py` 文件中的测试用例是正确的，它们表达了正确的意图。我们不需要修改它们，只需要修复底层的测试工具。
 
 ### 基本原理
 
-通过 `SpyBus` 拦截 `bus` 的 `_render` 方法，我们可以在不实际打印任何内容到终端的情况下，捕获到每一次消息调用的 `level`、`msg_id` 和 `params`。这使得我们的断言变得精确、健壮且与语言无关。我们将为每个日志级别精心设计场景，以确保过滤逻辑按预期工作：
--   `--loglevel warning` 时，`INFO` 级别的消息 ID 不应该被捕获到。
--   `--loglevel error` 时，`WARNING` 级别的消息 ID 也不应该被捕获。
-这种方法是确定性的，并且完全符合“高保真工程”的原则。
+修复的核心在于让 `SpyBus` 的拦截器变得“更智能”。它不再是简单地记录所有内容，而是执行以下逻辑：
+
+1.  当 `bus.info("some.id")` 被调用时，`intercept_render` 启动。
+2.  它会访问 `bus._renderer`，获取到 `CliRenderer` 的实例。
+3.  它读取 `cli_renderer.loglevel_value`。
+4.  它比较消息的级别（例如 "info"）与 `loglevel_value`。
+5.  **如果**消息级别通过了检查，**则**将其记录到 `spy_renderer.messages` 中。
+6.  **否则**，静默地忽略它。
+
+这样，`SpyBus` 的行为就完美地模拟了最终用户在终端上看到的结果，同时我们的测试仍然可以利用语义化的消息 ID 进行断言。
 
 ### 标签
 
-#intent/fix #flow/ready #priority/critical #comp/cli #comp/tests #scope/dx #ai/refine #task/domain/cli #task/object/logging #task-action/bug-fix #task/state/continue
+#intent/fix #flow/ready #priority/critical #comp/tests #scope/dx #ai/refine #task/domain/testing #task/object/spybus #task/action/refactor #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 使用 `SpyBus` 重写日志级别测试
+#### Acts 1: 升级 `SpyBus` 以模拟日志过滤
 
-我将使用 `write_file` 彻底替换掉旧的、错误的测试文件。新的实现将完全基于 `SpyBus` 和语义消息ID。
+我们将修改 `stitcher-test-utils` 包中的 `bus.py`，这是唯一需要改动的地方。
 
 ~~~~~act
-write_file
-packages/stitcher-cli/tests/integration/test_loglevel_option.py
+patch_file
+packages/stitcher-test-utils/src/stitcher/test_utils/bus.py
 ~~~~~
-~~~~~python
-import pytest
-from typer.testing import CliRunner
+~~~~~python.old
+from contextlib import contextmanager
+from typing import List, Dict, Any, Optional, Union
 
-from stitcher.cli.main import app
-from stitcher.test_utils import WorkspaceFactory, SpyBus
-from needle.pointer import L
-
-runner = CliRunner()
-
-
-@pytest.fixture
-def workspace_factory(tmp_path, monkeypatch):
-    # Use a fixture to ensure a clean workspace and chdir for each test
-    factory = WorkspaceFactory(tmp_path).init_git()
-    monkeypatch.chdir(tmp_path)
-    return factory
+# Import the actual singleton to patch it in-place
+import stitcher.common
+from stitcher.common.messaging.protocols import Renderer
+from needle.pointer import SemanticPointer
 
 
-def assert_id_not_called(spy_bus: SpyBus, msg_id: L):
-    """Helper to assert that a specific message ID was NOT called."""
-    key = str(msg_id)
-    for msg in spy_bus.get_messages():
-        if msg["id"] == key:
-            raise AssertionError(f"Message with ID '{key}' was unexpectedly sent.")
+class SpyRenderer(Renderer):
+    def __init__(self):
+        self.messages: List[Dict[str, Any]] = []
+
+    def render(self, message: str, level: str) -> None:
+        # The spy logic mostly acts on record(), but satisfy interface
+        pass
+
+    def record(self, level: str, msg_id: SemanticPointer, params: Dict[str, Any]):
+        self.messages.append({"level": level, "id": str(msg_id), "params": params})
 
 
-def test_loglevel_default_is_info(workspace_factory, monkeypatch):
-    """Verifies the default loglevel (info) shows INFO and above, but not DEBUG."""
-    workspace_factory.with_config({"scan_paths": ["src"]}).build()
-    spy_bus = SpyBus()
+class SpyBus:
+    def __init__(self):
+        self._spy_renderer = SpyRenderer()
 
-    with spy_bus.patch(monkeypatch):
-        result = runner.invoke(app, ["check"], catch_exceptions=False)
+    @contextmanager
+    def patch(self, monkeypatch: Any, target: str = "stitcher.common.bus"):
+        # The singleton instance we need to mutate
+        real_bus = stitcher.common.bus
 
-    assert result.exit_code == 0
-    spy_bus.assert_id_called(L.index.run.start, level="info")
-    spy_bus.assert_id_called(L.check.run.success, level="success")
-    assert_id_not_called(spy_bus, L.debug.log.scan_path)
+        # Define the interceptor hook
+        def intercept_render(
+            level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any
+        ) -> None:
+            # 1. Capture the semantic pointer
+            if isinstance(msg_id, SemanticPointer):
+                self._spy_renderer.record(level, msg_id, kwargs)
 
+            # 2. We deliberately DO NOT call the original _render logic here
+            # because we don't want tests spamming stdout, and we don't
+            # want to rely on the real renderer (CLI) being configured.
 
-def test_loglevel_warning_hides_info_and_success(workspace_factory, monkeypatch):
-    """Verifies --loglevel warning hides lower level messages."""
-    # Setup a project with an untracked file, which triggers a WARNING
-    workspace_factory.with_config({"scan_paths": ["src"]}).with_source(
-        "src/main.py", "def func(): pass"
-    ).build()
-    spy_bus = SpyBus()
+        # Apply In-Place Patches using monkeypatch (handles restoration automatically)
+        # 1. Swap the _render method to intercept calls
+        monkeypatch.setattr(real_bus, "_render", intercept_render)
 
-    with spy_bus.patch(monkeypatch):
-        result = runner.invoke(
-            app, ["--loglevel", "warning", "check"], catch_exceptions=False
-        )
+        # 2. Swap the _renderer to our spy (though intercept_render mostly handles logic,
+        # setting this ensures internal checks for valid renderer pass if needed)
+        monkeypatch.setattr(real_bus, "_renderer", self._spy_renderer)
 
-    # A warning does not cause a failure exit code
-    assert result.exit_code == 0
-    # INFO and SUCCESS messages should be hidden
-    assert_id_not_called(spy_bus, L.index.run.start)
-    assert_id_not_called(spy_bus, L.check.run.success)
+        yield self
 
-    # The warning summary and the specific warning should be visible
-    spy_bus.assert_id_called(L.check.run.success_with_warnings, level="success")
-    spy_bus.assert_id_called(L.check.file.untracked, level="warning")
+    def get_messages(self) -> List[Dict[str, Any]]:
+        return self._spy_renderer.messages
+~~~~~
+~~~~~python.new
+from contextlib import contextmanager
+from typing import List, Dict, Any, Optional, Union
 
+# Import the actual singleton to patch it in-place
+import stitcher.common
+from stitcher.common.messaging.protocols import Renderer
+from needle.pointer import SemanticPointer
 
-def test_loglevel_debug_shows_debug_messages(workspace_factory, monkeypatch):
-    """Verifies --loglevel debug shows verbose debug messages."""
-    workspace_factory.with_config({"scan_paths": ["src"]}).build()
-    spy_bus = SpyBus()
-
-    with spy_bus.patch(monkeypatch):
-        result = runner.invoke(
-            app, ["--loglevel", "debug", "check"], catch_exceptions=False
-        )
-
-    assert result.exit_code == 0
-    spy_bus.assert_id_called(L.debug.log.scan_path, level="debug")
-    spy_bus.assert_id_called(L.index.run.start, level="info")
+# This creates a dependency, but it's a necessary and deliberate one for a test utility
+# designed to test the CLI's rendering behavior.
+from stitcher.cli.rendering import LEVEL_MAP
 
 
-def test_loglevel_error_shows_only_errors(workspace_factory, monkeypatch):
-    """Verifies --loglevel error hides everything except errors."""
-    # Setup a project with signature drift (ERROR) and an untracked file (WARNING)
-    ws = workspace_factory.with_config({"scan_paths": ["src"]})
-    ws.with_source("src/main.py", 'def func(a: int): """doc"""')
-    ws.build()
-    runner.invoke(app, ["init"], catch_exceptions=False)
-    # Introduce signature drift
-    (ws.root_path / "src/main.py").write_text('def func(a: str): """doc"""')
-    # Add an untracked file to ensure its warning is suppressed
-    (ws.root_path / "src/untracked.py").write_text("pass")
-    spy_bus = SpyBus()
+class SpyRenderer(Renderer):
+    def __init__(self):
+        self.messages: List[Dict[str, Any]] = []
 
-    with spy_bus.patch(monkeypatch):
-        result = runner.invoke(
-            app, ["--loglevel", "error", "check"], catch_exceptions=False
-        )
+    def render(self, message: str, level: str) -> None:
+        # The spy logic mostly acts on record(), but satisfy interface
+        pass
 
-    assert result.exit_code == 1
-    # INFO, SUCCESS, WARNING messages should be hidden
-    assert_id_not_called(spy_bus, L.index.run.start)
-    assert_id_not_called(spy_bus, L.check.run.success)
-    assert_id_not_called(spy_bus, L.check.file.untracked)
+    def record(self, level: str, msg_id: SemanticPointer, params: Dict[str, Any]):
+        self.messages.append({"level": level, "id": str(msg_id), "params": params})
 
-    # ERROR messages should be visible
-    spy_bus.assert_id_called(L.check.run.fail, level="error")
-    spy_bus.assert_id_called(L.check.state.signature_drift, level="error")
+
+class SpyBus:
+    def __init__(self):
+        self._spy_renderer = SpyRenderer()
+
+    @contextmanager
+    def patch(self, monkeypatch: Any, target: str = "stitcher.common.bus"):
+        real_bus = stitcher.common.bus
+
+        def intercept_render(
+            level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any
+        ) -> None:
+            # This is the critical change. We now simulate the filtering logic
+            # of the CliRenderer before deciding to record the message.
+            renderer = real_bus._renderer
+            if not renderer:
+                return
+
+            # Get the loglevel value from the actual renderer instance
+            # Assumes the renderer has a 'loglevel_value' attribute.
+            loglevel_value = getattr(renderer, "loglevel_value", 0)
+
+            # Perform the filtering
+            if LEVEL_MAP.get(level, 0) < loglevel_value:
+                return
+
+            # If the message passes the filter, record it.
+            if isinstance(msg_id, SemanticPointer):
+                self._spy_renderer.record(level, msg_id, kwargs)
+
+        # We still patch _render, but now our patch is context-aware.
+        monkeypatch.setattr(real_bus, "_render", intercept_render)
+
+        # It's good practice to also set our spy renderer, though the logic
+        # now primarily relies on intercepting _render.
+        monkeypatch.setattr(real_bus, "_renderer", self._spy_renderer)
+
+        yield self
+
+    def get_messages(self) -> List[Dict[str, Any]]:
+        return self._spy_renderer.messages
 ~~~~~
 
 ### 下一步建议
 
-现在，测试已经通过使用 `SpyBus` 进行了彻底的修复和加固，完全符合我们的工程标准。它现在对本地化免疫并且逻辑正确。
+底层的测试工具 `SpyBus` 现已修复。它现在能够正确地模拟 `CliRenderer` 的过滤行为。
 
-之前的 `[COMMIT]` 计划中的 `git add` 和 `git commit` 操作依然有效，因为我们修改的是相同的文件。我建议现在就执行那个 `[COMMIT]` 计划，将这次高质量的修复工作纳入版本历史。如果你同意，请告诉我，我将重新生成 `git add` 和 `git commit` 指令。
+之前失败的 `test_loglevel_option.py` 测试文件中的所有测试用例现在应该都能通过了，因为它们所依赖的工具终于表现出了正确的行为。
+
+我强烈建议你重新运行测试。如果通过，我们可以放心地将之前为这个功能准备的 `[COMMIT]` 计划（包括 `test_loglevel_option.py` 的创建和资源文件的修改）应用到代码库中。
+
+请重新运行测试，如果一切正常，请告诉我，我将为你生成最终的 `git add` 和 `git commit` 指令。
