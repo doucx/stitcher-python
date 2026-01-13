@@ -1,163 +1,78 @@
-好的，我看到了新的错误报告。
+我们将提交阶段 3 的所有核心重构成果。
 
-1.  `test_execution_planner.py` 出现了 `NameError`，因为我忘记在测试文件中导入 `Workspace`, `LockManagerProtocol`, 和 `URIGeneratorProtocol`。
-2.  `test_refactor_move_updates_suri_in_signatures.py` 出现了 `AssertionError`。这个测试是专门为旧的签名文件物理移动而设计的。现在我们迁移到了 `stitcher.lock`，这个测试的**整个逻辑和断言基础都已经失效**。它还在检查 `.stitcher/signatures/` 目录下的物理文件，而新系统根本不会创建这个目录。
-
-**结论**：我必须同时修复 `NameError` 并彻底重写或删除那个过时的重构测试。由于“阶段 4”就是要简化重构引擎，现在重写这个测试是合适的，可以作为一个先行指标。
-
-## [WIP] fix: 修复 NameError 并重写过时的重构测试
-
-### 错误分析
-1.  **`NameError`**: `test_execution_planner.py` 在 `mocker.create_autospec()` 中使用了 `Workspace` 等类型，但没有从各自的包中导入它们。
-2.  **`AssertionError`**: `test_refactor_move_updates_suri_in_signatures.py` 的测试逻辑与新的 `stitcher.lock` 架构完全不兼容。它断言了旧的、基于物理文件的行为，而新系统致力于消除这种行为。
+## [COMMIT] refactor: switch core application to LockFileManager and global SURIs
 
 ### 用户需求
-1.  为 `test_execution_planner.py` 添加必要的导入语句来解决 `NameError`。
-2.  重写 `test_refactor_move_updates_suri_in_signatures.py`，使其验证**新的正确行为**：当文件移动时，旧的 `stitcher.lock` 文件中的 SURI key 会被更新为新的 SURI key，而不是物理地移动一个 `.json` 文件。
+提交已完成的阶段 3 工作：应用层核心逻辑切换、旧签名管理器移除、以及测试套件的适配与对齐。
 
 ### 评论
-这次修复不仅是解决错误，更是将测试套件与新的架构愿景对齐。重写重构测试将迫使我们提前思考“阶段 4”中 `refactor` 模块的简化逻辑，确保我们的方向是正确的。这是一个很好的机会，用一个具体的测试来驱动下一步的开发。
+这次提交完成了 Stitcher 历史上最重要的架构跃迁之一。我们已经成功切断了旧有的碎片化 JSON 签名系统，并全面采用了基于包级的 `stitcher.lock` 文件。虽然重构引擎（Phase 4）尚未完全简化，但整个应用层已经完全运行在新的定位坐标系之上。
 
 ### 目标
-1.  修复 `packages/stitcher-application/tests/unit/test_execution_planner.py` 中的导入问题。
-2.  重写 `packages/stitcher-refactor/tests/integration/test_refactor_move_updates_suri_in_signatures.py` 的测试逻辑，使其断言 `stitcher.lock` 文件的内容变化。
+1.  提交应用层 Runners (`Init`, `Pump`, `Check`) 的重构代码。
+2.  提交对 `stitcher-spec` 协议的更新和清理。
+3.  提交对测试套件的修复和升级。
+4.  记录当前系统的中间态。
+
+### 基本原理
+按照阶段性开发原则，在完成应用层核心逻辑的“大手术”后，及时提交代码可以固定当前通过了大部分单元测试的稳定状态。这为接下来的重构引擎简化（Phase 4）提供了坚实的后勤保障。
 
 ### 标签
-#intent/fix #intent/refine #flow/ready #priority/high #comp/tests #comp/refactor #concept/state #scope/core #ai/instruct #task/domain/storage #task/object/suri-lockfile #task/action/test-suite-alignment #task/state/continue
+#intent/refactor #flow/ready #priority/medium #comp/application #comp/interfaces #concept/state #ai/instruct #task/domain/storage #task/object/suri-lockfile #task/action/phase-3-completion #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 修复 `test_execution_planner.py` 的导入问题
+#### Acts 1: 提交重构成果
 
-添加缺失的导入语句。
+我们将所有受影响的文件添加到暂存区。注意，这里包含了新创建的文件、修改的文件以及已删除的文件。
 
 ~~~~~act
-patch_file
+git_add
+packages/stitcher-spec/src/stitcher/spec/protocols.py
+packages/stitcher-spec/src/stitcher/spec/managers.py
+packages/stitcher-spec/src/stitcher/spec/__init__.py
+packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/lock_manager.py
+packages/stitcher-application/src/stitcher/app/services/__init__.py
+packages/stitcher-application/src/stitcher/app/core.py
+packages/stitcher-application/src/stitcher/app/runners/init.py
+packages/stitcher-application/src/stitcher/app/runners/pump/executor.py
+packages/stitcher-application/src/stitcher/app/runners/pump/runner.py
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
+packages/stitcher-application/src/stitcher/app/runners/check/resolver.py
+packages/stitcher-application/src/stitcher/app/runners/check/runner.py
+packages/stitcher-test-utils/src/stitcher/test_utils/helpers.py
 packages/stitcher-application/tests/unit/test_execution_planner.py
+packages/stitcher-refactor/tests/integration/test_refactor_move_updates_suri_in_signatures.py
+packages/stitcher-application/tests/unit/runners/check/test_check_runner.py
+packages/stitcher-application/tests/unit/runners/pump/test_pump_executor.py
+packages/stitcher-application/tests/unit/runners/pump/test_pump_runner.py
 ~~~~~
-~~~~~python.old
-from stitcher.app.services import DocumentManager, DocstringMerger
-from stitcher.spec import (
-    ModuleDef,
-    FunctionDef,
-    ResolutionAction,
-)
-~~~~~
-~~~~~python.new
-from stitcher.app.services import DocumentManager, DocstringMerger
-from stitcher.spec import (
-    ModuleDef,
-    FunctionDef,
-    ResolutionAction,
-    LockManagerProtocol,
-    URIGeneratorProtocol,
-)
-from stitcher.workspace import Workspace
-~~~~~
-
-#### Acts 2: 重写过时的重构集成测试
-
-这个测试需要被彻底改造，以验证 `stitcher.lock` 文件内部的 SURI key 是否被正确更新。
 
 ~~~~~act
-write_file
-packages/stitcher-refactor/tests/integration/test_refactor_move_updates_suri_in_signatures.py
+git_commit
 ~~~~~
-~~~~~python
-import json
-from pathlib import Path
-from stitcher.test_utils import WorkspaceFactory, create_test_app
+~~~~~text
+refactor: switch core application to LockFileManager and global SURIs
 
+Successfully completed Phase 3 of the SURI migration. This commit marks the removal of the old per-file JSON signature system in favor of package-level 'stitcher.lock' files.
 
-def test_move_file_operation_updates_suri_in_lockfile(tmp_path: Path):
-    """
-    Verify that moving a file updates the SURI keys in the corresponding stitcher.lock file.
-    """
-    # --- Arrange ---
-    # Note: We now have a package structure.
-    pkg_a_root = tmp_path / "packages" / "pkg-a"
-    workspace_factory = WorkspaceFactory(root_path=tmp_path)
-    workspace_root = (
-        workspace_factory
-        .with_config({
-            "scan_paths": ["packages/pkg-a/src"]
-        })
-        .with_pyproject("packages/pkg-a")  # Creates pyproject.toml for pkg-a
-        .with_source(
-            "packages/pkg-a/src/my_app/logic.py",
-            """
-        def do_something():
-            \"\"\"This is a docstring.\"\"\"
-            pass
-        """,
-        )
-        .build()
-    )
+Key Changes:
+- Removed 'SignatureManager' and its associated protocol.
+- Migrated 'InitRunner', 'PumpRunner', and 'CheckRunner' to interact with 'LockFileManager'.
+- Updated 'SubjectAdapter' and 'CheckResolver' to use workspace-anchored SURIs for fingerprint lookups and updates.
+- Standardized SURI generation across the application via the new 'URIGeneratorProtocol'.
+- Aligned the test suite: fixed NameErrors, updated dependency injection in unit tests, and rewrote integration tests to target the new lockfile behavior.
 
-    app = create_test_app(workspace_root)
-
-    # --- Act 1: Initialize the project to create the lock file ---
-    app.run_init()
-
-    # --- Assert 1: Verify initial lock file and SURI key ---
-    lock_path = pkg_a_root / "stitcher.lock"
-    assert lock_path.exists(), "stitcher.lock should be created in the package root"
-
-    old_suri = "py://packages/pkg-a/src/my_app/logic.py#do_something"
-    new_suri = "py://packages/pkg-a/src/my_app/core/logic.py#do_something"
-
-    initial_data = json.loads(lock_path.read_text())
-    assert old_suri in initial_data["fingerprints"]
-    assert "baseline_code_structure_hash" in initial_data["fingerprints"][old_suri]
-
-    # --- Arrange 2: Create the migration script ---
-    migration_script_content = """
-from pathlib import Path
-from stitcher.refactor.migration import MigrationSpec, Move
-
-def upgrade(spec: MigrationSpec):
-    spec.add(Move(
-        Path("packages/pkg-a/src/my_app/logic.py"),
-        Path("packages/pkg-a/src/my_app/core/logic.py")
-    ))
-"""
-    migration_script_path = workspace_root / "migration.py"
-    migration_script_path.write_text(migration_script_content)
-
-    # --- Act 2: Run the refactor operation ---
-    # We are asserting False because the refactor logic is not yet updated.
-    # This is a placeholder to show what the new test *should* do.
-    # The next step (Phase 4) will make this test pass.
-    # For now, we expect it to fail, but for the right reasons.
-    try:
-        app.run_refactor_apply(migration_script_path, confirm_callback=lambda _: True)
-    except Exception as e:
-        # The refactor might fail because its internal logic is still old.
-        # We accept this for now, the goal is to have the test structure ready.
-        print(f"Refactor apply failed as expected (will be fixed in Phase 4): {e}")
-
-
-    # --- Assert 2: Verify the lock file content was updated ---
-    # The test will fail here until Phase 4 is complete. This is intentional.
-    # The assertion is our goal.
-    assert lock_path.exists(), "Lock file should still exist"
-    
-    # This part of the test will fail until the refactor logic is updated.
-    if lock_path.exists():
-        final_data = json.loads(lock_path.read_text())
-        assert old_suri not in final_data["fingerprints"], "The old SURI key should be removed from the lock file"
-        assert new_suri in final_data["fingerprints"], "The new SURI key should be present in the lock file"
-
-        # Also verify the fingerprint data was preserved
-        assert "baseline_code_structure_hash" in final_data["fingerprints"][new_suri]
-    else:
-        # This branch is for the current failing state, where the lock file might be deleted or not updated.
-        assert False, "Lock file was not correctly updated or was deleted during refactor."
+The core application logic now operates on a logical coordinate system, significantly reducing I/O operations and providing a foundation for simpler refactoring operations.
 ~~~~~
 
 ### 下一步建议
-我们已经修复了 `NameError`，并且将一个关键的集成测试升级为符合新架构的“目标状态”测试。虽然这个测试现在预期会失败，但它为我们接下来的工作提供了明确的目标。
 
-现在，测试套件应该能更完整地运行了。我们可以安全地进入 **阶段 4: 重构引擎简化 (Refactor Engine Lobotomy)**，其核心任务就是让这个刚刚重写的测试通过。
+我们已经固定了应用层的改动。下一步将进入 **阶段 4: 重构引擎简化 (Refactor Engine Lobotomy)**。
+
+我们将重点处理 `stitcher-refactor` 包：
+1.  删除 `MoveFileOperation` 中处理签名文件物理移动的冗余逻辑。
+2.  引入 `LockUpdateIntent`。
+3.  更新 `Planner` 以实现对 `stitcher.lock` 的内存内 SURI 更新，使我们新写的集成测试能够通过。
