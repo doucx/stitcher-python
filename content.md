@@ -1,74 +1,72 @@
-您完全正确。我的 apologies，我犯了一个典型的接口与实现不同步的错误。`pyright` 的静态分析错误和 `AttributeError` 测试失败指向了同一个根本原因：我将新方法添加到了具体的 `DocumentManager` *实现*中，却忘记了更新所有依赖方所遵循的 `DocumentManagerProtocol` *接口*。
+好的，所有的测试都已经顺利通过，这证明我们的重构不仅实现了预期的“高保真”目标，而且在逻辑上是严密且可靠的。
 
-这是一个严重的疏忽，感谢您的精确指正。我们必须首先修复这个契约，然后一切才能恢复正常。
+现在，我们将把这一系列极具价值的变更作为一个完整的逻辑单元提交到 Git 历史中。
 
-## [WIP] fix(spec): 更新 DocumentManagerProtocol 以包含高保真方法
-
-### 错误分析
-
-`pyright` 和 `mocker.create_autospec` 都以 `DocumentManagerProtocol` 作为其行为的“真理之源”。由于我未能在此协议中声明 `load_raw_data` 和 `dump_raw_data_to_string` 方法，导致静态类型检查器认为这些调用是非法的，而测试 mock 在创建时也未能包含这些属性，从而在运行时引发了 `AttributeError`。
+## [COMMIT] refactor: 实现高保真 Sidecar 更新逻辑并净化系统架构
 
 ### 用户需求
-
-更新位于 `stitcher-spec` 包中的 `DocumentManagerProtocol`，为其添加 `load_raw_data` 和 `dump_raw_data_to_string` 两个新方法，使其接口与 `DocumentManager` 的具体实现保持一致。
+在验证测试通过后，将本次关于“高保真原则”的所有架构修正、功能实现及测试增强正式提交。
 
 ### 评论
-
-这是一个关键的架构卫生修复。依赖于抽象（协议）而非具体实现是保持系统松耦合的核心原则。通过修复这个协议，我们不仅能解决当前的测试失败和类型错误，还能确保未来任何遵循此协议的组件都具备正确的接口契约。
+这是一次深度的、原则驱动的重构。我们不仅解决了具体的技术异味，更重要的是通过代码确立了“保真性高于一切”的工程准则。这为 Stitcher 成为一个尊重用户意图、专业且可靠的工具奠定了最坚实的基础。
 
 ### 目标
-
-1.  在 `packages/stitcher-spec/src/stitcher/spec/managers.py` 文件中，为 `DocumentManagerProtocol` 添加 `load_raw_data` 和 `dump_raw_data_to_string` 两个方法的定义。
+1.  将所有修改和新增的文件添加到 Git 暂存区。
+2.  创建一个内容详尽的提交，记录本次重构的核心变更和架构决策。
 
 ### 基本原理
-
-一旦协议被更新，`pyright` 将能够正确验证 `PumpExecutor` 中对这些方法的调用。同样，`mocker.create_autospec(DocumentManagerProtocol, ...)` 将会创建一个正确包含了这些新方法的 mock 对象，从而解决 `test_pump_executor.py` 中的 `AttributeError`。这将一次性解决所有已报告的错误。
+通过创建一个单一的、逻辑清晰的提交，我们为项目的演进留下了一份高质量的存证。这个提交记录了我们如何通过“意图感知”的 I/O 策略、接口契约的同步更新以及严格的集成测试，将模糊的架构共识转化为确定的代码实现。
 
 ### 标签
-
-#intent/fix #flow/ready #priority/critical #comp/spec #scope/api #ai/instruct #task/domain/architecture #task/object/fidelity-testing #task.action/bug-fix #task/state/end
+#intent/refine #flow/ready #priority/high #comp/core #scope/api #scope/dx #ai/instruct #task/domain/architecture #task/object/fidelity-refactor #task/action/integration #task/state/end
 
 ---
 
 ### Script
 
-#### Acts 1: 更新 DocumentManagerProtocol 接口
+#### Acts 1: 提交变更
 
-我将修改 `stitcher-spec` 中的协议文件，以包含新的高保真 I/O 方法。
+我将把所有相关的代码变更、协议更新和测试增强添加到暂存区，并创建一个详细的提交。
 
 ~~~~~act
-patch_file
+git_add
+packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/adapter.py
+packages/stitcher-lang-sidecar/tests/unit/test_sidecar_adapter.py
+packages/stitcher-application/src/stitcher/app/services/doc_manager.py
+packages/stitcher-application/src/stitcher/app/runners/pump/executor.py
+packages/stitcher-application/src/stitcher/app/core.py
+packages/stitcher-cli/tests/integration/test_fidelity_principles.py
+packages/stitcher-application/tests/unit/runners/pump/test_pump_executor.py
 packages/stitcher-spec/src/stitcher/spec/managers.py
+packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+packages/stitcher-application/tests/unit/test_doc_overlay.py
+packages/stitcher-common/src/stitcher/common/__init__.py
 ~~~~~
-~~~~~python.old
-    def compute_ir_hash(self, ir: DocstringIR) -> str: ...
 
-    def dump_data(self, data: Dict[str, Any]) -> str: ...
-
-
-class SignatureManagerProtocol(Protocol):
-    def load_composite_hashes(self, file_path: str) -> Dict[str, Fingerprint]: ...
+~~~~~act
+git_commit
 ~~~~~
-~~~~~python.new
-    def compute_ir_hash(self, ir: DocstringIR) -> str: ...
+~~~~~text
+refactor: implement high-fidelity sidecar updates and architectural cleanup
 
-    def dump_data(self, data: Dict[str, Any]) -> str: ...
+This commit enforces the "Fidelity is Paramount" and "Separation of Concerns" principles across the core engine and CLI.
 
-    def load_raw_data(self, file_path: str) -> Dict[str, Any]: ...
+Key Changes:
+- SidecarAdapter: Re-implemented 'save_doc_irs' with intentional branching. It now distinguishes between 'CREATE' (standardized formatting) and 'UPDATE' (high-fidelity round-trip using ruamel.yaml) to preserve user comments, formatting, and key order.
+- DocumentManager & Spec: Updated 'DocumentManagerProtocol' and its implementation to expose high-fidelity raw I/O methods.
+- PumpExecutor: Refactored to use the new high-fidelity update path, ensuring 'stitcher pump' never corrupts manual documentation adjustments.
+- Check Command: Removed implicit and destructive 'reformat_all' side-effects, ensuring 'check' remains a read-only validation tool.
+- Architecture Cleanup: Physically removed the legacy 'YamlAdapter' from stitcher-common and 'updater.py' from stitcher-refactor, centralizing sidecar I/O in stitcher-lang-sidecar.
+- Testing: Introduced 'test_fidelity_principles.py' to strictly verify that updates preserve comments/order and that 'check' has no formatting side-effects.
 
-    def dump_raw_data_to_string(self, data: Dict[str, Any]) -> str: ...
-
-
-class SignatureManagerProtocol(Protocol):
-    def load_composite_hashes(self, file_path: str) -> Dict[str, Fingerprint]: ...
+This refactor ensures that Stitcher respects the human element of documentation while maintaining structural integrity.
 ~~~~~
 
 ### 下一步建议
 
-这个修复直接命中了问题的根源。现在，协议、实现和消费者三者之间已经完全对齐。所有的测试，包括之前失败的 `PumpExecutor` 单元测试，现在都应该能够顺利通过。
+重构工作已圆满完成！为了保持这一势头，我建议您接下来的行动是：
 
-我强烈建议您立即运行完整的测试套件。
+1.  **记录未来任务**：在您的问题跟踪系统中正式创建 **“实现 `stitcher format` 命令”** 的任务。这将为需要确定性格式化（如 pre-commit 钩子）的用户提供一个显式的、可控的选择，同时不违背我们的高保真原则。
+2.  **架构审查**：您可以审查一下 `stitcher-stubgen` 中是否存在类似的隐式格式化行为，确保“保真性”原则在整个项目中得到统一贯彻。
 
-一旦测试全部通过，我们就可以满怀信心地宣布，本次针对“高保真原则”的深度重构任务已圆满成功。我们不仅解决了最初的问题，还加固了整个系统的架构，并通过了严格的测试验证。
-
-最后的待办事项仍然是为您记录 **“实现 `stitcher format` 命令”** 的未来任务。
+感谢您的信任与高效协作，我们共同构建了一个更加稳健的系统！
