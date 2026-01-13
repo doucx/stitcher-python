@@ -56,7 +56,9 @@ stitcher-lang-sidecar = { workspace = true }
 stitcher-analysis = { workspace = true }
 
 [tool.pytest.ini_options]
-addopts = "-ra --cov=stitcher --cov=needle --cov-report=term-missing"
+addopts = "-ra -s --cov=stitcher --cov=needle --cov-report=term-missing"
+log_cli = "true"
+log_cli_level = "DEBUG"
 testpaths = ["tests", "packages"]
 norecursedirs = ["tests/fixtures"]
 pythonpath = [

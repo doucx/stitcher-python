@@ -1,8 +1,11 @@
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from stitcher.lang.python.uri import SURIGenerator
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -97,8 +100,13 @@ class SidecarTransformer:
         old_fragment: Optional[str],
         new_fragment: Optional[str],
     ) -> Dict[str, Any]:
+        log.debug(
+            f"--- _transform_json_data (file context: {old_file_path or 'N/A'}) ---\n"
+            f"  Context: old_frag={old_fragment}, new_frag={new_fragment}, old_path={old_file_path}, new_path={new_file_path}"
+        )
         # Handle stitcher.lock format (nested fingerprints)
         if "fingerprints" in data and isinstance(data["fingerprints"], dict):
+            log.debug("Found 'fingerprints' key, recursing.")
             new_fingerprints = self._transform_json_data(
                 data["fingerprints"],
                 old_file_path,
@@ -116,15 +124,19 @@ class SidecarTransformer:
         modified = False
 
         for key, value in data.items():
+            log.debug(f"  Processing key: '{key}'")
             if not key.startswith("py://"):
                 new_data[key] = value
+                log.debug("    -> Not a SURI, skipping.")
                 continue
 
             try:
                 # Use the centralized, fixed SURIGenerator
                 path, fragment = SURIGenerator.parse(key)
+                log.debug(f"    - Parsed SURI: path='{path}', fragment='{fragment}'")
             except ValueError:
                 new_data[key] = value
+                log.debug(f"    - SURI parse failed, skipping.")
                 continue
 
             original_path, original_fragment = path, fragment
@@ -161,10 +173,12 @@ class SidecarTransformer:
                     new_key = SURIGenerator.for_symbol(current_path, current_fragment)
                 else:
                     new_key = SURIGenerator.for_file(current_path)
-                
+
+                log.debug(f"    -> MODIFIED: New key will be '{new_key}'")
                 new_data[new_key] = value
                 modified = True
             else:
+                log.debug("    -> UNCHANGED")
                 new_data[key] = value
 
         return new_data if modified else data

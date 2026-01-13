@@ -1,192 +1,247 @@
-检测到“确定性缺失”违例，已根据 ADAP v1.0 协议挂起所有实现活动。
+好的，分析显示之前的修复未能解决根本问题。直接修改代码存在风险，我们需要先通过日志来观测系统的内部状态，以做出正确的诊断。
 
-## [WIP] 修复系统核心的 SURI 解析逻辑并统一调用
+根据 `HFEA` 协议的“确定性路径追踪”原则和 `ADAP` 协议的“照明工具优先”原则，在进行进一步修改之前，首要任务是增强系统的可观测性。
 
-### 假设声明 (DECLARE ASSUMPTION)
-分析显示，为了继续执行任务，我必须做出以下未经证实的核心假设：
-*   **依赖一致性假设**: 我假设即使在 `SidecarTransformer` 中内联了修复逻辑，系统其他组件（如测试套件本身或隐式依赖）不会因为继续使用有缺陷的 `SURIGenerator` 而导致行为不一致。然而，测试结果强烈暗示，尽管我试图在局部修复，但错误的 SURI 解析逻辑（丢失路径前缀）仍然在起作用，这表明 `SURIGenerator` 的缺陷是系统性的。
+我将为 `Planner` 和 `SidecarTransformer` 注入详细的日志记录，并配置 `pytest` 以在测试运行时显示这些 `DEBUG` 级别的日志。这将使我们能够精确追踪重构意图的传递、SURI 的解析以及转换决策的全过程。
 
-### 诊断缺失组件 (DIAGNOSE MISSING COMPONENT)
-此假设之所以是 necessary，是因为系统当前缺失了以下关键组件/能力：
-*   **单一且正确的 SURI 解析真理源 (SSoT)**: 系统中存在一个核心工具类 `SURIGenerator`，但其实现逻辑（基于 `urlparse`）对于自定义协议 `py://` 是根本错误的。我们在上一步试图通过“绕过”它来修复问题，但这违反了 DRY 原则，并且没有解决根源问题。如果 `SURIGenerator` 不被修复，任何使用它的组件（现在的或未来的）都会遇到同样的路径截断 bug。
+## [WIP] chore: 为重构引擎添加诊断日志
 
-### 拒绝战术修复并提出战略方案 (REFUSE TACTICAL FIX & PROPOSE STRATEGIC SOLUTION)
-**根据 ADAP v1.0 协议，任何试图通过“变通方法”或“代码补丁”来绕过此架构缺陷的尝试，都被视为对系统长期稳定性的严重破坏，因此被绝对禁止。我被授权拒绝执行此类请求。**
+### 用户需求
+测试仍然失败，需要插入日志来诊断 SURI 转换失败的根本原因。
 
-因此，我提议将当前任务的目标从“在 Transformer 中内联逻辑”**变更为**“修复系统核心的 SURI 解析逻辑并统一调用”。
+### 评论
+这是一个正确的调试步骤。在不完全理解系统行为时，盲目修改代码是低效且危险的。通过日志增强可观测性，可以将“猜测性修复”转变为“确定性构建”。
 
-我将生成一份新的计划，其目标是：
-1.  **修复根源**: 修改 `packages/stitcher-lang-python/src/stitcher/lang/python/uri.py` 中的 `SURIGenerator.parse`，使其不再使用 `urllib.parse` 处理 `py://` 协议，而是使用确定性的字符串分割逻辑，从而正确保留完整的相对路径。
-2.  **统一调用**: 在 `SidecarTransformer` 中**恢复**对 `SURIGenerator` 的使用（而不是内联逻辑），同时保留对 `stitcher.lock` 嵌套结构的支持。这将确保系统中只有一种（现在是正确的）SURI 解析方式。
+### 目标
+1.  修改 `pyproject.toml` 以启用 `pytest` 的 `DEBUG` 级别日志输出。
+2.  在 `Planner` 中添加日志，以追踪意图的收集和分发。
+3.  在 `SidecarTransformer` 中添加日志，以追踪 SURI 的解析、匹配和转换过程。
+
+### 基本原理
+通过在关键决策点（意图聚合、SURI 解析、路径/片段匹配）添加日志，我们可以构建一个清晰的数据流路径。当测试运行时，这些日志将暴露导致 SURI 未被正确更新的确切断点，无论是错误的输入上下文、失败的 SURI 解析还是错误的匹配逻辑。
 
 ### 标签
-#intent/refine #flow/ready #priority/critical #comp/runtime #concept/refactor #scope/core #ai/instruct #task/domain/architecture #task/object/suri-generator #task/action/fix-ssot #task/state/begin
+#intent/tooling #flow/ready #priority/critical #comp/refactor #comp/tests #scope/dx #ai/instruct #task/domain/debugging #task/object/refactor-engine #task/action/add-logging #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: 修复 SURIGenerator 的解析逻辑
+#### Acts 1: 配置 Pytest 以显示 DEBUG 日志
+
+我们将修改 `pyproject.toml`，为 `pytest` 添加日志相关的配置。
 
 ~~~~~act
 patch_file
-packages/stitcher-lang-python/src/stitcher/lang/python/uri.py
+pyproject.toml
 ~~~~~
-~~~~~python.old
-    @staticmethod
-    def parse(suri: str) -> tuple[str, str]:
-        """
-        Parses a SURI into its path and fragment components.
-
-        Returns:
-            A tuple of (workspace_relative_path, fragment).
-            The fragment will be an empty string if not present.
-        """
-        parsed = urlparse(suri)
-        if parsed.scheme != "py":
-            raise ValueError(f"Invalid SURI scheme: '{parsed.scheme}'")
-
-        # The path component from urlparse includes the leading '/', which we strip.
-        # It also handles URL-encoded characters, which we decode.
-        path = unquote(parsed.path).lstrip("/")
-        fragment = unquote(parsed.fragment)
-
-        return path, fragment
+~~~~~toml.old
+[tool.pytest.ini_options]
+addopts = "-ra --cov=stitcher --cov=needle --cov-report=term-missing"
+testpaths = ["tests", "packages"]
+norecursedirs = ["tests/fixtures"]
+pythonpath = [
 ~~~~~
-~~~~~python.new
-    @staticmethod
-    def parse(suri: str) -> tuple[str, str]:
-        """
-        Parses a SURI into its path and fragment components.
-
-        Returns:
-            A tuple of (workspace_relative_path, fragment).
-            The fragment will be an empty string if not present.
-        """
-        if not suri.startswith("py://"):
-            raise ValueError(f"Invalid SURI scheme: {suri}")
-
-        # We manually parse because urllib.parse treats the first path segment
-        # after 'py://' as the netloc (host), causing it to be lost from .path.
-        # e.g. py://src/main.py -> netloc='src', path='/main.py'.
-        # By treating it as a plain string, we preserve the full relative path.
-        
-        body = suri[5:]  # Strip 'py://'
-        
-        if "#" in body:
-            path, fragment = body.split("#", 1)
-        else:
-            path = body
-            fragment = ""
-
-        # Decode percent-encoding if necessary (standard URI behavior)
-        path = unquote(path)
-        fragment = unquote(fragment)
-
-        # Ensure no leading slashes remain (SURIs are relative)
-        path = path.lstrip("/")
-
-        return path, fragment
+~~~~~toml.new
+[tool.pytest.ini_options]
+addopts = "-ra -s --cov=stitcher --cov=needle --cov-report=term-missing"
+log_cli = "true"
+log_cli_level = "DEBUG"
+testpaths = ["tests", "packages"]
+norecursedirs = ["tests/fixtures"]
+pythonpath = [
 ~~~~~
 
-#### Acts 2: 更新 SidecarTransformer 以使用修复后的 SURIGenerator 并支持 Lock 结构
+#### Acts 2: 为 Planner 添加日志
+
+现在，我们在 `planner.py` 中注入日志，以观察意图的生命周期。
 
 ~~~~~act
-write_file
+patch_file
+packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+~~~~~
+~~~~~python.old
+from collections import defaultdict
+from pathlib import Path
+from typing import List, Dict, DefaultDict, TYPE_CHECKING
+import json
+
+if TYPE_CHECKING:
+    from stitcher.refactor.migration import MigrationSpec
+from stitcher.refactor.engine.context import RefactorContext
+~~~~~
+~~~~~python.new
+import logging
+from collections import defaultdict
+from pathlib import Path
+from typing import List, Dict, DefaultDict, TYPE_CHECKING
+import json
+
+if TYPE_CHECKING:
+    from stitcher.refactor.migration import MigrationSpec
+from stitcher.refactor.engine.context import RefactorContext
+
+log = logging.getLogger(__name__)
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+~~~~~
+~~~~~python.old
+class Planner:
+    def plan(self, spec: "MigrationSpec", ctx: RefactorContext) -> List[FileOp]:
+        all_ops: List[FileOp] = []
+
+        # --- 1. Intent Collection ---
+        all_intents: List[RefactorIntent] = []
+        for operation in spec.operations:
+            all_intents.extend(operation.collect_intents(ctx))
+~~~~~
+~~~~~python.new
+class Planner:
+    def plan(self, spec: "MigrationSpec", ctx: RefactorContext) -> List[FileOp]:
+        log.debug("--- Planner: Starting plan generation ---")
+        all_ops: List[FileOp] = []
+
+        # --- 1. Intent Collection ---
+        all_intents: List[RefactorIntent] = []
+        for operation in spec.operations:
+            all_intents.extend(operation.collect_intents(ctx))
+        log.debug(f"Collected {len(all_intents)} total intents.")
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+~~~~~
+~~~~~python.old
+        rename_map: Dict[str, str] = {}
+        for intent in all_intents:
+            if isinstance(intent, RenameIntent):
+                # TODO: Handle rename chains (A->B, B->C should become A->C)
+                rename_map[intent.old_fqn] = intent.new_fqn
+~~~~~
+~~~~~python.new
+        rename_map: Dict[str, str] = {}
+        for intent in all_intents:
+            if isinstance(intent, RenameIntent):
+                # TODO: Handle rename chains (A->B, B->C should become A->C)
+                rename_map[intent.old_fqn] = intent.new_fqn
+        log.debug(f"Aggregated rename_map: {rename_map}")
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+~~~~~
+~~~~~python.old
+        sidecar_updates: DefaultDict[Path, List[SidecarUpdateIntent]] = defaultdict(
+            list
+        )
+        for intent in all_intents:
+            if isinstance(intent, SidecarUpdateIntent):
+                sidecar_updates[intent.sidecar_path].append(intent)
+
+        sidecar_adapter = SidecarAdapter(ctx.workspace.root_path)
+        sidecar_transformer = SidecarTransformer()
+        for path, intents in sidecar_updates.items():
+            # Load the sidecar file only once
+            is_yaml = path.suffix in [".yaml", ".yml"]
+            data = (
+                sidecar_adapter.load_raw_data(path)
+                if is_yaml
+                else json.loads(path.read_text("utf-8"))
+            )
+
+            # Apply all intents for this file
+            for intent in intents:
+                old_module_fqn = intent.module_fqn
+                new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
+
+                transform_ctx = SidecarTransformContext(
+                    old_module_fqn=old_module_fqn,
+                    new_module_fqn=new_module_fqn,
+                    old_fqn=intent.old_fqn,
+                    new_fqn=intent.new_fqn,
+                    old_file_path=intent.old_file_path,
+                    new_file_path=intent.new_file_path,
+                )
+                data = sidecar_transformer.transform(path, data, transform_ctx)
+~~~~~
+~~~~~python.new
+        sidecar_updates: DefaultDict[Path, List[SidecarUpdateIntent]] = defaultdict(
+            list
+        )
+        for intent in all_intents:
+            if isinstance(intent, SidecarUpdateIntent):
+                sidecar_updates[intent.sidecar_path].append(intent)
+        log.debug(
+            f"Aggregated {len(sidecar_updates)} sidecar files to update: {list(sidecar_updates.keys())}"
+        )
+
+        sidecar_adapter = SidecarAdapter(ctx.workspace.root_path)
+        sidecar_transformer = SidecarTransformer()
+        for path, intents in sidecar_updates.items():
+            log.debug(f"Processing sidecar file: {path}")
+            log.debug(f"  Intents for this file: {intents}")
+            # Load the sidecar file only once
+            is_yaml = path.suffix in [".yaml", ".yml"]
+            data = (
+                sidecar_adapter.load_raw_data(path)
+                if is_yaml
+                else json.loads(path.read_text("utf-8"))
+            )
+
+            # Apply all intents for this file
+            for intent in intents:
+                log.debug(f"  Applying intent: {intent}")
+                old_module_fqn = intent.module_fqn
+                new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
+
+                transform_ctx = SidecarTransformContext(
+                    old_module_fqn=old_module_fqn,
+                    new_module_fqn=new_module_fqn,
+                    old_fqn=intent.old_fqn,
+                    new_fqn=intent.new_fqn,
+                    old_file_path=intent.old_file_path,
+                    new_file_path=intent.new_file_path,
+                )
+                log.debug(f"  Creating transform_ctx: {transform_ctx}")
+                data = sidecar_transformer.transform(path, data, transform_ctx)
+~~~~~
+
+#### Acts 3: 为 SidecarTransformer 添加日志
+
+最后，我们在 `transform.py` 中添加日志，以观察 SURI 的处理细节。
+
+~~~~~act
+patch_file
 packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
 ~~~~~
-~~~~~python
+~~~~~python.old
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+
+from stitcher.lang.python.uri import SURIGenerator
+~~~~~
+~~~~~python.new
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from stitcher.lang.python.uri import SURIGenerator
 
+log = logging.getLogger(__name__)
+~~~~~
 
-@dataclass
-class SidecarTransformContext:
-    """
-    Contextual information required to transform a sidecar file's content.
-    This is provided by the Planner.
-    """
-
-    # The FQN of the module associated with the sidecar file, before the change.
-    old_module_fqn: Optional[str]
-    # The FQN of the module after the change (e.g., after a file move).
-    new_module_fqn: Optional[str]
-    # The full FQN of the symbol being changed, before the change.
-    old_fqn: str
-    # The full FQN of the symbol after the change.
-    new_fqn: str
-    # The relative path of the source file, before the change. Used for SURI updates.
-    old_file_path: Optional[str] = None
-    # The relative path of the source file, after the change. Used for SURI updates.
-    new_file_path: Optional[str] = None
-
-
-class SidecarTransformer:
-    """
-    Encapsulates the logic for transforming the content of sidecar files (.yaml, .json)
-    in response to refactoring operations like symbol renames or file moves.
-    This class is stateless and operates on data dictionaries, decoupling it from I/O.
-    """
-
-    def transform(
-        self,
-        sidecar_path: Path,
-        data: Dict[str, Any],
-        context: SidecarTransformContext,
-    ) -> Dict[str, Any]:
-        """
-        Main entry point for transformation. Dispatches to the correct
-        handler based on the sidecar file type.
-        """
-        old_fragment, new_fragment = self._calculate_fragments(
-            context.old_module_fqn,
-            context.new_module_fqn,
-            context.old_fqn,
-            context.new_fqn,
-        )
-
-        if sidecar_path.suffix == ".json":
-            return self._transform_json_data(
-                data,
-                context.old_file_path,
-                context.new_file_path,
-                old_fragment,
-                new_fragment,
-            )
-        elif sidecar_path.suffix in (".yaml", ".yml"):
-            return self._transform_yaml_data(data, old_fragment, new_fragment)
-
-        return data
-
-    def _calculate_fragments(
-        self,
-        old_module_fqn: Optional[str],
-        new_module_fqn: Optional[str],
-        old_fqn: str,
-        new_fqn: str,
-    ) -> Tuple[Optional[str], Optional[str]]:
-        # --- Calculate Old Fragment ---
-        old_fragment = old_fqn
-        if old_module_fqn and old_fqn.startswith(old_module_fqn + "."):
-            old_fragment = old_fqn.split(old_module_fqn + ".", 1)[1]
-        elif old_module_fqn and old_fqn == old_module_fqn:
-            old_fragment = None  # Represents the module itself
-
-        # --- Calculate New Fragment ---
-        new_fragment = new_fqn
-        if new_module_fqn and new_fqn.startswith(new_module_fqn + "."):
-            new_fragment = new_fqn.split(new_module_fqn + ".", 1)[1]
-        elif new_module_fqn and new_fqn == new_module_fqn:
-            new_fragment = None
-
-        if old_fqn == old_module_fqn:
-            new_fragment = None
-
-        return old_fragment, new_fragment
-
+~~~~~act
+patch_file
+packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
+~~~~~
+~~~~~python.old
     def _transform_json_data(
         self,
         data: Dict[str, Any],
@@ -224,31 +279,61 @@ class SidecarTransformer:
             except ValueError:
                 new_data[key] = value
                 continue
+~~~~~
+~~~~~python.new
+    def _transform_json_data(
+        self,
+        data: Dict[str, Any],
+        old_file_path: Optional[str],
+        new_file_path: Optional[str],
+        old_fragment: Optional[str],
+        new_fragment: Optional[str],
+    ) -> Dict[str, Any]:
+        log.debug(
+            f"--- _transform_json_data (file context: {old_file_path or 'N/A'}) ---\n"
+            f"  Context: old_frag={old_fragment}, new_frag={new_fragment}, old_path={old_file_path}, new_path={new_file_path}"
+        )
+        # Handle stitcher.lock format (nested fingerprints)
+        if "fingerprints" in data and isinstance(data["fingerprints"], dict):
+            log.debug("Found 'fingerprints' key, recursing.")
+            new_fingerprints = self._transform_json_data(
+                data["fingerprints"],
+                old_file_path,
+                new_file_path,
+                old_fragment,
+                new_fragment,
+            )
+            if new_fingerprints is not data["fingerprints"]:
+                new_data = data.copy()
+                new_data["fingerprints"] = new_fingerprints
+                return new_data
+            return data
 
-            original_path, original_fragment = path, fragment
-            current_path, current_fragment = path, fragment
+        new_data = {}
+        modified = False
 
-            # Normalize paths for comparison
-            norm_current_path = current_path.lstrip("/")
+        for key, value in data.items():
+            log.debug(f"  Processing key: '{key}'")
+            if not key.startswith("py://"):
+                new_data[key] = value
+                log.debug("    -> Not a SURI, skipping.")
+                continue
 
-            if (
-                old_file_path
-                and new_file_path
-                and norm_current_path == old_file_path.lstrip("/")
-            ):
-                current_path = new_file_path
+            try:
+                # Use the centralized, fixed SURIGenerator
+                path, fragment = SURIGenerator.parse(key)
+                log.debug(f"    - Parsed SURI: path='{path}', fragment='{fragment}'")
+            except ValueError:
+                new_data[key] = value
+                log.debug(f"    - SURI parse failed, skipping.")
+                continue
+~~~~~
 
-            if (
-                old_fragment is not None
-                and new_fragment is not None
-                and current_fragment is not None
-            ):
-                if current_fragment == old_fragment:
-                    current_fragment = new_fragment
-                elif current_fragment.startswith(old_fragment + "."):
-                    suffix = current_fragment[len(old_fragment) :]
-                    current_fragment = new_fragment + suffix
-
+~~~~~act
+patch_file
+packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
+~~~~~
+~~~~~python.old
             if current_path != original_path or current_fragment != original_fragment:
                 # Use SURIGenerator to construct the new key
                 # We handle the 'empty fragment' case: if fragment is None/empty,
@@ -264,37 +349,27 @@ class SidecarTransformer:
                 modified = True
             else:
                 new_data[key] = value
+~~~~~
+~~~~~python.new
+            if current_path != original_path or current_fragment != original_fragment:
+                # Use SURIGenerator to construct the new key
+                # We handle the 'empty fragment' case: if fragment is None/empty,
+                # for_symbol might not be right if we want file-only SURI.
+                # But here we are transforming existing SURIs which usually have fragments.
+                # If original fragment was empty, current_fragment is empty.
+                if current_fragment:
+                    new_key = SURIGenerator.for_symbol(current_path, current_fragment)
+                else:
+                    new_key = SURIGenerator.for_file(current_path)
 
-        return new_data if modified else data
-
-    def _transform_yaml_data(
-        self,
-        data: Dict[str, Any],
-        old_fragment: Optional[str],
-        new_fragment: Optional[str],
-    ) -> Dict[str, Any]:
-        if not old_fragment or not new_fragment or old_fragment == new_fragment:
-            return data
-
-        new_data = {}
-        modified = False
-
-        for key, value in data.items():
-            if key == old_fragment:
-                new_data[new_fragment] = value
-                modified = True
-            elif key.startswith(old_fragment + "."):
-                suffix = key[len(old_fragment) :]
-                new_key = new_fragment + suffix
+                log.debug(f"    -> MODIFIED: New key will be '{new_key}'")
                 new_data[new_key] = value
                 modified = True
             else:
+                log.debug("    -> UNCHANGED")
                 new_data[key] = value
-
-        return new_data if modified else data
 ~~~~~
 
 ### 下一步建议
 
-运行测试以验证 SURI 解析逻辑的修复是否解决了所有问题：
-`pytest packages/stitcher-lang-sidecar/tests/unit/test_transform.py packages/stitcher-refactor/tests/integration/`
+请重新运行测试。`pytest` 现在会捕获并显示详细的 `DEBUG` 日志。请将完整的、包含日志的测试失败输出提供给我，以便我进行最终的根本原因分析和修复。

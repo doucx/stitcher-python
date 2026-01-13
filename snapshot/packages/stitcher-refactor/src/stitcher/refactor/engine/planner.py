@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from pathlib import Path
 from typing import List, Dict, DefaultDict, TYPE_CHECKING
@@ -6,6 +7,8 @@ import json
 if TYPE_CHECKING:
     from stitcher.refactor.migration import MigrationSpec
 from stitcher.refactor.engine.context import RefactorContext
+
+log = logging.getLogger(__name__)
 from stitcher.common.transaction import (
     FileOp,
     MoveFileOp,
@@ -33,12 +36,14 @@ from .utils import path_to_fqn
 
 class Planner:
     def plan(self, spec: "MigrationSpec", ctx: RefactorContext) -> List[FileOp]:
+        log.debug("--- Planner: Starting plan generation ---")
         all_ops: List[FileOp] = []
 
         # --- 1. Intent Collection ---
         all_intents: List[RefactorIntent] = []
         for operation in spec.operations:
             all_intents.extend(operation.collect_intents(ctx))
+        log.debug(f"Collected {len(all_intents)} total intents.")
 
         # --- 2. Intent Aggregation & Processing ---
 
@@ -48,6 +53,7 @@ class Planner:
             if isinstance(intent, RenameIntent):
                 # TODO: Handle rename chains (A->B, B->C should become A->C)
                 rename_map[intent.old_fqn] = intent.new_fqn
+        log.debug(f"Aggregated rename_map: {rename_map}")
 
         # Process symbol renames in code
         renamer = GlobalBatchRenamer(rename_map, ctx)
@@ -70,10 +76,15 @@ class Planner:
         for intent in all_intents:
             if isinstance(intent, SidecarUpdateIntent):
                 sidecar_updates[intent.sidecar_path].append(intent)
+        log.debug(
+            f"Aggregated {len(sidecar_updates)} sidecar files to update: {list(sidecar_updates.keys())}"
+        )
 
         sidecar_adapter = SidecarAdapter(ctx.workspace.root_path)
         sidecar_transformer = SidecarTransformer()
         for path, intents in sidecar_updates.items():
+            log.debug(f"Processing sidecar file: {path}")
+            log.debug(f"  Intents for this file: {intents}")
             # Load the sidecar file only once
             is_yaml = path.suffix in [".yaml", ".yml"]
             data = (
@@ -84,6 +95,7 @@ class Planner:
 
             # Apply all intents for this file
             for intent in intents:
+                log.debug(f"  Applying intent: {intent}")
                 old_module_fqn = intent.module_fqn
                 new_module_fqn = module_rename_map.get(old_module_fqn, old_module_fqn)
 
@@ -95,6 +107,7 @@ class Planner:
                     old_file_path=intent.old_file_path,
                     new_file_path=intent.new_file_path,
                 )
+                log.debug(f"  Creating transform_ctx: {transform_ctx}")
                 data = sidecar_transformer.transform(path, data, transform_ctx)
 
             # Dump the final state
