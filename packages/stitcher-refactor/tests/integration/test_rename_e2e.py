@@ -14,6 +14,11 @@ import json
 def test_rename_symbol_end_to_end(tmp_path):
     # 1. Setup: Use WorkspaceFactory to declaratively build the project
     factory = WorkspaceFactory(tmp_path)
+    py_rel_path = "mypkg/core.py"
+    old_helper_suri = f"py://{py_rel_path}#OldHelper"
+    old_func_suri = f"py://{py_rel_path}#old_func"
+    new_helper_suri = f"py://{py_rel_path}#NewHelper"
+
     project_root = (
         factory.with_pyproject(".")
         .with_source(
@@ -38,17 +43,19 @@ def test_rename_symbol_end_to_end(tmp_path):
         .with_source("mypkg/__init__.py", "")
         .with_docs(
             "mypkg/core.stitcher.yaml",
+            # Keys are Fragments
             {
-                "mypkg.core.OldHelper": "This is the old helper.",
-                "mypkg.core.old_func": "This is an old function.",
+                "OldHelper": "This is the old helper.",
+                "old_func": "This is an old function.",
             },
         )
         .with_raw_file(
             ".stitcher/signatures/mypkg/core.json",
+            # Keys are SURIs
             json.dumps(
                 {
-                    "mypkg.core.OldHelper": {"baseline_code_structure_hash": "hash1"},
-                    "mypkg.core.old_func": {"baseline_code_structure_hash": "hash2"},
+                    old_helper_suri: {"baseline_code_structure_hash": "hash1"},
+                    old_func_suri: {"baseline_code_structure_hash": "hash2"},
                 }
             ),
         )
@@ -107,14 +114,14 @@ def test_rename_symbol_end_to_end(tmp_path):
 
     # Check sidecar files
     modified_doc_data = yaml.safe_load(doc_path.read_text("utf-8"))
-    assert "mypkg.core.NewHelper" in modified_doc_data
-    assert "mypkg.core.OldHelper" not in modified_doc_data
-    assert modified_doc_data["mypkg.core.NewHelper"] == "This is the old helper."
+    assert "NewHelper" in modified_doc_data
+    assert "OldHelper" not in modified_doc_data
+    assert modified_doc_data["NewHelper"] == "This is the old helper."
 
     modified_sig_data = json.loads(sig_path.read_text("utf-8"))
-    assert "mypkg.core.NewHelper" in modified_sig_data
-    assert "mypkg.core.OldHelper" not in modified_sig_data
+    assert new_helper_suri in modified_sig_data
+    assert old_helper_suri not in modified_sig_data
     assert (
-        modified_sig_data["mypkg.core.NewHelper"]["baseline_code_structure_hash"]
+        modified_sig_data[new_helper_suri]["baseline_code_structure_hash"]
         == "hash1"
     )

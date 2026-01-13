@@ -7,6 +7,8 @@ from typing import Tuple
 class ReferenceType(Enum):
     SYMBOL = "symbol"
     IMPORT_PATH = "import_path"
+    SIDECAR_ID = "json_suri"  # Reference in Signature (.json) via SURI
+    SIDECAR_DOC_ID = "yaml_suri"  # Reference in Doc (.yaml) via SURI (computed)
 
 
 @dataclass

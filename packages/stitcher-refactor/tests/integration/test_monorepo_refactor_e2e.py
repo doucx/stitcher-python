@@ -27,17 +27,23 @@ def test_move_file_in_monorepo_updates_cross_package_imports(tmp_path):
     #         __init__.py
     #         main.py (imports SharedClass from pkga_lib.core)
     factory = WorkspaceFactory(tmp_path)
+    # --- Define identifiers based on the new ontology ---
+    py_rel_path = "packages/pkg_a/src/pkga_lib/core.py"
+    old_suri = f"py://{py_rel_path}#SharedClass"
+
     project_root = (
         factory.with_pyproject("packages/pkg_a")
         .with_source("packages/pkg_a/src/pkga_lib/__init__.py", "")
         .with_source("packages/pkg_a/src/pkga_lib/core.py", "class SharedClass: pass")
         .with_docs(
             "packages/pkg_a/src/pkga_lib/core.stitcher.yaml",
-            {"pkga_lib.core.SharedClass": "A shared class."},
+            # Key is now Fragment
+            {"SharedClass": "A shared class."},
         )
         .with_raw_file(
             ".stitcher/signatures/packages/pkg_a/src/pkga_lib/core.json",
-            json.dumps({"pkga_lib.core.SharedClass": {"hash": "abc"}}),
+            # Key is now SURI
+            json.dumps({old_suri: {"hash": "abc"}}),
         )
         .with_pyproject("packages/pkg_b")
         .with_source("packages/pkg_b/src/pkgb_app/__init__.py", "")
@@ -105,12 +111,15 @@ def test_move_file_in_monorepo_updates_cross_package_imports(tmp_path):
     expected_import = "from pkga_lib.utils.tools import SharedClass"
     assert expected_import in updated_consumer_code
 
-    # C. Sidecar FQN verification
+    # C. Sidecar key verification
+    # YAML uses Fragments
     new_yaml_data = yaml.safe_load(dest_yaml.read_text())
-    expected_fqn = "pkga_lib.utils.tools.SharedClass"
-    assert expected_fqn in new_yaml_data
-    assert new_yaml_data[expected_fqn] == "A shared class."
+    assert "SharedClass" in new_yaml_data
+    assert new_yaml_data["SharedClass"] == "A shared class."
 
+    # JSON uses SURIs
+    new_py_rel_path = "packages/pkg_a/src/pkga_lib/utils/tools.py"
+    expected_suri = f"py://{new_py_rel_path}#SharedClass"
     new_sig_data = json.loads(dest_sig_path.read_text())
-    assert expected_fqn in new_sig_data
-    assert new_sig_data[expected_fqn] == {"hash": "abc"}
+    assert expected_suri in new_sig_data
+    assert new_sig_data[expected_suri] == {"hash": "abc"}

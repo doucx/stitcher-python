@@ -18,6 +18,9 @@ from stitcher.test_utils import WorkspaceFactory, create_populated_index
 def test_move_directory_in_monorepo_updates_cross_package_references(tmp_path):
     # 1. ARRANGE: Build a monorepo workspace simulating the Cascade project
     factory = WorkspaceFactory(tmp_path)
+    py_rel_path = "cascade-engine/src/cascade/engine/core/logic.py"
+    old_suri = f"py://{py_rel_path}#EngineLogic"
+
     project_root = (
         factory
         # --- cascade-engine package ---
@@ -33,11 +36,13 @@ def test_move_directory_in_monorepo_updates_cross_package_references(tmp_path):
         )
         .with_docs(
             "cascade-engine/src/cascade/engine/core/logic.stitcher.yaml",
-            {"cascade.engine.core.logic.EngineLogic": "Core engine logic."},
+            # Key is Fragment
+            {"EngineLogic": "Core engine logic."},
         )
         .with_raw_file(
             ".stitcher/signatures/cascade-engine/src/cascade/engine/core/logic.json",
-            json.dumps({"cascade.engine.core.logic.EngineLogic": {"hash": "abc"}}),
+            # Key is SURI
+            json.dumps({old_suri: {"hash": "abc"}}),
         )
         # --- cascade-runtime package ---
         .with_pyproject("cascade-runtime")
@@ -110,12 +115,15 @@ def test_move_directory_in_monorepo_updates_cross_package_references(tmp_path):
     expected_import = "from cascade.runtime.core.logic import EngineLogic"
     assert expected_import in updated_consumer_code
 
-    # C. Sidecar FQN verification
+    # C. Sidecar key verification
+    # YAML uses Fragments
     new_yaml_data = yaml.safe_load(new_yaml_file.read_text())
-    expected_fqn = "cascade.runtime.core.logic.EngineLogic"
-    assert expected_fqn in new_yaml_data
-    assert new_yaml_data[expected_fqn] == "Core engine logic."
+    assert "EngineLogic" in new_yaml_data
+    assert new_yaml_data["EngineLogic"] == "Core engine logic."
 
+    # JSON uses SURIs
+    new_py_rel_path = "cascade-runtime/src/cascade/runtime/core/logic.py"
+    expected_suri = f"py://{new_py_rel_path}#EngineLogic"
     new_sig_data = json.loads(new_sig_file_path.read_text())
-    assert expected_fqn in new_sig_data
-    assert new_sig_data[expected_fqn] == {"hash": "abc"}
+    assert expected_suri in new_sig_data
+    assert new_sig_data[expected_suri] == {"hash": "abc"}

@@ -199,18 +199,25 @@ class IndexStore:
                 )
         return None
 
-    def find_references(self, target_fqn: str) -> List[Tuple[ReferenceRecord, str]]:
+    def find_references(
+        self, target_fqn: str, target_id: Optional[str] = None
+    ) -> List[Tuple[ReferenceRecord, str]]:
         with self.db.get_connection() as conn:
             # Join references with files to get the path
-            rows = conn.execute(
-                """
+            # We search for matches by FQN (weak/unlinked refs) OR by ID (strong/linked refs)
+            query = """
                 SELECT r.*, f.path as file_path
                 FROM "references" r
                 JOIN files f ON r.source_file_id = f.id
                 WHERE r.target_fqn = ?
-                """,
-                (target_fqn,),
-            ).fetchall()
+            """
+            params = [target_fqn]
+
+            if target_id:
+                query += " OR r.target_id = ?"
+                params.append(target_id)
+
+            rows = conn.execute(query, tuple(params)).fetchall()
             return [
                 (
                     ReferenceRecord(
