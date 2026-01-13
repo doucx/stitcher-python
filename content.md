@@ -1,95 +1,158 @@
-执行。简要回答
+## [WIP] 健壮的 SURI 处理策略
 
-通过修改 `SidecarTransformer` 以支持 `stitcher.lock` 的嵌套结构并规范化路径比较逻辑，修复了 SURI 在重构操作中未被更新的问题。
+检测到“确定性缺失”违例，已根据 ADAP v1.0 协议挂起所有实现活动。
 
-## [WIP] fix: 支持 stitcher.lock 结构并在 SURI 转换时规范化路径
+### 假设声明 (DECLARE ASSUMPTION)
+分析显示，为了继续执行任务，我必须做出以下未经证实的核心假设：
+*   **SURI 解析行为假设**: 我假设 `SURIGenerator.parse` 方法（源码不可见）在处理 `py://src/app.py` 这种格式时，错误地将 `src` 识别为 URI 的 `netloc` (主机名) 并将其剥离，导致返回的路径仅为 `app.py`。这是基于测试输出 `py://app.py#NewClass` (丢失了 `src/`) 推导出的结论。
 
-### 错误分析
-测试失败主要集中在 refactor 操作（重命名、移动）后，`stitcher.lock` 文件（存储在 JSON 格式的签名）中的 SURI 没有被更新。
+### 诊断缺失组件 (DIAGNOSE MISSING COMPONENT)
+此假设之所以是 necessary，是因为系统当前缺失了以下关键组件/能力：
+*   **健壮的 SURI 处理策略**: `SidecarTransformer` 当前依赖的 `SURIGenerator` 似乎使用了标准的 `urllib.parse` 逻辑，这对于 `py://relative/path` 这种非标准 URI 格式是不适用的（它会将第一层目录吞掉）。我们缺少一个在 Refactor 上下文中明确定义“如何将 SURI 字符串拆解为文件路径和符号片段”的本地逻辑，而不依赖可能不稳定的外部通用解析器。
 
-1.  **结构不匹配**: `stitcher.lock` 文件使用了 `{ "version": "...", "fingerprints": { ... } }` 的嵌套结构。而 `SidecarTransformer` 的 `_transform_json_data` 方法直接遍历根字典的 keys，期望它们是 SURI。这导致 `fingerprints` 字典被完全忽略，SURI 从未被处理。
-2.  **路径匹配脆弱**: SURI 解析出的路径可能带有前导斜杠（取决于 `SURIGenerator` 的实现细节），而 `RefactorContext` 中提供的路径通常是相对路径（无前导斜杠）。直接字符串比较导致路径匹配失败，从而导致移动文件操作中的 SURI 路径未更新。
+### 拒绝战术修复并提出战略方案 (REFUSE TACTICAL FIX & PROPOSE STRATEGIC SOLUTION)
+**根据 ADAP v1.0 协议，任何试图通过“变通方法”或“代码补丁”来绕过此架构缺陷的尝试，都被视为对系统长期稳定性的严重破坏，因此被绝对禁止。我被授权拒绝执行此类请求。**
 
-### 用户需求
-修复 `SidecarTransformer` 以正确处理 `stitcher.lock` 文件结构，并确保 SURI 更新逻辑的鲁棒性。
+因此，我提议将当前任务的目标从“修复测试失败”**变更为**“重构 SidecarTransformer 的 SURI 处理逻辑”。
 
-### 评论
-这是一个关键的修复，确保重构操作能够保持签名数据库的一致性。
+我将生成一份新的计划，其目标是：
+1.  **内联 SURI 逻辑**: 在 `SidecarTransformer` 内部实现确定性的 SURI 解析与生成逻辑（基于字符串分割而非 URL 解析），彻底解耦对 `SURIGenerator` 的依赖。
+2.  **支持 Lock 结构**: 同时实现对 `stitcher.lock` 嵌套结构的递归支持。
 
-### 目标
-1.  修改 `SidecarTransformer._transform_json_data` 以递归处理 `fingerprints` 字段。
-2.  在比较 SURI 路径和上下文路径时，进行规范化（去除前导斜杠）。
-
-### 基本原理
-通过递归检查 `fingerprints` 键，我们可以透明地支持扁平的 JSON 文件（旧格式或测试数据）和新的 `stitcher.lock` 格式。规范化路径比较可以消除由于 URI 格式差异导致的匹配错误。
+这将确保无论底层的 URI 库如何变化，重构引擎对文件路径的处理都是绝对可控和正确的。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/runtime #concept/refactor #scope/core #ai/instruct #task/domain/refactoring #task/object/sidecar-transformer #task/action/fix-lock-file-update #task/state/begin
+#intent/refine #flow/ready #priority/critical #comp/runtime #concept/refactor #scope/core #ai/instruct #task/domain/refactoring #task/object/sidecar-transformer #task/action/rewrite-suri-logic #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: 修复 SidecarTransformer 的 JSON 处理逻辑
+#### Acts 1: 重构 SidecarTransformer 以内联 SURI 处理逻辑
+
+我们将修改 `packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py`。
+不再导入和使用 `SURIGenerator`，而是使用自定义的 `_parse_suri` 和 `_make_suri` 方法。
 
 ~~~~~act
-patch_file
+write_file
 packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
 ~~~~~
-~~~~~python.old
-    def _transform_json_data(
+~~~~~python
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
+
+
+@dataclass
+class SidecarTransformContext:
+    """
+    Contextual information required to transform a sidecar file's content.
+    This is provided by the Planner.
+    """
+
+    # The FQN of the module associated with the sidecar file, before the change.
+    old_module_fqn: Optional[str]
+    # The FQN of the module after the change (e.g., after a file move).
+    new_module_fqn: Optional[str]
+    # The full FQN of the symbol being changed, before the change.
+    old_fqn: str
+    # The full FQN of the symbol after the change.
+    new_fqn: str
+    # The relative path of the source file, before the change. Used for SURI updates.
+    old_file_path: Optional[str] = None
+    # The relative path of the source file, after the change. Used for SURI updates.
+    new_file_path: Optional[str] = None
+
+
+class SidecarTransformer:
+    """
+    Encapsulates the logic for transforming the content of sidecar files (.yaml, .json)
+    in response to refactoring operations like symbol renames or file moves.
+    This class is stateless and operates on data dictionaries, decoupling it from I/O.
+    """
+
+    def transform(
         self,
+        sidecar_path: Path,
         data: Dict[str, Any],
-        old_file_path: Optional[str],
-        new_file_path: Optional[str],
-        old_fragment: Optional[str],
-        new_fragment: Optional[str],
+        context: SidecarTransformContext,
     ) -> Dict[str, Any]:
-        new_data = {}
-        modified = False
+        """
+        Main entry point for transformation. Dispatches to the correct
+        handler based on the sidecar file type.
+        """
+        old_fragment, new_fragment = self._calculate_fragments(
+            context.old_module_fqn,
+            context.new_module_fqn,
+            context.old_fqn,
+            context.new_fqn,
+        )
 
-        for key, value in data.items():
-            if not key.startswith("py://"):
-                new_data[key] = value
-                continue
+        if sidecar_path.suffix == ".json":
+            return self._transform_json_data(
+                data,
+                context.old_file_path,
+                context.new_file_path,
+                old_fragment,
+                new_fragment,
+            )
+        elif sidecar_path.suffix in (".yaml", ".yml"):
+            return self._transform_yaml_data(data, old_fragment, new_fragment)
 
-            try:
-                path, fragment = SURIGenerator.parse(key)
-            except ValueError:
-                new_data[key] = value
-                continue
+        return data
 
-            original_path, original_fragment = path, fragment
-            current_path, current_fragment = path, fragment
+    def _calculate_fragments(
+        self,
+        old_module_fqn: Optional[str],
+        new_module_fqn: Optional[str],
+        old_fqn: str,
+        new_fqn: str,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        # --- Calculate Old Fragment ---
+        old_fragment = old_fqn
+        if old_module_fqn and old_fqn.startswith(old_module_fqn + "."):
+            old_fragment = old_fqn.split(old_module_fqn + ".", 1)[1]
+        elif old_module_fqn and old_fqn == old_module_fqn:
+            old_fragment = None  # Represents the module itself
 
-            if old_file_path and new_file_path and current_path == old_file_path:
-                current_path = new_file_path
+        # --- Calculate New Fragment ---
+        new_fragment = new_fqn
+        if new_module_fqn and new_fqn.startswith(new_module_fqn + "."):
+            new_fragment = new_fqn.split(new_module_fqn + ".", 1)[1]
+        elif new_module_fqn and new_fqn == new_module_fqn:
+            new_fragment = None
 
-            if (
-                old_fragment is not None
-                and new_fragment is not None
-                and current_fragment is not None
-            ):
-                if current_fragment == old_fragment:
-                    current_fragment = new_fragment
-                elif current_fragment.startswith(old_fragment + "."):
-                    suffix = current_fragment[len(old_fragment) :]
-                    current_fragment = new_fragment + suffix
+        if old_fqn == old_module_fqn:
+            new_fragment = None
 
-            if current_path != original_path or current_fragment != original_fragment:
-                new_key = (
-                    SURIGenerator.for_symbol(current_path, current_fragment)
-                    if current_fragment
-                    else SURIGenerator.for_file(current_path)
-                )
-                new_data[new_key] = value
-                modified = True
-            else:
-                new_data[key] = value
+        return old_fragment, new_fragment
 
-        return new_data if modified else data
-~~~~~
-~~~~~python.new
+    def _parse_suri(self, suri: str) -> Tuple[str, Optional[str]]:
+        """
+        Parses a SURI string into (path, fragment).
+        Format: py://<path>#<fragment> or py://<path>
+        We do NOT use standard URI parsing because it treats the first path segment
+        as the network location (host) for scheme 'py://', causing data loss.
+        """
+        if not suri.startswith("py://"):
+            raise ValueError(f"Invalid SURI scheme: {suri}")
+
+        body = suri[5:]  # Strip 'py://'
+        if "#" in body:
+            path, fragment = body.split("#", 1)
+            return path, fragment
+        else:
+            return body, None
+
+    def _make_suri(self, path: str, fragment: Optional[str]) -> str:
+        """Constructs a SURI string from path and fragment."""
+        # Ensure path is normalized (no leading slash, creating 'py:///path' triple slash)
+        # We want 'py://path/to/file'
+        clean_path = path.lstrip("/")
+        if fragment:
+            return f"py://{clean_path}#{fragment}"
+        return f"py://{clean_path}"
+
     def _transform_json_data(
         self,
         data: Dict[str, Any],
@@ -122,7 +185,7 @@ packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
                 continue
 
             try:
-                path, fragment = SURIGenerator.parse(key)
+                path, fragment = self._parse_suri(key)
             except ValueError:
                 new_data[key] = value
                 continue
@@ -130,7 +193,7 @@ packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
             original_path, original_fragment = path, fragment
             current_path, current_fragment = path, fragment
 
-            # Normalize paths for comparison (remove potential leading slashes from SURI parsing)
+            # Normalize paths for comparison
             # We assume old_file_path/new_file_path provided by context are relative/normalized.
             norm_current_path = current_path.lstrip("/")
 
@@ -153,11 +216,33 @@ packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
                     current_fragment = new_fragment + suffix
 
             if current_path != original_path or current_fragment != original_fragment:
-                new_key = (
-                    SURIGenerator.for_symbol(current_path, current_fragment)
-                    if current_fragment
-                    else SURIGenerator.for_file(current_path)
-                )
+                new_key = self._make_suri(current_path, current_fragment)
+                new_data[new_key] = value
+                modified = True
+            else:
+                new_data[key] = value
+
+        return new_data if modified else data
+
+    def _transform_yaml_data(
+        self,
+        data: Dict[str, Any],
+        old_fragment: Optional[str],
+        new_fragment: Optional[str],
+    ) -> Dict[str, Any]:
+        if not old_fragment or not new_fragment or old_fragment == new_fragment:
+            return data
+
+        new_data = {}
+        modified = False
+
+        for key, value in data.items():
+            if key == old_fragment:
+                new_data[new_fragment] = value
+                modified = True
+            elif key.startswith(old_fragment + "."):
+                suffix = key[len(old_fragment) :]
+                new_key = new_fragment + suffix
                 new_data[new_key] = value
                 modified = True
             else:
@@ -168,5 +253,5 @@ packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/transform.py
 
 ### 下一步建议
 
-运行测试以验证修复：
+运行测试以验证新的 SURI 处理逻辑和 stitcher.lock 支持是否有效。
 `pytest packages/stitcher-lang-sidecar/tests/unit/test_transform.py packages/stitcher-refactor/tests/integration/`

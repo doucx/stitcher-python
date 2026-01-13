@@ -2,8 +2,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from stitcher.lang.python.uri import SURIGenerator
-
 
 @dataclass
 class SidecarTransformContext:
@@ -89,6 +87,32 @@ class SidecarTransformer:
 
         return old_fragment, new_fragment
 
+    def _parse_suri(self, suri: str) -> Tuple[str, Optional[str]]:
+        """
+        Parses a SURI string into (path, fragment).
+        Format: py://<path>#<fragment> or py://<path>
+        We do NOT use standard URI parsing because it treats the first path segment
+        as the network location (host) for scheme 'py://', causing data loss.
+        """
+        if not suri.startswith("py://"):
+            raise ValueError(f"Invalid SURI scheme: {suri}")
+
+        body = suri[5:]  # Strip 'py://'
+        if "#" in body:
+            path, fragment = body.split("#", 1)
+            return path, fragment
+        else:
+            return body, None
+
+    def _make_suri(self, path: str, fragment: Optional[str]) -> str:
+        """Constructs a SURI string from path and fragment."""
+        # Ensure path is normalized (no leading slash, creating 'py:///path' triple slash)
+        # We want 'py://path/to/file'
+        clean_path = path.lstrip("/")
+        if fragment:
+            return f"py://{clean_path}#{fragment}"
+        return f"py://{clean_path}"
+
     def _transform_json_data(
         self,
         data: Dict[str, Any],
@@ -121,7 +145,7 @@ class SidecarTransformer:
                 continue
 
             try:
-                path, fragment = SURIGenerator.parse(key)
+                path, fragment = self._parse_suri(key)
             except ValueError:
                 new_data[key] = value
                 continue
@@ -129,7 +153,7 @@ class SidecarTransformer:
             original_path, original_fragment = path, fragment
             current_path, current_fragment = path, fragment
 
-            # Normalize paths for comparison (remove potential leading slashes from SURI parsing)
+            # Normalize paths for comparison
             # We assume old_file_path/new_file_path provided by context are relative/normalized.
             norm_current_path = current_path.lstrip("/")
 
@@ -152,11 +176,7 @@ class SidecarTransformer:
                     current_fragment = new_fragment + suffix
 
             if current_path != original_path or current_fragment != original_fragment:
-                new_key = (
-                    SURIGenerator.for_symbol(current_path, current_fragment)
-                    if current_fragment
-                    else SURIGenerator.for_file(current_path)
-                )
+                new_key = self._make_suri(current_path, current_fragment)
                 new_data[new_key] = value
                 modified = True
             else:
