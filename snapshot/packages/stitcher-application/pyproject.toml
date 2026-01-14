@@ -24,7 +24,6 @@ packages = ["src/stitcher"]
 [tool.uv.sources]
 stitcher-spec = { workspace = true }
 stitcher-common = { workspace = true }
-stitcher-config = { workspace = true }
 stitcher-lang-python = { workspace = true }
 stitcher-stubgen = { workspace = true }
 stitcher-workspace = { workspace = true }
