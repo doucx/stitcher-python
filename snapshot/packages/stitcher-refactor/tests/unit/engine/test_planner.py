@@ -4,7 +4,7 @@ from stitcher.refactor.engine.planner import Planner
 from stitcher.refactor.migration import MigrationSpec
 from stitcher.refactor.types import RefactorContext
 from stitcher.refactor.operations.base import AbstractOperation
-from stitcher.refactor.engine.intent import RefactorIntent
+from stitcher.refactor.intent import RefactorIntent
 from stitcher.workspace import Workspace
 from pathlib import Path
 
