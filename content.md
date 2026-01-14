@@ -1,79 +1,61 @@
-You are absolutely right to call this out. My apologies. In moving the `utils.py` file to break the circular dependency, I failed to update all the files that were importing it. The Pyright errors clearly show the broken import paths that resulted from my incomplete refactoring.
+好的，我们已经成功解决了所有的循环依赖和架构层级的违例，并通过了 Pyright 的检查。现在我将生成一个计划，将这些更改作为一个完整的工作单元进行提交。
 
-Thank you for running the type checker and providing the precise feedback. I will now generate the plan to fix these remaining import errors.
-
-## [WIP] fix: Correct broken import paths after utility module relocation
-
-### 错误分析
-
-The `reportMissingImports` errors are a direct consequence of the previous plan's action to move `stitcher-refactor/src/stitcher/refactor/engine/utils.py` to `stitcher-refactor/src/stitcher/refactor/utils.py`. I correctly updated some of the importers but missed two key files:
-
-1.  **`planner.py`**: It was using a relative import (`from .utils import ...`) which is now incorrect because `utils.py` is no longer in the same directory (`engine`).
-2.  **`rename_symbol.py`**: It was using an import path (`from ..engine.utils import ...`) that explicitly pointed to the old location.
+## [COMMIT] fix: resolve circular dependencies and architectural violations
 
 ### 用户需求
-
-Fix the two `reportMissingImports` errors reported by Pyright in `planner.py` and `rename_symbol.py`.
+将之前为了修复循环依赖和架构违例所做的所有代码更改提交到 Git 仓库。
 
 ### 评论
-
-This is a necessary and straightforward cleanup. Your rigorous verification process caught the oversight perfectly. This final set of changes will complete the architectural refactoring of the `stitcher-refactor` package.
+这次重构非常重要，它通过消除包内和包间的循环引用，显著提升了系统的稳定性和可维护性。我们不仅修复了表象的导入问题，还纠正了一个关键的架构分层错误（Dependency Inversion），确保了底层操作不再依赖高层引擎。
 
 ### 目标
-
-1.  Update the import statement in `planner.py` to correctly point to the new location of `utils.py`.
-2.  Update the import statement in `rename_symbol.py` to do the same.
+1. 将所有修改过的文件添加到 Git 暂存区。
+2. 创建一个详细说明所有更改及其架构意义的提交记录。
 
 ### 基本原理
-
-The principle is simple: ensure all import paths accurately reflect the current file system structure. Both files need to change their import from pointing inside the `engine` directory to pointing at the higher-level `utils.py` in the `refactor` package.
+遵循 `[COMMIT]` 规范，本计划仅包含 Git 操作，以确保代码在被永久记录前已经过验证。我们将所有相关的架构修复合并为一个原子提交。
 
 ### 标签
-
-#intent/fix #flow/ready #priority/high #comp/refactor #scope/core #ai/instruct #task/domain/testing #task/object/architecture-linting #task/action/bug-fix #task/state/continue
+#intent/fix #flow/ready #priority/high #comp/refactor #comp/lang-sidecar #scope/core #ai/instruct #task/domain/testing #task/object/architecture-linting #task/action/bug-fix #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: Correct the import in `rename_symbol.py`
+#### Acts 1: 提交变更
 
-We will change the import path to reflect that `utils.py` is now a sibling to the `operations` directory, not inside `engine`.
+我们将所有受影响的文件添加到暂存区并创建提交。
 
 ~~~~~act
-patch_file
+git_add
+packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/adapter.py
+packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+packages/stitcher-refactor/src/stitcher/refactor/migration/spec.py
+packages/stitcher-refactor/src/stitcher/refactor/migration/__init__.py
+packages/stitcher-refactor/src/stitcher/refactor/utils.py
+packages/stitcher-refactor/src/stitcher/refactor/operations/move_directory.py
+packages/stitcher-refactor/src/stitcher/refactor/operations/move_file.py
 packages/stitcher-refactor/src/stitcher/refactor/operations/rename_symbol.py
 ~~~~~
-~~~~~python.old
-from .base import AbstractOperation
-from ..engine.utils import path_to_fqn
-from stitcher.refactor.types import RefactorContext
-from stitcher.analysis.semantic import SymbolNode
-~~~~~
-~~~~~python.new
-from .base import AbstractOperation
-from ..utils import path_to_fqn
-from stitcher.refactor.types import RefactorContext
-from stitcher.analysis.semantic import SymbolNode
-~~~~~
-
-#### Acts 2: Correct the import in `planner.py`
-
-The import in `planner.py` needs to go up one directory level (`..`) to find the new `utils.py`. *However, upon reviewing the file, it appears `planner.py` does not use this utility. I will remove the unused import entirely.*
-
-Wait, I have re-examined the code. The `path_to_fqn` utility *is* used within the `Planner`. My previous analysis was incorrect. The correct action is to fix the import path. My apologies for the confusion.
 
 ~~~~~act
-patch_file
-packages/stitcher-refactor/src/stitcher/refactor/engine/planner.py
+git_commit
 ~~~~~
-~~~~~python.old
-from .utils import path_to_fqn
-~~~~~
-~~~~~python.new
-from ..utils import path_to_fqn
+~~~~~text
+fix: resolve circular dependencies and architectural layering violations
+
+This commit addresses several critical architectural issues identified by the 'stitcher check architecture' command across the stitcher-refactor and stitcher-lang-sidecar packages.
+
+Key Changes:
+- Package-Internal Cycles: Converted absolute imports to relative imports in sidecar adapter and refactor planner to break __init__.py cycles.
+- Layering Violation: Moved the 'path_to_fqn' utility from 'engine/utils.py' to a new common 'refactor/utils.py'. This allows low-level refactoring operations to use the utility without creating an illegal dependency on the high-level engine.
+- High-Level Decoupling: Moved user-facing type aliases (Rename, Move) from 'migration/spec.py' to 'migration/__init__.py'. This prevents the core data structures in 'spec.py' from depending on concrete operation implementations.
+- Bug Fix: Resolved a NameError in 'MigrationSpec.add_map' introduced during refactoring by using a local, function-scoped import.
+- Cleanup: Updated all import paths throughout the refactor package to reflect the utility relocation.
+
+These changes result in a cleaner, strictly hierarchical dependency graph, satisfying both the internal architecture linter and external type checkers (Pyright).
 ~~~~~
 
 ### 下一步建议
-
-These corrections should resolve the final outstanding issues. Please run Pyright one last time to confirm that the `stitcher-refactor` package is now free of import and architectural errors.
+- **架构监控**: 建议在 CI 流程中集成 `stitcher check architecture`，以防止未来再次引入类似的循环依赖。
+- **文档更新**: 如果有相关的内部架构文档，建议同步更新关于 `migration` 包设计模式和 `utils` 放置规范的说明。
