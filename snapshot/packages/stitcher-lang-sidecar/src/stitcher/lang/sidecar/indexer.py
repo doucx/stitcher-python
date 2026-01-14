@@ -8,7 +8,7 @@ from ruamel.yaml import YAML
 from stitcher.spec import URIGeneratorProtocol, DocstringSerializerProtocol
 from stitcher.spec.registry import LanguageAdapter
 from stitcher.spec.index import SymbolRecord, ReferenceRecord
-from stitcher.lang.sidecar.parser import parse_doc_references
+from .parser import parse_doc_references
 from stitcher.lang.python.analysis.models import ReferenceType
 from stitcher.lang.python.analysis.utils import path_to_logical_fqn
 
