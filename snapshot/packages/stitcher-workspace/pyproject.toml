@@ -15,4 +15,4 @@ dependencies = [
 packages = ["src/stitcher"]
 
 [tool.uv.sources]
-stitcher-config = { workspace = true }
+stitcher-common = { workspace = true }
