@@ -12,7 +12,7 @@ from stitcher.spec import (
     LanguageTransformerProtocol,
     DocstringRendererProtocol,
 )
-from stitcher.app.services import (
+from stitcher.services import (
     DocumentManager,
     ScannerService,
 )
