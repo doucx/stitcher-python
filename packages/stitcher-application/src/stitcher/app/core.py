@@ -11,7 +11,7 @@ from stitcher.spec import (
 )
 from stitcher.stubgen import StubgenService
 from stitcher.config import load_config_from_path, StitcherConfig
-from stitcher.app.services import (
+from stitcher.services import (
     DocumentManager,
     ScannerService,
     DocstringMerger,

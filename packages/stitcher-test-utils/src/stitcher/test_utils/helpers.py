@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional, Dict
 
-from stitcher.app import StitcherApp
+from stitcher.app.core import StitcherApp
 from stitcher.spec.interaction import InteractionHandler
 from stitcher.lang.python import (
     PythonTransformer,

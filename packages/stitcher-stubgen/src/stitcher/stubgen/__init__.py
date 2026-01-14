@@ -10,7 +10,7 @@ from stitcher.spec import (
 )
 from stitcher.config import StitcherConfig
 from stitcher.common.transaction import TransactionManager
-from stitcher.app.services import (
+from stitcher.services import (
     ScannerService,
     DocumentManager,
 )
