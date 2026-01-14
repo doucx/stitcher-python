@@ -64,6 +64,7 @@ class StitcherApp:
         # 1. Indexing Subsystem (Promoted to Priority 1 initialization)
         index_db_path = root_path / ".stitcher" / "index" / "index.db"
         self.db_manager = DatabaseManager(index_db_path)
+        self.db_manager.initialize()
         self.index_store = IndexStore(self.db_manager)
         self.file_indexer = FileIndexer(root_path, self.index_store)
 

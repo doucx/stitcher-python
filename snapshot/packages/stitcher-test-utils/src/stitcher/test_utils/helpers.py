@@ -55,9 +55,7 @@ def create_test_app(
         fingerprint_strategy=strategy,
         interaction_handler=interaction_handler,
     )
-    # Eagerly initialize the database for test reliability.
-    # It's idempotent (CREATE TABLE IF NOT EXISTS), so it's safe to call.
-    app.db_manager.initialize()
+    # Database is now initialized in StitcherApp constructor.
     return app
 
 
