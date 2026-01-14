@@ -89,3 +89,17 @@ CREATE TABLE IF NOT EXISTS 'references' (
 
 CREATE INDEX IF NOT EXISTS idx_references_source_file_id ON 'references'(source_file_id);
 CREATE INDEX IF NOT EXISTS idx_references_target_id ON 'references'(target_id);
+
+
+-- Document Entries from Sidecar (.stitcher.yaml) files
+CREATE TABLE IF NOT EXISTS doc_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    file_id INTEGER NOT NULL,          -- FK to the .stitcher.yaml file in the 'files' table
+    symbol_id TEXT NOT NULL,           -- The SURI of the symbol this doc belongs to (e.g., 'py://path/to/file.py#symbol')
+    content_hash TEXT NOT NULL,        -- Hash of the DocstringIR content for quick comparisons
+    ir_data_json TEXT,                 -- The full DocstringIR, serialized as JSON for fast hydration
+    lineno INTEGER,                    -- Line number in the YAML file for error reporting
+    FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_doc_entries_symbol_id ON doc_entries(symbol_id);
