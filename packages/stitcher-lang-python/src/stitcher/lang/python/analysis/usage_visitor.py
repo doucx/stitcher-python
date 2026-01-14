@@ -9,7 +9,7 @@ from collections import defaultdict
 from pathlib import Path
 import libcst.helpers as helpers
 
-from stitcher.lang.python.analysis.models import UsageLocation, ReferenceType
+from .models import UsageLocation, ReferenceType
 
 
 class UsageRegistry:

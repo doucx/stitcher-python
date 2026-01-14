@@ -5,7 +5,7 @@ from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
 from stitcher.analysis.semantic import SemanticGraph
 
 
-from stitcher.refactor.engine.intent import RenameIntent
+from stitcher.refactor.intent import RenameIntent
 
 
 def test_collect_intents_skips_sidecars_if_symbol_not_found():

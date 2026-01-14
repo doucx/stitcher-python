@@ -4,7 +4,7 @@ from typing import List
 from stitcher.refactor.types import RefactorContext
 from stitcher.refactor.operations.base import AbstractOperation
 from stitcher.refactor.engine.utils import path_to_fqn
-from stitcher.refactor.engine.intent import (
+from stitcher.refactor.intent import (
     RefactorIntent,
     RenameIntent,
     MoveFileIntent,
