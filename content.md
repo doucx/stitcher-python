@@ -1,146 +1,89 @@
-Excellent. With the test harness now correctly validating our caching strategy, we can proceed with the core architectural improvement.
+You've hit the nail on the head. The massive cascade of test failures points to a single, deep-seated architectural flaw that my last change introduced. Your analysis is spot-on.
 
-I will now generate the plan to modify `DocumentManager` to prioritize reading from the `IndexStore`, effectively eliminating the I/O bottleneck during the `check` operation.
+This isn't just a simple bug; it's a fundamental state management problem. My previous optimization for the `check` command incorrectly bled into the `init` command's workflow, breaking its primary responsibility.
 
-## [WIP] refactor(sidecar): Optimize DocumentManager to read from index
+## Fix the systemic test failures caused by `InitRunner`'s incorrect reliance on the index when establishing the baseline state. `InitRunner` must compute hashes from the in-memory data it generates, not from the database it is about to populate.
+
+### 错误分析
+
+The root cause of all 12 test failures is a state mismatch within the `InitRunner`. The `init` command's purpose is to be the **absolute source of truth**: it reads source code (`.py`), creates the *first-ever* baseline (`.stitcher.yaml` and `stitcher.lock`), and establishes the ground state.
+
+My last change optimized `DocumentManager` to read from the index for performance. However, during an `init` run, **the index is not yet populated with the sidecar information that `init` itself is in the process of creating.**
+
+The breakdown occurs here:
+1.  `InitRunner` correctly creates the `.stitcher.yaml` file on disk.
+2.  It then calls `self.doc_manager.compute_yaml_content_hashes(module)` to get hashes for the `stitcher.lock` file.
+3.  Because of my recent change, this `DocumentManager` method now queries the `IndexStore`.
+4.  The `IndexStore` has not yet been updated with the new `.stitcher.yaml` file's content, so it returns an empty result.
+5.  Consequently, `InitRunner` receives no YAML hashes and creates a `stitcher.lock` file **without the critical `baseline_yaml_content_hash` key**.
+
+This single omission explains every subsequent failure:
+*   **`KeyError: 'baseline_yaml_content_hash'`**: The tests try to access the key that was never written.
+*   **`AssertionError: Message ... 'signature_drift' was not sent`**: The `check` command's logic fails because it can't find the baseline YAML hash to compare against, leading to incorrect state analysis and the wrong (or no) violation being reported.
 
 ### 用户需求
 
-Modify the `DocumentManager` to use the `IndexStore` as its primary data source for reading sidecar file content, instead of directly accessing and parsing YAML files from the filesystem.
+Fix the systemic test failures caused by `InitRunner`'s incorrect reliance on the index when establishing the baseline state. `InitRunner` must compute hashes from the in-memory data it generates, not from the database it is about to populate.
 
-### 評論
+### 评论
 
-This is the pivotal step in our performance optimization. By shifting the read path from direct file I/O to the indexed database, we are not only addressing the identified bottleneck but also solidifying the "Unified Data Model" concept. The analysis engine will now be almost entirely decoupled from the filesystem for read operations, interacting with a fast, structured, and cached data source (`IndexStore`), which is a significant architectural improvement.
+This is a critical fix. It re-establishes the correct architectural boundary between a write-heavy bootstrapping command (`init`) and a read-heavy analysis command (`check`). `init` must be self-contained and authoritative, while `check` can and should rely on the cached, indexed state produced by the former. This correction is essential for the stability and predictability of the entire system.
 
 ### 目标
 
-1.  Fully implement the logic within `DocumentManager.load_docs_for_path` to query the `IndexStore` for symbols corresponding to a given `.stitcher.yaml` file path.
-2.  Implement the helper method `_hydrate_from_symbols` to correctly deserialize the JSON content stored in the database back into `DocstringIR` objects.
-3.  Ensure the method gracefully falls back to the legacy file-reading mechanism if the `IndexStore` is unavailable or does not contain the requested information.
+1.  Modify `InitRunner.run_batch` in `packages/stitcher-application/src/stitcher/app/runners/init.py`.
+2.  Ensure that the YAML content hashes are computed directly from the in-memory `DocstringIR` map that is generated from the source code, rather than from a premature index lookup.
 
 ### 基本原理
 
-The `FileIndexer` now treats `.stitcher.yaml` files as source code, parsing them and storing their contents as `doc_fragment` symbols in the SQLite database. The `docstring_content` for these symbols is a JSON serialization of the view data.
-
-The optimized `DocumentManager` will leverage this pre-indexed data. When asked for document IRs, it will:
-1.  Query the `IndexStore` using the sidecar file's path.
-2.  Retrieve the relevant `SymbolRecord` objects.
-3.  For each symbol, it will take the `docstring_content` (JSON string), parse it into a Python dictionary, and then use the configured `DocstringSerializer` to convert this "view data" back into a rich `DocstringIR` object.
-
-This process replaces slow, repeated `ruamel.yaml` parsing with a fast database query and a much faster `json.loads` operation, fully capitalizing on the增量索引 mechanism.
+The `InitRunner` workflow must be idempotent and self-sufficient. By explicitly flattening the module's docstrings into an in-memory `DocstringIR` map *within* the `run_batch` method, we create a temporary, authoritative source of truth for that transaction. We can then use this map to both write the `.stitcher.yaml` file and to compute the hashes for the `stitcher.lock` file, guaranteeing consistency without any dependency on a potentially stale index.
 
 ### 标签
 
-#intent/refine #flow/ready #priority/high #comp/lang-sidecar #concept/state #scope/core #ai/instruct #task/domain/testing #task/object/cache-validation #task/action/refactor #task/state/continue
+#intent/fix #flow/ready #priority/critical #comp/application #concept/state #scope/core #ai/instruct #task/domain/testing #task/object/cache-validation #task/action/refactor #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: Implement index-first data loading in DocumentManager
+#### Acts 1: Correct InitRunner's hash computation logic
 
-We will replace the existing `DocumentManager` implementation with one that prioritizes reading from the index.
+I will patch `InitRunner` to compute hashes from its own in-memory data structures, severing the incorrect dependency on the index during the critical bootstrapping phase.
 
 ~~~~~act
 patch_file
-packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/manager.py
+packages/stitcher-application/src/stitcher/app/runners/init.py
 ~~~~~
 ~~~~~python.old
-    def load_docs_for_path(self, file_path: str) -> Dict[str, DocstringIR]:
-        if not file_path:
-            return {}
-        module_path = self.root_path / file_path
-        doc_path = self.resolver.get_doc_path(module_path)
+                module_abs_path = self.root_path / module.file_path
+                module_ws_rel = self.workspace.to_workspace_relative(module_abs_path)
 
-        # 1. Try loading from Index (Unified Data Model)
-        if self.index_store:
-            try:
-                rel_doc_path = doc_path.relative_to(self.root_path).as_posix()
-                symbols = self.index_store.get_symbols_by_file_path(rel_doc_path)
-                # If we have symbols (even if empty list, meaning file tracked but empty), we trust index.
-                # However, if the file is not in index (get_symbols returns []), it might be untracked or new.
-                # For robustness, if symbols is empty list, we double check if file exists on disk?
-                # Actually, StitcherApp ensures index freshness.
-                if symbols:
-                    return self._hydrate_from_symbols(symbols)
-            except ValueError:
-                # Path issue (e.g. peripheral), fallback to IO
-                pass
+                computed_fingerprints = self._compute_fingerprints(module)
+                yaml_hashes = self.doc_manager.compute_yaml_content_hashes(module)
 
-        # 2. Fallback to File IO (Legacy/No-Index mode)
-        return self._sidecar_adapter.load_doc_irs(doc_path, self.serializer)
+                all_fqns = set(computed_fingerprints.keys()) | set(yaml_hashes.keys())
 
-    def _hydrate_from_symbols(
-        self, symbols: List["SymbolRecord"]
-    ) -> Dict[str, DocstringIR]:
-        docs = {}
-        for sym in symbols:
-            # We only care about doc fragments here
-            if sym.kind != "doc_fragment" or not sym.docstring_content:
-                continue
-
-            try:
-                # The content in DB is JSON-serialized View Data (from SidecarIndexerAdapter)
-                view_data = json.loads(sym.docstring_content)
-                # Convert View Data -> IR using the current configured strategy
-                ir = self.serializer.from_view_data(view_data)
-                docs[sym.name] = ir
-            except Exception:
-                # If data is corrupt, skip
-                continue
-        return docs
+                for fqn in all_fqns:
 ~~~~~
 ~~~~~python.new
-    def load_docs_for_path(self, file_path: str) -> Dict[str, DocstringIR]:
-        if not file_path:
-            return {}
-        module_path = self.root_path / file_path
-        doc_path = self.resolver.get_doc_path(module_path)
+                module_abs_path = self.root_path / module.file_path
+                module_ws_rel = self.workspace.to_workspace_relative(module_abs_path)
 
-        # 1. Try loading from Index (Unified Data Model)
-        if self.index_store:
-            try:
-                rel_doc_path = doc_path.relative_to(self.root_path).as_posix()
-                symbols = self.index_store.get_symbols_by_file_path(rel_doc_path)
-                # If the index returns a list (even empty), it means the file is tracked.
-                # An empty list signifies a tracked but empty .stitcher.yaml file.
-                # We can trust the index completely because `ensure_index_fresh` runs before `check`.
-                if symbols is not None:
-                    return self._hydrate_from_symbols(symbols)
-            except ValueError:
-                # This can happen if the path is outside the project root (e.g., a peripheral).
-                # In this case, we fall back to direct I/O.
-                pass
+                # Generate IRs from source code; this is the source of truth for init.
+                ir_map = self.doc_manager.flatten_module_docs(module)
 
-        # 2. Fallback to File IO (for peripherals or non-indexed scenarios)
-        return self._sidecar_adapter.load_doc_irs(doc_path, self.serializer)
+                computed_fingerprints = self._compute_fingerprints(module)
+                # CRITICAL FIX: Compute hashes from the in-memory IR map, NOT from the index.
+                yaml_hashes = {
+                    fqn: self.doc_manager.compute_ir_hash(ir)
+                    for fqn, ir in ir_map.items()
+                }
 
-    def _hydrate_from_symbols(
-        self, symbols: List["SymbolRecord"]
-    ) -> Dict[str, DocstringIR]:
-        docs = {}
-        for sym in symbols:
-            # We only care about doc fragments from sidecar files.
-            if sym.kind != "doc_fragment" or not sym.docstring_content:
-                continue
+                all_fqns = set(computed_fingerprints.keys()) | set(yaml_hashes.keys())
 
-            try:
-                # The content in DB is a JSON string representing the "View Data".
-                view_data = json.loads(sym.docstring_content)
-                # Convert this View Data -> IR using the currently configured strategy.
-                ir = self.serializer.from_view_data(view_data)
-                # The symbol's name is the FQN fragment (e.g., "MyClass.my_method").
-                docs[sym.name] = ir
-            except (json.JSONDecodeError, TypeError):
-                # If data is corrupt or not in the expected format, skip this entry.
-                continue
-        return docs
+                for fqn in all_fqns:
 ~~~~~
 
 ### 下一步建议
 
-我们已经完成了核心的性能优化。现在最重要的一步是运行完整的测试套件，特别是我们新加的 `test_check_cache.py`，来确认我们的修改是正确且有效的。
-
-同时，再次运行性能剖析脚本将为我们提供量化的数据，以证明这次架构重构带来的显著性能提升。
-
-如果所有测试都通过，我们就可以认为这个任务已经完成，并准备提交这些变更。
+This patch directly addresses the root cause of all 12 test failures. The next logical step is to run the entire test suite again. I am confident that with this fix, all tests will pass, and we can finally confirm that our new, high-performance indexing architecture is both correct and stable.
