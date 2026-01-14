@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from stitcher.refactor.types import RefactorContext
-from stitcher.refactor.engine.intent import RefactorIntent
+from stitcher.refactor.intent import RefactorIntent
 
 
 class AbstractOperation(ABC):

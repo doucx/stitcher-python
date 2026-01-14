@@ -12,7 +12,7 @@ from stitcher.common.transaction import (
     DeleteFileOp,
     DeleteDirectoryOp,
 )
-from stitcher.refactor.engine.intent import (
+from stitcher.refactor.intent import (
     RefactorIntent,
     RenameIntent,
     SidecarUpdateIntent,
