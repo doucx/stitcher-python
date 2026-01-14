@@ -309,6 +309,4 @@ def parse_source_code(source_code: str, file_path: str = "") -> ModuleDef:
         dunder_all=visitor.dunder_all,
     )
 
-    _enrich_typing_imports(module_def)
-
     return module_def
