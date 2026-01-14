@@ -58,22 +58,22 @@ def test_adapter_yaml_suri_computation(tmp_path: Path):
 
     yaml_file = src_dir / "module.stitcher.yaml"
     yaml_content = dedent("""
-    MyClass:
-      doc: hello
-    my_func:
-      doc: world
+    MyClass: hello
+    my_func: world
     """)
     yaml_file.write_text(yaml_content)
 
     # 2. ACT
     adapter = SidecarAdapter(root_path=tmp_path, uri_generator=PythonURIGenerator())
-    symbols, refs = adapter.parse(yaml_file, yaml_content)
+    symbols, refs, doc_entries = adapter.parse(yaml_file, yaml_content)
 
     # 3. ASSERT
     assert len(symbols) == 0
     assert len(refs) == 2
+    assert len(doc_entries) == 2
 
     refs_by_id = {ref.target_id: ref for ref in refs}
+    doc_entries_by_id = {de.symbol_id: de for de in doc_entries}
 
     # Verify first reference
     suri1 = "py://src/module.py#MyClass"
@@ -90,6 +90,18 @@ def test_adapter_yaml_suri_computation(tmp_path: Path):
     assert ref2.kind == ReferenceType.SIDECAR_DOC_ID.value
     assert ref2.lineno == 4
     assert ref2.col_offset == 0
+
+    # Verify doc entries
+    assert suri1 in doc_entries_by_id
+    de1 = doc_entries_by_id[suri1]
+    assert de1.lineno == 2
+    assert de1.content_hash is not None
+    assert '"summary": "hello"' in de1.ir_data_json
+
+    assert suri2 in doc_entries_by_id
+    de2 = doc_entries_by_id[suri2]
+    assert de2.lineno == 4
+    assert '"summary": "world"' in de2.ir_data_json
 
 
 def test_save_doc_irs_create_path_sorts_and_formats(tmp_path: Path):
