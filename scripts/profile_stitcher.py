@@ -98,11 +98,13 @@ def main():
     print("-" * 27)
 
     profiler = Profiler(interval=0.001)
-    profiler.start()
-
+    
     print(f"🚀 Profiling 'stitcher {args.command}'...")
+    profiler.start()
     try:
         target_action()
+    except KeyboardInterrupt:
+        print("\n🛑 Profiling interrupted by user. Generating report...")
     except Exception as e:
         print(f"❌ Command failed during profiling: {e}")
     finally:
