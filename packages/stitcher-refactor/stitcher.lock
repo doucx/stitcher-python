@@ -180,6 +180,9 @@
     "py://packages/stitcher-refactor/src/stitcher/refactor/intent.py#SidecarUpdateIntent.old_file_path": {},
     "py://packages/stitcher-refactor/src/stitcher/refactor/intent.py#SidecarUpdateIntent.old_fqn": {},
     "py://packages/stitcher-refactor/src/stitcher/refactor/intent.py#SidecarUpdateIntent.sidecar_path": {},
+    "py://packages/stitcher-refactor/src/stitcher/refactor/migration/__init__.py#Move": {},
+    "py://packages/stitcher-refactor/src/stitcher/refactor/migration/__init__.py#MoveDir": {},
+    "py://packages/stitcher-refactor/src/stitcher/refactor/migration/__init__.py#Rename": {},
     "py://packages/stitcher-refactor/src/stitcher/refactor/migration/__init__.py#__all__": {},
     "py://packages/stitcher-refactor/src/stitcher/refactor/migration/exceptions.py#MigrationError": {
       "baseline_code_signature_text": "class MigrationError(Exception):",
@@ -339,7 +342,11 @@
     "py://packages/stitcher-refactor/src/stitcher/refactor/types.py#RefactorContext.lock_manager": {},
     "py://packages/stitcher-refactor/src/stitcher/refactor/types.py#RefactorContext.sidecar_manager": {},
     "py://packages/stitcher-refactor/src/stitcher/refactor/types.py#RefactorContext.uri_generator": {},
-    "py://packages/stitcher-refactor/src/stitcher/refactor/types.py#RefactorContext.workspace": {}
+    "py://packages/stitcher-refactor/src/stitcher/refactor/types.py#RefactorContext.workspace": {},
+    "py://packages/stitcher-refactor/src/stitcher/refactor/utils.py#path_to_fqn": {
+      "baseline_code_signature_text": "def path_to_fqn(path: Path, search_paths: List[Path]) -> Optional[str]:",
+      "baseline_code_structure_hash": "61b6931b7515de1fb6be37384c4585f99bc1bdeb64f3b15afa5def2ca0f07d8e"
+    }
   },
   "version": "1.0"
 }

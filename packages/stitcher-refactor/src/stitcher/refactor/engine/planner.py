@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import List, Dict, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from stitcher.refactor.migration import MigrationSpec
+    from stitcher.refactor.migration.spec import MigrationSpec
 from stitcher.refactor.types import RefactorContext
 from stitcher.common.transaction import (
     FileOp,
@@ -23,14 +23,14 @@ from stitcher.refactor.intent import (
     LockSymbolUpdateIntent,
     LockPathUpdateIntent,
 )
-from stitcher.refactor.engine.renamer import GlobalBatchRenamer
+from .renamer import GlobalBatchRenamer
 from stitcher.lang.sidecar import (
     SidecarTransformer,
     SidecarTransformContext,
     SidecarAdapter,
 )
 from stitcher.lang.python.uri import PythonURIGenerator
-from .utils import path_to_fqn
+from ..utils import path_to_fqn
 from stitcher.spec import Fingerprint
 
 

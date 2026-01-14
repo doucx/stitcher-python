@@ -1,7 +1,7 @@
 from typing import List, Optional
 
 from .base import AbstractOperation
-from ..engine.utils import path_to_fqn
+from ..utils import path_to_fqn
 from stitcher.refactor.types import RefactorContext
 from stitcher.analysis.semantic import SymbolNode
 from stitcher.refactor.intent import (
