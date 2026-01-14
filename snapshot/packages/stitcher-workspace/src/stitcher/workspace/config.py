@@ -20,7 +20,7 @@ class StitcherConfig:
     peripheral_paths: List[str] = field(default_factory=list)
 
 
-from .core import find_workspace_root
+from .utils import find_workspace_root
 from .exceptions import WorkspaceNotFoundError
 
 

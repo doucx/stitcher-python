@@ -1,161 +1,186 @@
-分析得非常到位。“一种声音”是消除代码中重复逻辑、建立单一事实来源（Single Source of Truth - SSoT）的绝佳隐喻，完全符合高保真工程公理（HFEA）。
+你遇到的 `ImportError` 是一个典型的循环导入（Circular Import）问题，这是架构上的一个“异味”，完全违背了 HFEA 协议中“严格分层与边界”的原则。
 
-当前 `stitcher-workspace` 包中存在两个“声音”在尝试定位项目文件：
-1.  **`core.py` 中的 `find_workspace_root`**: 这是最权威的声音，它通过检查 `.git` 或 `pyproject.toml` 中的 `[tool.uv.workspace]` 来寻找项目**根目录**。
-2.  **`config.py` 中的 `_find_pyproject_toml`**: 这是一个次要的声音，它只负责向上寻找 `pyproject.toml` 文件，代表着一种重复的、范围更窄的搜索逻辑。
+你的分析完全正确。在我之前的重构中，引入了一个依赖循环：
+1.  `core.py` 导入 `config.py` 来获取 `StitcherConfig`。
+2.  `config.py` 导入 `core.py` 来获取 `find_workspace_root` 函数。
 
-为了实现“一种声音”，我们将进行以下重构：废除 `config.py` 自己的搜索逻辑，并让它完全依赖 `core.py` 中权威的 `find_workspace_root` 函数来确定上下文。
+这个 `core -> config -> core` 的循环导致了 Python 解释器在加载其中一个模块时，另一个模块尚未完全初始化，因此无法找到要导入的名称。
 
-我将生成一个计划来执行这项重构。
+根据 HFEA 的“异味即缺陷”和“架构不可腐蚀性”原则，我们必须通过结构性重构来解决这个问题，而不是使用局部导入等“补丁”。
 
-## [WIP] refactor(workspace): 集中化工作区根目录发现逻辑
+唯一的正确路径是解耦。`find_workspace_root` 是一个无状态的、纯粹的工具函数，它不应该与 `Workspace` 这个有状态的核心类捆绑在同一个模块中。
+
+我将执行以下计划来建立清晰的层次结构并打破循环：
+1.  **创建新的 `utils.py` 模块**: 我将创建一个新的 `stitcher/workspace/utils.py` 文件，它将成为存放纯工具函数的底层模块。
+2.  **迁移 `find_workspace_root`**: 我会将 `find_workspace_root` 函数从 `core.py` 移动到新的 `utils.py` 中。
+3.  **重新布线依赖**: 我将修改 `config.py` 和 `__init__.py`，让它们从新的、更底层的 `utils.py` 模块导入 `find_workspace_root`，从而打破循环。
+
+这将使依赖关系变为一个健康的、单向的图：`core.py` -> `config.py` -> `utils.py`，从而彻底解决问题。
+
+## [WIP] fix(workspace): 通过提取 utils 模块解决循环导入问题
+
+### 错误分析
+
+之前的重构在 `core.py` 和 `config.py` 之间引入了一个循环导入。`core.py` 依赖 `config.py` 来获取 `StitcherConfig` 类型定义，而 `config.py` 又被修改为依赖 `core.py` 来获取 `find_workspace_root` 函数，形成了一个无法解析的依赖环。
 
 ### 用户需求
 
-用户要求重构 `stitcher-workspace` 包，以确保发现项目根目录的逻辑是集中化的，并且源自单一的、权威的来源，即“一种声音”。
+修复由上一次重构引起的 `ImportError`，并建立一个无循环的、结构合理的模块依赖关系。
 
 ### 评论
 
-这是一个优秀的重构建议。遵循单一事实来源（SSoT）和“不要重复自己”（DRY）原则，可以消除潜在的不一致性，使代码库更易于理解和维护。将根目录发现逻辑集中到 `core.py` 的 `find_workspace_root` 函数中，是完全正确的做法。
+这是一个关键的架构修复。循环导入是模块间边界不清的明确信号。通过将无状态的工具函数 (`find_workspace_root`) 提取到一个独立的、更底层的 `utils.py` 模块，我们不仅解决了眼下的错误，还使整个包的结构更加清晰和健壮，完全符合 HFEA 原则。
 
 ### 目标
 
-1.  将 `stitcher.workspace.core.find_workspace_root` 函数确立为整个包中定位工作区根目录的**唯一**权威。
-2.  重构 `stitcher.workspace.config.load_config_from_path` 函数，使其调用 `find_workspace_root` 来定位根目录，而不是执行自己的向上搜索。
-3.  从 `config.py` 中彻底删除冗余的 `_find_pyproject_toml` 辅助函数。
-4.  在 `stitcher.workspace` 包的 `__init__.py` 中导出 `find_workspace_root`，使其成为明确的公共API。
+1.  创建一个新的 `stitcher.workspace.utils` 模块。
+2.  将 `find_workspace_root` 函数从 `core.py` 迁移到 `utils.py`。
+3.  更新所有对 `find_workspace_root` 的引用，使其指向新的 `utils` 模块。
+4.  确保模块间的依赖关系是单向的，从而消除 `ImportError`。
 
 ### 基本原理
 
-重构的核心思想是改变 `config.py` 的职责。它不应该“寻找”配置文件，而应该在被告知工作区根目录后，“加载”位于该根目录下的配置文件。
-
-具体流程如下：
-1.  `load_config_from_path` 将首先调用 `core.find_workspace_root(search_path)` 来获取权威的工作区根目录。
-2.  一旦获得 `workspace_root`，它将直接在该路径下查找 `pyproject.toml` (`workspace_root / "pyproject.toml"`)。
-3.  这种方式消除了 `config.py` 中重复的向上遍历逻辑，使得 `_find_pyproject_toml` 函数变得多余，可以安全地删除。
-4.  最后，将 `find_workspace_root` 提升为包的公共接口，明确其核心地位。
+我们将引入一个新的 `utils.py` 文件作为 `workspace` 包中最底层的模块之一。它将不依赖于 `core.py` 或 `config.py`。然后，`config.py` 和包的 `__init__.py` 将从 `utils.py` 导入 `find_workspace_root`。由于 `core.py` 已经不再包含此函数，`config.py` 对 `core.py` 的导入需求消失，循环被打破。
 
 ### 标签
 
-#intent/refine #flow/ready #priority/high #comp/workspace #concept/config #scope/core #ai/instruct #task/domain/architecture #task/object/workspace-discovery #task/action/refactor #task/state/begin
+#intent/fix #flow/ready #priority/critical #comp/workspace #concept/config #scope/core #ai/instruct #task/domain/architecture #task/object/workspace-discovery #task/action/refactor #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 重构 `config.py` 以使用权威的根目录发现函数
+#### Acts 1: 创建 `utils.py` 并迁移函数
 
-我们将修改 `load_config_from_path` 函数，移除对 `_find_pyproject_toml` 的调用，转而使用从 `core.py` 导入的 `find_workspace_root`。同时，我们将删除不再需要的 `_find_pyproject_toml` 函数。
+首先，我们创建新的 `utils.py` 文件，并将 `find_workspace_root` 函数及其依赖项（`tomllib` 和 `WorkspaceNotFoundError`）放入其中。
 
 ~~~~~act
-patch_file
-packages/stitcher-workspace/src/stitcher/workspace/config.py
+write_file
+packages/stitcher-workspace/src/stitcher/workspace/utils.py
 ~~~~~
-~~~~~python.old
-def _find_pyproject_toml(search_path: Path) -> Path:
-    current_dir = search_path.resolve()
-    while current_dir.parent != current_dir:
-        pyproject_path = current_dir / "pyproject.toml"
-        if pyproject_path.is_file():
-            return pyproject_path
-        current_dir = current_dir.parent
-    raise FileNotFoundError("Could not find pyproject.toml in any parent directory.")
+~~~~~python
+from pathlib import Path
+from typing import List, Set, Optional
 
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib  # type: ignore
 
-def _find_plugins(workspace_root: Path) -> Dict[str, str]:
-~~~~~
-~~~~~python.new
-from .core import find_workspace_root
 from .exceptions import WorkspaceNotFoundError
 
 
-def _find_plugins(workspace_root: Path) -> Dict[str, str]:
+def find_workspace_root(start_path: Path) -> Path:
+    current = start_path.resolve()
+    # If start_path is a file, start from its parent
+    if current.is_file():
+        current = current.parent
+
+    # Traverse upwards
+    for parent in [current] + list(current.parents):
+        # 1. Check for .git (strongest indicator)
+        if (parent / ".git").exists():
+            return parent
+
+        # 2. Check for pyproject.toml with workspace definition
+        pyproject = parent / "pyproject.toml"
+        if pyproject.exists():
+            try:
+                with pyproject.open("rb") as f:
+                    data = tomllib.load(f)
+                # Check for uv workspace or similar tools
+                if (
+                    "tool" in data
+                    and "uv" in data["tool"]
+                    and "workspace" in data["tool"]["uv"]
+                ):
+                    return parent
+            except Exception:
+                pass
+
+    # No root found in the entire hierarchy
+    raise WorkspaceNotFoundError(str(start_path))
 ~~~~~
+
+#### Acts 2: 从 `core.py` 中移除函数
+
+现在，我们从 `core.py` 中删除 `find_workspace_root` 函数的定义，因为它已经被移走了。
+
+~~~~~act
+patch_file
+packages/stitcher-workspace/src/stitcher/workspace/core.py
+~~~~~
+~~~~~python.old
+log = logging.getLogger(__name__)
+
+
+def find_workspace_root(start_path: Path) -> Path:
+    current = start_path.resolve()
+    # If start_path is a file, start from its parent
+    if current.is_file():
+        current = current.parent
+
+    # Traverse upwards
+    for parent in [current] + list(current.parents):
+        # 1. Check for .git (strongest indicator)
+        if (parent / ".git").exists():
+            return parent
+
+        # 2. Check for pyproject.toml with workspace definition
+        pyproject = parent / "pyproject.toml"
+        if pyproject.exists():
+            try:
+                with pyproject.open("rb") as f:
+                    data = tomllib.load(f)
+                # Check for uv workspace or similar tools
+                if (
+                    "tool" in data
+                    and "uv" in data["tool"]
+                    and "workspace" in data["tool"]["uv"]
+                ):
+                    return parent
+            except Exception:
+                pass
+
+    # No root found in the entire hierarchy
+    raise WorkspaceNotFoundError(str(start_path))
+
+
+class Workspace:
+~~~~~
+~~~~~python.new
+log = logging.getLogger(__name__)
+
+
+class Workspace:
+~~~~~
+
+#### Acts 3: 更新 `config.py` 的导入
+
+接下来，我们更新 `config.py`，使其从新的 `utils.py` 导入 `find_workspace_root`。
 
 ~~~~~act
 patch_file
 packages/stitcher-workspace/src/stitcher/workspace/config.py
 ~~~~~
 ~~~~~python.old
-def load_config_from_path(
-    search_path: Path,
-) -> Tuple[List[StitcherConfig], Optional[str]]:
-    plugins = _find_plugins(search_path)
-    project_name: Optional[str] = None
-    stitcher_data: Dict[str, Any] = {}
-
-    try:
-        config_path = _find_pyproject_toml(search_path)
-        with open(config_path, "rb") as f:
-            data = tomllib.load(f)
-
-        project_name = data.get("project", {}).get("name")
-        stitcher_data = data.get("tool", {}).get("stitcher", {})
-
-    except FileNotFoundError:
-        # If no root config file, return default config with discovered plugins
-        return [StitcherConfig(plugins=plugins)], None
-
-    configs: List[StitcherConfig] = []
+from .core import find_workspace_root
+from .exceptions import WorkspaceNotFoundError
 ~~~~~
 ~~~~~python.new
-def load_config_from_path(
-    search_path: Path,
-) -> Tuple[List[StitcherConfig], Optional[str]]:
-    project_name: Optional[str] = None
-    stitcher_data: Dict[str, Any] = {}
-
-    try:
-        workspace_root = find_workspace_root(search_path)
-        plugins = _find_plugins(workspace_root)
-        config_path = workspace_root / "pyproject.toml"
-
-        if config_path.exists():
-            with open(config_path, "rb") as f:
-                data = tomllib.load(f)
-
-            project_name = data.get("project", {}).get("name")
-            stitcher_data = data.get("tool", {}).get("stitcher", {})
-        else:
-            # Workspace root found (e.g. by .git), but no pyproject.toml
-            return [StitcherConfig(plugins=plugins)], None
-
-    except WorkspaceNotFoundError:
-        # No workspace found at all, so no config and no plugins.
-        return [StitcherConfig()], None
-
-    configs: List[StitcherConfig] = []
+from .utils import find_workspace_root
+from .exceptions import WorkspaceNotFoundError
 ~~~~~
 
-#### Acts 2: 将 `find_workspace_root` 导出为包的公共 API
+#### Acts 4: 更新 `__init__.py` 的导入和导出
 
-现在，我们将修改 `__init__.py` 文件，将 `find_workspace_root` 函数添加到 `__all__` 中，使其成为包的正式接口。
+最后，我们修复 `__init__.py`，确保它从正确的位置 (`utils.py`) 导入并导出 `find_workspace_root`。
 
 ~~~~~act
 patch_file
 packages/stitcher-workspace/src/stitcher/workspace/__init__.py
 ~~~~~
 ~~~~~python.old
-__path__ = __import__("pkgutil").extend_path(__path__, __name__)
-
-from typing import Optional, List
-from .core import Workspace
-from .config import StitcherConfig, load_config_from_path
-from .exceptions import WorkspaceError, WorkspaceNotFoundError
-
-__all__ = [
-    "Workspace",
-    "WorkspaceError",
-    "WorkspaceNotFoundError",
-    "StitcherConfig",
-    "load_config_from_path",
-    "Optional",
-    "List",
-]
-~~~~~
-~~~~~python.new
-__path__ = __import__("pkgutil").extend_path(__path__, __name__)
-
 from typing import Optional, List
 from .core import Workspace, find_workspace_root
 from .config import StitcherConfig, load_config_from_path
@@ -172,15 +197,25 @@ __all__ = [
     "List",
 ]
 ~~~~~
+~~~~~python.new
+from typing import Optional, List
+from .core import Workspace
+from .config import StitcherConfig, load_config_from_path
+from .exceptions import WorkspaceError, WorkspaceNotFoundError
+from .utils import find_workspace_root
+
+__all__ = [
+    "Workspace",
+    "WorkspaceError",
+    "WorkspaceNotFoundError",
+    "StitcherConfig",
+    "load_config_from_path",
+    "find_workspace_root",
+    "Optional",
+    "List",
+]
+~~~~~
 
 ### 下一步建议
 
-我们已经成功地将根目录发现逻辑集中化。下一步是验证这一重构的正确性。
-
-我建议检查并更新 `stitcher-workspace` 相关的测试用例，特别是那些依赖于配置加载的测试，以确保它们在新的逻辑下仍然能够正确运行。例如，测试场景应覆盖：
-1.  通过 `.git` 找到根目录，但 `pyproject.toml` 不存在。
-2.  通过 `pyproject.toml` 中的 `[tool.uv.workspace]` 找到根目录。
-3.  在子目录中运行命令时，仍能正确找到根配置。
-4.  在没有工作区的目录中运行时的失败情况。
-
-如果你同意，我将开始准备更新测试的计划。
+现在，架构的循环依赖问题已经从根本上解决。请重新运行你的测试套件。`ImportError` 应该已经消失了。
