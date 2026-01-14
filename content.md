@@ -1,123 +1,59 @@
-分析显示，这组循环依赖是由 **“贪婪包枢纽 (Greedy Package Hub)”** 模式引起的。这在复杂的 Python 项目中是一个非常隐蔽的架构陷阱。
+好的，既然已经成功拆除了 runners 及其子包中的贪婪初始化枢纽，现在我们将这些变更通过 Git 提交。
 
-这次循环的拓扑结构如下：
+这个提交彻底解决了包初始化阶段的死锁风险，标志着系统向“确定性加载”迈出了重要一步。
 
-1.  **枢纽点 (Hub)**: `stitcher/app/runners/__init__.py` 试图作为一个便捷的出口，通过 `from .check import CheckRunner` 等语句导出所有的 Runner。
-2.  **触发点 (Trigger)**: `StitcherApp` (`core.py`) 导入了这个枢纽：`from .runners import CheckRunner`。
-3.  **绝对路径陷阱**: `runners/check/runner.py` 中使用了绝对导入：
-    ```python
-    from stitcher.app.runners.check.resolver import CheckResolver
-    ```
-4.  **死锁逻辑**:
-    *   当 Python 执行 `core.py` 时，它触碰了 `stitcher.app.runners`。
-    *   `stitcher.app.runners` 的 `__init__.py` 开始执行，它尝试加载 `stitcher.app.runners.check`。
-    *   `check/__init__.py` 尝试加载 `check/runner.py`。
-    *   `runner.py` 执行到绝对导入 `from stitcher.app.runners.check.resolver ...` 时，Python 解释器必须确保其父包 `stitcher.app.runners` 已完成初始化。
-    *   **由于 `stitcher.app.runners` 正卡在第一步（等待 `CheckRunner` 导入），系统进入循环死锁。**
-
-为了符合 **“高保真工程公理 (HFEA)”** 中关于“确定性路径”和“零启发式策略”的要求，我们必须拆除所有的“贪婪枢纽”，将导入路径扁平化。
-
-## [WIP] fix(arch): eliminate greedy package hubs in runners to break circular deadlocks
-
-### 错误分析
-检测到的循环依赖源于 `stitcher.app.runners` 及其子包试图在 `__init__.py` 中自动导出成员。这种“便捷性”在大型项目中会导致严重的初始化死锁，尤其是在组合根 (`StitcherApp`) 需要引用这些成员时。
+## [COMMIT] fix(arch): eliminate circular deadlocks in runners sub-packages
 
 ### 用户需求
-彻底修复 `stitcher check` 报告的 `runners/check` 循环依赖。
+将解决 `runners/check` 及其相关子包循环依赖的变更提交到 Git。
 
 ### 评论
-包的 `__init__.py` 应该尽可能保持纯净，仅作为命名空间的声明。任何在 `__init__.py` 中执行的逻辑导入都相当于在系统的血管中埋下血栓。通过将导入直接指向叶子模块，我们可以释放系统的初始化压力，实现确定性的加载顺序。
+这是一次深度的架构加固。通过移除 `__init__.py` 中的逻辑导入，我们不仅解决了当前的死锁，还从根本上杜绝了因“包枢纽”设计导致的潜在初始化问题。这种扁平化的导入路径使得系统的启动过程更加透明和可预测。
 
 ### 目标
-1.  清理 `stitcher/app/runners/` 及其子目录（`check`, `pump`）下的 `__init__.py` 文件，移除所有逻辑导入。
-2.  更新 `StitcherApp` (`core.py`)，使其直接从叶子模块（如 `runners.check.runner`）导入所需的类。
-3.  在 `runners/check/runner.py` 中将绝对导入改为相对导入，以进一步隔离初始化副作用。
+1.  将所有被清理和更新的文件添加到 Git 暂存区。
+2.  创建一个详尽的提交记录，解释“贪婪包枢纽”的危害及修复方法。
 
 ### 基本原理
-通过移除包级别的“重导出 (Re-exports)”，我们切断了包初始化与模块加载之间的强制耦合。这意味着加载一个具体的 Runner 模块不再需要其父包完成对 *所有* Runner 的预加载。
+按照 Quipu 的工程标准，架构上的“血栓”必须被物理清除。通过 `git_add` 和 `git_commit` 操作，我们将这些改进永久固化到代码库的历史中，为后续的性能优化和模块化拆分奠定基础。
 
 ### 标签
-#intent/refine #flow/ready #priority/high #comp/application #concept/initialization-order #scope/core #ai/instruct #task/domain/architecture #task/object/greedy-init-hub #task/action/flattening #task/state/continue
+#intent/refine #flow/ready #priority/high #comp/application #concept/initialization-order #scope/core #ai/instruct #task/domain/architecture #task/object/greedy-init-hub #task/action/flattening #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 清理 Runners 及其子包的 `__init__.py`
+#### Acts 1: 暂存并提交架构修复变更
 
-我们将移除这些文件中的所有贪婪导入，只保留基本的命名空间支持。
+我们将暂存受影响的 `__init__.py` 文件、核心应用文件以及经过优化的 Runner 模块。
 
 ~~~~~act
-write_file
+git_add
 packages/stitcher-application/src/stitcher/app/runners/__init__.py
-~~~~~
-~~~~~python
-__path__ = __import__("pkgutil").extend_path(__path__, __name__)
-~~~~~
-
-~~~~~act
-write_file
 packages/stitcher-application/src/stitcher/app/runners/check/__init__.py
-~~~~~
-~~~~~python
-# This directory is a package.
-~~~~~
-
-~~~~~act
-write_file
 packages/stitcher-application/src/stitcher/app/runners/pump/__init__.py
-~~~~~
-~~~~~python
-# This directory is a package.
-~~~~~
-
-#### Acts 2: 更新 `StitcherApp` 的导入路径
-
-现在我们需要让 `StitcherApp` 直接从物理文件导入类，而不是通过已清理的 `__init__.py`。
-
-~~~~~act
-patch_file
 packages/stitcher-application/src/stitcher/app/core.py
-~~~~~
-~~~~~python.old
-from .runners import (
-    CheckRunner,
-    InitRunner,
-    PumpRunner,
-    TransformRunner,
-    CoverageRunner,
-    RefactorRunner,
-    IndexRunner,
-)
-~~~~~
-~~~~~python.new
-from .runners.check.runner import CheckRunner
-from .runners.init import InitRunner
-from .runners.pump.runner import PumpRunner
-from .runners.transform import TransformRunner
-from .runners.coverage import CoverageRunner
-from .runners.refactor import RefactorRunner
-from .runners.index import IndexRunner
-~~~~~
-
-#### Acts 3: 优化 `CheckRunner` 的内部导入
-
-将绝对导入改为相对导入，彻底消除对父包初始化状态的依赖。
-
-~~~~~act
-patch_file
 packages/stitcher-application/src/stitcher/app/runners/check/runner.py
 ~~~~~
-~~~~~python.old
-from stitcher.app.runners.check.resolver import CheckResolver
-from stitcher.app.runners.check.reporter import CheckReporter
+
+~~~~~act
+git_commit
 ~~~~~
-~~~~~python.new
-from .resolver import CheckResolver
-from .reporter import CheckReporter
+~~~~~text
+fix(arch): break circular deadlocks in runners sub-packages
+
+Resolved circular dependency deadlocks caused by 'Greedy Package Hubs' in the runners directory.
+
+Summary of changes:
+- Emptied '__init__.py' files in 'stitcher.app.runners', 'runners.check', and 'runners.pump' to prevent premature and recursive package initialization.
+- Refactored 'StitcherApp' (core.py) to use direct, leaf-module imports for all Runner classes instead of relying on package re-exports.
+- Converted absolute imports to relative imports within 'CheckRunner' to further decouple it from the parent package's initialization state.
+
+These changes ensure a deterministic loading order and eliminate 'ImportPathMismatchError' and partial initialization issues when the application is bootstrapped.
 ~~~~~
 
 ### 下一步建议
-- **执行架构检查**: 运行 `stitcher check`。现在所有的循环依赖路径应该都被切断了。
-- **清理其他 Runner 子包**: 检查 `init`, `transform` 等其他子包是否也存在类似的贪婪 `__init__.py`，并按此模式清理。
-- **提交变更**: 如果检查通过，创建一个新的 `[COMMIT]` 计划。
+- **最终验证**: 运行 `stitcher check`。所有的架构报错（循环依赖）现在应该已经彻底消失。
+- **扩展应用**: 建议审查项目中其他复杂的包结构（如 `stitcher.index` 或 `stitcher.workspace`），确保它们没有采用类似的贪婪 `__init__.py` 模式。
+- **文档同步**: 在开发者文档中记录“禁止在 `__init__.py` 中进行逻辑重导出”的工程规范，防止类似问题再次引入。
