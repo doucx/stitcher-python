@@ -30,7 +30,7 @@ from stitcher.lang.sidecar import (
     SidecarAdapter,
 )
 from stitcher.lang.python.uri import PythonURIGenerator
-from .utils import path_to_fqn
+from ..utils import path_to_fqn
 from stitcher.spec import Fingerprint
 
 
