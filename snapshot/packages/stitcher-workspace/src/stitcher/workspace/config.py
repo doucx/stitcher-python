@@ -44,12 +44,15 @@ def _find_plugins(workspace_root: Path) -> Dict[str, str]:
 def load_config_from_path(
     search_path: Path,
 ) -> Tuple[List[StitcherConfig], Optional[str]]:
+    # Plugin discovery should run from the search_path, regardless of whether a
+    # formal workspace root is found. This matches original behavior and supports
+    # testing scenarios.
+    plugins = _find_plugins(search_path)
     project_name: Optional[str] = None
     stitcher_data: Dict[str, Any] = {}
 
     try:
         workspace_root = find_workspace_root(search_path)
-        plugins = _find_plugins(workspace_root)
         config_path = workspace_root / "pyproject.toml"
 
         with open(config_path, "rb") as f:
@@ -59,9 +62,8 @@ def load_config_from_path(
         stitcher_data = data.get("tool", {}).get("stitcher", {})
 
     except (FileNotFoundError, WorkspaceNotFoundError):
-        # In case of no root, we can't reliably find plugins.
-        # This behavior is now more correct. We return an empty plugin dict.
-        return [StitcherConfig(plugins={})], None
+        # If no root config file, return default config with discovered plugins.
+        return [StitcherConfig(plugins=plugins)], None
 
     configs: List[StitcherConfig] = []
     targets = stitcher_data.get("targets", {})
