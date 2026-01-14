@@ -2,7 +2,7 @@ import pytest
 from stitcher.lang.python.uri import PythonURIGenerator
 from ruamel.yaml import YAML
 from stitcher.spec import ModuleDef, FunctionDef, ClassDef, Attribute
-from stitcher.app.services import DocumentManager
+from stitcher.services import DocumentManager
 
 
 @pytest.fixture

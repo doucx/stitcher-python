@@ -1,4 +1,4 @@
-from stitcher.app.services import DocumentManager
+from stitcher.services import DocumentManager
 from stitcher.lang.python.uri import PythonURIGenerator
 from stitcher.spec import DocstringIR
 
