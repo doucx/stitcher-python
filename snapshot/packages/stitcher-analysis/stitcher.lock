@@ -24,7 +24,8 @@
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/consistency/__init__.py#__all__": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/consistency/engine.py#ConsistencyEngine": {
       "baseline_code_signature_text": "class ConsistencyEngine:",
-      "baseline_code_structure_hash": "5ac3e51ca42e9aa4ca60eca3dc2b196606c78bea27c697aa475f6b2936004894"
+      "baseline_code_structure_hash": "5ac3e51ca42e9aa4ca60eca3dc2b196606c78bea27c697aa475f6b2936004894",
+      "baseline_yaml_content_hash": "67bd1ae239e1dae7964ffa7a7dc562e5aaeace5fb384a594766fb3f9a7d007c6"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/consistency/engine.py#ConsistencyEngine.__init__": {
       "baseline_code_signature_text": "def __init__(self, rules: List[AnalysisRule]):",
@@ -33,11 +34,13 @@
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/consistency/engine.py#ConsistencyEngine._rules": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/consistency/engine.py#ConsistencyEngine.analyze": {
       "baseline_code_signature_text": "def analyze(self, subject: AnalysisSubject) -> FileCheckResult:",
-      "baseline_code_structure_hash": "b1700bef748c6c6b644cd16b60900def243354c302c974755993eb6fe28eda9c"
+      "baseline_code_structure_hash": "b1700bef748c6c6b644cd16b60900def243354c302c974755993eb6fe28eda9c",
+      "baseline_yaml_content_hash": "8a5a44081f3fe5e4ecd73d6fd8fe539f51689bb33077afababba7b84d3af5019"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/consistency/engine.py#create_consistency_engine": {
       "baseline_code_signature_text": "def create_consistency_engine(differ: DifferProtocol | None = None) -> ConsistencyEngine:",
-      "baseline_code_structure_hash": "2b9cfeda5960d1ee9a108b0ba233faf961d50614fa09d29031e8c7d1468d6983"
+      "baseline_code_structure_hash": "2b9cfeda5960d1ee9a108b0ba233faf961d50614fa09d29031e8c7d1468d6983",
+      "baseline_yaml_content_hash": "639c491cb794cfc047a5bb1bf8fde20180a62fc51f29a4d42a839a21462476bf"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/pump/__init__.py#__all__": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/pump/engine.py#PumpEngine": {
@@ -46,7 +49,8 @@
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/pump/engine.py#PumpEngine.analyze": {
       "baseline_code_signature_text": "def analyze(self, subject: AnalysisSubject) -> List[InteractionContext]:",
-      "baseline_code_structure_hash": "450367f3dff863612b7f627df650295b31c87f560c3e28f0c459db27468392de"
+      "baseline_code_structure_hash": "450367f3dff863612b7f627df650295b31c87f560c3e28f0c459db27468392de",
+      "baseline_yaml_content_hash": "f30403fea8d417433ae1cacf530c1537dbbb50a486535fb752ff870d18bc5f50"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/pump/engine.py#PumpEngine.differ": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/engines/pump/engine.py#create_pump_engine": {
@@ -55,11 +59,13 @@
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/graph/algorithms.py#detect_circular_dependencies": {
       "baseline_code_signature_text": "def detect_circular_dependencies(graph: nx.DiGraph) -> List[List[str]]:",
-      "baseline_code_structure_hash": "ba1ee5b6b8e27620960925384e91df5bbf474171b569a0d0da4d4bcd5a94876d"
+      "baseline_code_structure_hash": "ba1ee5b6b8e27620960925384e91df5bbf474171b569a0d0da4d4bcd5a94876d",
+      "baseline_yaml_content_hash": "0458d90a26878070f920912db032fcc5770f2f911f7d238f2bb45e10ff859f62"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/graph/algorithms.py#has_path": {
       "baseline_code_signature_text": "def has_path(graph: nx.DiGraph, source: str, target: str) -> bool:",
-      "baseline_code_structure_hash": "1c0e944cbf311d22f203c57ca5c1af6dc15bb595f9fc5303008f8c011a8a9aea"
+      "baseline_code_structure_hash": "1c0e944cbf311d22f203c57ca5c1af6dc15bb595f9fc5303008f8c011a8a9aea",
+      "baseline_yaml_content_hash": "968b7728f56b8f1317a789dde13abf82223ba405f4cb8d0a862a2673480904bc"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/graph/builder.py#GraphBuilder": {
       "baseline_code_signature_text": "class GraphBuilder:",
@@ -67,23 +73,31 @@
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/graph/builder.py#GraphBuilder.build_dependency_graph": {
       "baseline_code_signature_text": "def build_dependency_graph(self, store: IndexStoreProtocol) -> nx.DiGraph:",
-      "baseline_code_structure_hash": "3edf85a84b136e1df5a34673405a9864921ebc6eec1c0d0b254ea8ee4fd1889b"
+      "baseline_code_structure_hash": "3edf85a84b136e1df5a34673405a9864921ebc6eec1c0d0b254ea8ee4fd1889b",
+      "baseline_yaml_content_hash": "124bfc7c39413e64f52a7f79c083fbe290f4350656974732fa8cfd06fd628e87"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/protocols/__init__.py#__all__": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/protocols/subject.py#AnalysisSubject": {
       "baseline_code_signature_text": "class AnalysisSubject(Protocol):",
-      "baseline_code_structure_hash": "3cc8b37d80cd3b8a2ea36b477a67f019300b0c2d26440156dd259c5772b5d22f"
+      "baseline_code_structure_hash": "3cc8b37d80cd3b8a2ea36b477a67f019300b0c2d26440156dd259c5772b5d22f",
+      "baseline_yaml_content_hash": "acd977d3ef2567174fbdd5313121ea1cb2952f6995695e401c5a81c8052c06c3"
     },
-    "py://packages/stitcher-analysis/src/stitcher/analysis/protocols/subject.py#AnalysisSubject.file_path": {},
+    "py://packages/stitcher-analysis/src/stitcher/analysis/protocols/subject.py#AnalysisSubject.file_path": {
+      "baseline_yaml_content_hash": "eaa81fa2f2c0872fe51f3ff2e9ec0413ada284f3ea73a0400258f9c31041e6c8"
+    },
     "py://packages/stitcher-analysis/src/stitcher/analysis/protocols/subject.py#AnalysisSubject.get_all_symbol_states": {
       "baseline_code_signature_text": "def get_all_symbol_states(self) -> Dict[str, SymbolState]:",
-      "baseline_code_structure_hash": "da3a7bc7fbfb113b61f4d21d4ec712fe9831709099fa568fda05d92dacac81a2"
+      "baseline_code_structure_hash": "da3a7bc7fbfb113b61f4d21d4ec712fe9831709099fa568fda05d92dacac81a2",
+      "baseline_yaml_content_hash": "5f9d76dd001e616ac4db74ee319756bd35935fdb925c254386cc4a942f54e41a"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/protocols/subject.py#AnalysisSubject.is_documentable": {
       "baseline_code_signature_text": "def is_documentable(self) -> bool:",
-      "baseline_code_structure_hash": "1a55c9ded7bf45553f63ae27c049594f5faa1245bd0c6ce98f4a0d2d7cd30db7"
+      "baseline_code_structure_hash": "1a55c9ded7bf45553f63ae27c049594f5faa1245bd0c6ce98f4a0d2d7cd30db7",
+      "baseline_yaml_content_hash": "3a5bddf9d7b4391420c4d4281b69da8b1f4f29d70136cbbf08ef7cb10ae301d6"
     },
-    "py://packages/stitcher-analysis/src/stitcher/analysis/protocols/subject.py#AnalysisSubject.is_tracked": {},
+    "py://packages/stitcher-analysis/src/stitcher/analysis/protocols/subject.py#AnalysisSubject.is_tracked": {
+      "baseline_yaml_content_hash": "fadf9e1038880f34bb03855170a9705f12d73b0de4e28377e0abaa1ab72fc921"
+    },
     "py://packages/stitcher-analysis/src/stitcher/analysis/rules/architecture/__init__.py#__all__": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/rules/architecture/circular_dependency.py#CircularDependencyRule": {
       "baseline_code_signature_text": "class CircularDependencyRule(ArchitectureRule):",
@@ -137,23 +151,28 @@
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/rules/protocols.py#AnalysisRule": {
       "baseline_code_signature_text": "class AnalysisRule(Protocol):",
-      "baseline_code_structure_hash": "af5d1ce8160bb2b279ff85ebc0df002832106c508066dd44444c97c2ae3e1cb2"
+      "baseline_code_structure_hash": "af5d1ce8160bb2b279ff85ebc0df002832106c508066dd44444c97c2ae3e1cb2",
+      "baseline_yaml_content_hash": "a03fa1fcc22a406db3fb68f6dd4a568413b237bed94cda827e739529f79b9bd0"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/rules/protocols.py#AnalysisRule.check": {
       "baseline_code_signature_text": "def check(self, subject: AnalysisSubject) -> List[Violation]:",
-      "baseline_code_structure_hash": "6c1cb092b7eded2aafce9d89548bdf9a4661b7c0efeb2da06b82ea1253913639"
+      "baseline_code_structure_hash": "6c1cb092b7eded2aafce9d89548bdf9a4661b7c0efeb2da06b82ea1253913639",
+      "baseline_yaml_content_hash": "1b7f1fa41f18de70ee2e74e15f9ef0f3423edf9d973478f912785d7bb3d457ee"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/__init__.py#__all__": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult": {
       "baseline_code_signature_text": "class FileCheckResult:",
-      "baseline_code_structure_hash": "940b2e27886084680096f4401391b1f5783b784152f324908c17a72a57b587ee"
+      "baseline_code_structure_hash": "940b2e27886084680096f4401391b1f5783b784152f324908c17a72a57b587ee",
+      "baseline_yaml_content_hash": "1c0242c3029ac7a2e7376fb6ebbfb69d350489d288383b49aa92b7f8c90d488f"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult._ERROR_KINDS": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult._WARNING_KINDS": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult.error_count": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult.error_violations": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult.info_violations": {},
-    "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult.is_clean": {},
+    "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult.is_clean": {
+      "baseline_yaml_content_hash": "4bcc4229dca08fcbb6ebebcb7b23f004dad426882d54ed1075402a1982105947"
+    },
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult.path": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult.reconciled": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult.violations": {},
@@ -161,7 +180,8 @@
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/results.py#FileCheckResult.warning_violations": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/symbol_state.py#SymbolState": {
       "baseline_code_signature_text": "class SymbolState:",
-      "baseline_code_structure_hash": "092696e4a3fb6cbeaaf5d78cf9d54184fcb297c2d65327d401f5341accfd918b"
+      "baseline_code_structure_hash": "092696e4a3fb6cbeaaf5d78cf9d54184fcb297c2d65327d401f5341accfd918b",
+      "baseline_yaml_content_hash": "34a36823ff0676b826db36bcc45ebb360b161b91456297c3395ec4e8a3bffdca"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/symbol_state.py#SymbolState.baseline_signature_hash": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/symbol_state.py#SymbolState.baseline_signature_text": {},
@@ -177,7 +197,8 @@
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/symbol_state.py#SymbolState.yaml_doc_ir": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/violation.py#Violation": {
       "baseline_code_signature_text": "class Violation:",
-      "baseline_code_structure_hash": "331f04a933cf3a4f7fe290b46330ffc85c09cf24cd905021d92263eb1bc11301"
+      "baseline_code_structure_hash": "331f04a933cf3a4f7fe290b46330ffc85c09cf24cd905021d92263eb1bc11301",
+      "baseline_yaml_content_hash": "2ae082f6d9555bdef85c9fb0f27bacefcb7731d48e954c277bb09e879bff7da4"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/violation.py#Violation.context": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/schema/violation.py#Violation.fqn": {},
@@ -185,7 +206,8 @@
     "py://packages/stitcher-analysis/src/stitcher/analysis/semantic/__init__.py#__all__": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/semantic/graph.py#SemanticGraph": {
       "baseline_code_signature_text": "class SemanticGraph:",
-      "baseline_code_structure_hash": "9e1213c21037609f2accea4aa157f6c45646652d68fd7d8837a9dcadb2a1c3a2"
+      "baseline_code_structure_hash": "9e1213c21037609f2accea4aa157f6c45646652d68fd7d8837a9dcadb2a1c3a2",
+      "baseline_yaml_content_hash": "19f76fc934f599725c8b4bc8e8e05b512f2b85d788a76fea1f50eeeddcf2f633"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/semantic/graph.py#SemanticGraph.__init__": {
       "baseline_code_signature_text": "def __init__(self, workspace: Workspace, index_store: IndexStoreProtocol):",
@@ -199,7 +221,8 @@
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/semantic/graph.py#SemanticGraph.find_usages": {
       "baseline_code_signature_text": "def find_usages(self, target_fqn: str) -> List[UsageLocation]:",
-      "baseline_code_structure_hash": "db4b93331a7212b63f08ad11b022cab1bb71f7d41801009e7d7368c3e24d563e"
+      "baseline_code_structure_hash": "db4b93331a7212b63f08ad11b022cab1bb71f7d41801009e7d7368c3e24d563e",
+      "baseline_yaml_content_hash": "cd28f9e28c8e9be4e3aee6ec1705a05a9335d9eda7e65868fe69c4a522284691"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/semantic/graph.py#SemanticGraph.get_module": {
       "baseline_code_signature_text": "def get_module(self, package_name: str) -> Optional[griffe.Module]:",
@@ -216,7 +239,8 @@
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/semantic/graph.py#SemanticGraph.load_from_workspace": {
       "baseline_code_signature_text": "def load_from_workspace(self) -> None:",
-      "baseline_code_structure_hash": "e5f029f7b4d9d097285699c4c3939b657f0c1c326004d9e9f7dd14b6b83e9c8e"
+      "baseline_code_structure_hash": "e5f029f7b4d9d097285699c4c3939b657f0c1c326004d9e9f7dd14b6b83e9c8e",
+      "baseline_yaml_content_hash": "fa8bb1045d03c68b24e9d8c14a9b0721aab01a194a28b76917adeb19119f5cae"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/semantic/graph.py#SemanticGraph.root_path": {},
     "py://packages/stitcher-analysis/src/stitcher/analysis/semantic/graph.py#SemanticGraph.search_paths": {},

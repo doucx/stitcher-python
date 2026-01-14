@@ -5,23 +5,28 @@
     "py://packages/stitcher-cli/src/stitcher/cli/__init__.py#__path__": {},
     "py://packages/stitcher-cli/src/stitcher/cli/commands/basics.py#generate_command": {
       "baseline_code_signature_text": "def generate_command(dry_run: bool = typer.Option(False, '--dry-run', help=(nexus(L.cli.option.refactor_dry_run.help)))):",
-      "baseline_code_structure_hash": "c407333c772871bd783de6f8800626a97a9fb23df3a251f8e7de6409e8af01c7"
+      "baseline_code_structure_hash": "c407333c772871bd783de6f8800626a97a9fb23df3a251f8e7de6409e8af01c7",
+      "baseline_yaml_content_hash": "bf1f51378006327c0b5041079b544bc4cbc4eeb22c8fffdf4f829ad8dee1a48f"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/commands/basics.py#init_command": {
       "baseline_code_signature_text": "def init_command():",
-      "baseline_code_structure_hash": "9a25d120820f6f43a978ae290b59d72ca2eafe728f2ae16eb2145a1e3f990f34"
+      "baseline_code_structure_hash": "9a25d120820f6f43a978ae290b59d72ca2eafe728f2ae16eb2145a1e3f990f34",
+      "baseline_yaml_content_hash": "b8fb4159ebd5699bdb82c64c6ee5cb8e5ea6132cf5baf40489af366377e81bec"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/commands/basics.py#inject_command": {
       "baseline_code_signature_text": "def inject_command(dry_run: bool = typer.Option(False, '--dry-run', help=(nexus(L.cli.option.refactor_dry_run.help)))):",
-      "baseline_code_structure_hash": "b81f9a002fa7135a2d2655799dda4bd62d3c28d5bc6db726d6d7a59afe0ec9bc"
+      "baseline_code_structure_hash": "b81f9a002fa7135a2d2655799dda4bd62d3c28d5bc6db726d6d7a59afe0ec9bc",
+      "baseline_yaml_content_hash": "3c694e4317d4ddd4aed2dbfb83787e07e3d24c1b132d5e0a22ab3419f2c861ea"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/commands/basics.py#strip_command": {
       "baseline_code_signature_text": "def strip_command(dry_run: bool = typer.Option(False, '--dry-run', help=(nexus(L.cli.option.refactor_dry_run.help)))):",
-      "baseline_code_structure_hash": "22ac2b9521d64c6646b67b32219fa99a6c7c25210bc1133f0cd7996c69f42904"
+      "baseline_code_structure_hash": "22ac2b9521d64c6646b67b32219fa99a6c7c25210bc1133f0cd7996c69f42904",
+      "baseline_yaml_content_hash": "8c6b65a7fb5d21b836357a4b249dd1835a01ba19256d3f9d56b6b90cf69a3e33"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/commands/check.py#check_command": {
       "baseline_code_signature_text": "def check_command(force_relink: bool = typer.Option(False, '--force-relink', help=(nexus(L.cli.option.force_relink.help))), reconcile: bool = typer.Option(False, '--reconcile', help=(nexus(L.cli.option.reconcile_co_evolution.help))), non_interactive: bool = typer.Option(False, '--non-interactive', help=(nexus(L.cli.option.non_interactive.help)))):",
-      "baseline_code_structure_hash": "59919aebae0153bbe277488c09b9d545623a43825cd18cd1f2b84783011b9fdf"
+      "baseline_code_structure_hash": "59919aebae0153bbe277488c09b9d545623a43825cd18cd1f2b84783011b9fdf",
+      "baseline_yaml_content_hash": "6140f662fb7ba5aaab32cdbfefee42b81388c78fa310c8e613e26d0cf15fba50"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/commands/cov.py#cov_command": {
       "baseline_code_signature_text": "def cov_command():",
@@ -33,11 +38,13 @@
     },
     "py://packages/stitcher-cli/src/stitcher/cli/commands/pump.py#pump_command": {
       "baseline_code_signature_text": "def pump_command(strip: bool = typer.Option(False, '--strip', help=(nexus(L.cli.option.strip.help))), force: bool = typer.Option(False, '--force', help=(nexus(L.cli.option.force.help))), reconcile: bool = typer.Option(False, '--reconcile', help=(nexus(L.cli.option.reconcile.help))), non_interactive: bool = typer.Option(False, '--non-interactive', help=(nexus(L.cli.option.non_interactive.help))), dry_run: bool = typer.Option(False, '--dry-run', help=(nexus(L.cli.option.refactor_dry_run.help)))):",
-      "baseline_code_structure_hash": "d4c0b6c8dee8ca25c7d04e2940f25908563ddee8151389445d85ccb0e7e3bbb2"
+      "baseline_code_structure_hash": "d4c0b6c8dee8ca25c7d04e2940f25908563ddee8151389445d85ccb0e7e3bbb2",
+      "baseline_yaml_content_hash": "e13875c82bee87a2ab43109208fdde7aa18c925f4d5dfbac000770934b08883f"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/commands/refactor.py#refactor_command": {
       "baseline_code_signature_text": "def refactor_command(migration_script: Path = typer.Argument(..., exists=True, file_okay=True, dir_okay=False, readable=True, help=(nexus(L.cli.option.refactor_script_path.help))), dry_run: bool = typer.Option(False, '--dry-run', help=(nexus(L.cli.option.refactor_dry_run.help))), yes: bool = typer.Option(False, '-y', '--yes', help=(nexus(L.cli.option.refactor_yes.help)))):",
-      "baseline_code_structure_hash": "e79e159572ae630992efc68ee208b673ae80ae4f4773fbb9fecedacf6d8de96b"
+      "baseline_code_structure_hash": "e79e159572ae630992efc68ee208b673ae80ae4f4773fbb9fecedacf6d8de96b",
+      "baseline_yaml_content_hash": "5ca459060ddbf3305ec81f7710d6e3f5e1931f5875f94845e94fe32cae849373"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/factories.py#get_project_root": {
       "baseline_code_signature_text": "def get_project_root() -> Path:",
@@ -46,15 +53,18 @@
     },
     "py://packages/stitcher-cli/src/stitcher/cli/factories.py#make_app": {
       "baseline_code_signature_text": "def make_app(handler: Optional[InteractionHandler] = None) -> StitcherApp:",
-      "baseline_code_structure_hash": "60b4b9545d7848e87858a23ed1898379829d589f2a205b0899bb050f82d12782"
+      "baseline_code_structure_hash": "60b4b9545d7848e87858a23ed1898379829d589f2a205b0899bb050f82d12782",
+      "baseline_yaml_content_hash": "bd7ba9682a6f025b3fa02f822d9d0b741ceeea067b10f04fdf4dffd4f8d7bc21"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/factories.py#make_interaction_handler": {
       "baseline_code_signature_text": "def make_interaction_handler(non_interactive: bool = False, auto_resolve_mode: bool = False) -> Optional[InteractionHandler]:",
-      "baseline_code_structure_hash": "f3b9a3cbfed6e6ee7fe7a1afc12c46cc232611ef9a6bbae0f248d940c759e3b1"
+      "baseline_code_structure_hash": "f3b9a3cbfed6e6ee7fe7a1afc12c46cc232611ef9a6bbae0f248d940c759e3b1",
+      "baseline_yaml_content_hash": "a0ba7f18f17d73ad5a58ec3b68a47081fd284ac5fcfc0addd27e31f6db2a1741"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/handlers.py#TyperInteractionHandler": {
       "baseline_code_signature_text": "class TyperInteractionHandler(InteractionHandler):",
-      "baseline_code_structure_hash": "8563b8e53d5a97197781c900a2c82521584235ee1c2c39abdae19f9e8cbd6280"
+      "baseline_code_structure_hash": "8563b8e53d5a97197781c900a2c82521584235ee1c2c39abdae19f9e8cbd6280",
+      "baseline_yaml_content_hash": "033f83f64bb369a38efe90988ea02199e497044efd9d37141da8d31f3dbc98c2"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/handlers.py#TyperInteractionHandler.__init__": {
       "baseline_code_signature_text": "def __init__(self, renderer: TyperInteractiveRenderer):",
@@ -62,48 +72,70 @@
     },
     "py://packages/stitcher-cli/src/stitcher/cli/handlers.py#TyperInteractionHandler.process_interactive_session": {
       "baseline_code_signature_text": "def process_interactive_session(self, contexts: List[InteractionContext]) -> List[ResolutionAction]:",
-      "baseline_code_structure_hash": "72ab2928cd87e4ba0ccc8358dc09f0186a38a90654abd80ff66a8358659e5a1b"
+      "baseline_code_structure_hash": "72ab2928cd87e4ba0ccc8358dc09f0186a38a90654abd80ff66a8358659e5a1b",
+      "baseline_yaml_content_hash": "7968fab7e04c9a4a0f862c8b5b8c35c486e2dd678a03be37eb69c7091944cb4d"
     },
-    "py://packages/stitcher-cli/src/stitcher/cli/handlers.py#TyperInteractionHandler.renderer": {},
+    "py://packages/stitcher-cli/src/stitcher/cli/handlers.py#TyperInteractionHandler.renderer": {
+      "baseline_yaml_content_hash": "d375f657e27302b1034f9ea930bc4201d8de55e83287f02bb9b125ec032d18d4"
+    },
     "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#SemanticMenuOption": {
       "baseline_code_signature_text": "class SemanticMenuOption:",
-      "baseline_code_structure_hash": "46bbd14948090d5d063ff72a84d2829711d92c3c706a8b4ed833c5f186ed6844"
+      "baseline_code_structure_hash": "46bbd14948090d5d063ff72a84d2829711d92c3c706a8b4ed833c5f186ed6844",
+      "baseline_yaml_content_hash": "c1166fc77fc6a2e1cdd8ec85c6a54d86e79e7f2961bd805962b8c1d0747deecc"
     },
-    "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#SemanticMenuOption.action": {},
-    "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#SemanticMenuOption.desc_id": {},
-    "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#SemanticMenuOption.key": {},
-    "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#SemanticMenuOption.label_id": {},
+    "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#SemanticMenuOption.action": {
+      "baseline_yaml_content_hash": "b1dc4d676d05ea05a3171e0be9c79dfdbe259f87017f368b8f153de106e1dd2f"
+    },
+    "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#SemanticMenuOption.desc_id": {
+      "baseline_yaml_content_hash": "9d356307ec4ad02ddd05c55dddf0dd9b1f6e1d526193d474556e6e26aede8bb3"
+    },
+    "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#SemanticMenuOption.key": {
+      "baseline_yaml_content_hash": "c449c127096f3882da57b6af206e64e705a6e701b38ad17fa83e26450f842784"
+    },
+    "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#SemanticMenuOption.label_id": {
+      "baseline_yaml_content_hash": "20bc774b5e7108aab993e4589e2c8a1bb6277889d05ae99ee45a229c904e7c84"
+    },
     "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#TyperInteractiveRenderer": {
       "baseline_code_signature_text": "class TyperInteractiveRenderer:",
-      "baseline_code_structure_hash": "2d3308b50a4944278ed9bbedd73bb2ff14e6c39e04d6264bf5961e7e9ab3f0c2"
+      "baseline_code_structure_hash": "2d3308b50a4944278ed9bbedd73bb2ff14e6c39e04d6264bf5961e7e9ab3f0c2",
+      "baseline_yaml_content_hash": "d84678dc3a9df38ab52a263690f527096e203e6288143552356c9f76574a6bf2"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#TyperInteractiveRenderer.__init__": {
       "baseline_code_signature_text": "def __init__(self, operator):",
       "baseline_code_structure_hash": "7ce9d0debd71b01d311ff177446a9d973e80bab2cd702699bcac2aaa964893d8"
     },
-    "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#TyperInteractiveRenderer.operator": {},
+    "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#TyperInteractiveRenderer.operator": {
+      "baseline_yaml_content_hash": "a18a0afd851edb4f53afd911cdc634dea0d03020134739ae701622eec157839a"
+    },
     "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#TyperInteractiveRenderer.prompt": {
       "baseline_code_signature_text": "def prompt(self, context: InteractionContext, current_idx: int, total: int, options: List[SemanticMenuOption], default_action: Any) -> Any:",
-      "baseline_code_structure_hash": "2990ad5409ad5bc65cb068eee5cd9c70a7a33d29688a37c26662f574c8ffd1ab"
+      "baseline_code_structure_hash": "2990ad5409ad5bc65cb068eee5cd9c70a7a33d29688a37c26662f574c8ffd1ab",
+      "baseline_yaml_content_hash": "ab09270607213e46eef9f119e86da1718c3186ad3bc2496b1b36bf786dbd51dc"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#TyperInteractiveRenderer.show_message": {
       "baseline_code_signature_text": "def show_message(self, msg_id: SemanticPointer, color = None, **kwargs = {}) -> None:",
-      "baseline_code_structure_hash": "70341b3f84b5bc6d5954a873baa283b28bd898a04c33eff43b85242587b1f8c8"
+      "baseline_code_structure_hash": "70341b3f84b5bc6d5954a873baa283b28bd898a04c33eff43b85242587b1f8c8",
+      "baseline_yaml_content_hash": "8c00176306b42be3c2c863999fd94d125b39b6544ae8ace7b6af01c4067aeb40"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/interactive.py#TyperInteractiveRenderer.show_summary": {
       "baseline_code_signature_text": "def show_summary(self, count: int) -> None:",
-      "baseline_code_structure_hash": "28152474c6397aa120c35e5adcae954f425b3530545bc779c541ac04e1c5b97d"
+      "baseline_code_structure_hash": "28152474c6397aa120c35e5adcae954f425b3530545bc779c541ac04e1c5b97d",
+      "baseline_yaml_content_hash": "e96f693114edba4f1d76b9bc4da2b5b5770f49720d16a83a293ca059cf37e707"
     },
-    "py://packages/stitcher-cli/src/stitcher/cli/main.py#app": {},
+    "py://packages/stitcher-cli/src/stitcher/cli/main.py#app": {
+      "baseline_yaml_content_hash": "9c3f048a71d73f2f334a5552d7668c8941ae6976878d6eaf77a1ad752eebc72e"
+    },
     "py://packages/stitcher-cli/src/stitcher/cli/main.py#index_app": {},
     "py://packages/stitcher-cli/src/stitcher/cli/main.py#main": {
       "baseline_code_signature_text": "def main(loglevel: LogLevel = typer.Option(LogLevel.INFO, '--loglevel', help=(nexus(L.cli.option.loglevel.help)), case_sensitive=False)):",
-      "baseline_code_structure_hash": "56922e8d16047fc9df6a3003e66450c1d1a9e2cd6eb5f34cb57dc3f634421744"
+      "baseline_code_structure_hash": "56922e8d16047fc9df6a3003e66450c1d1a9e2cd6eb5f34cb57dc3f634421744",
+      "baseline_yaml_content_hash": "46d1ab1e72e594cbcc6a406dfc35224acb15af5724a6e6afe1304230fa42bacc"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/main.py#refactor_app": {},
     "py://packages/stitcher-cli/src/stitcher/cli/rendering.py#CliRenderer": {
       "baseline_code_signature_text": "class CliRenderer(protocols.Renderer):",
-      "baseline_code_structure_hash": "be99441fa563ad512ea7af90b657f1a2cca2298be2167ba456a763f9103e9a72"
+      "baseline_code_structure_hash": "be99441fa563ad512ea7af90b657f1a2cca2298be2167ba456a763f9103e9a72",
+      "baseline_yaml_content_hash": "945b7c2f3960d9e1ee5e85aa55735bb7eeca69d267b87fe917b2e0532e506fba"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/rendering.py#CliRenderer.__init__": {
       "baseline_code_signature_text": "def __init__(self, loglevel: LogLevel = LogLevel.INFO):",
@@ -112,7 +144,8 @@
     "py://packages/stitcher-cli/src/stitcher/cli/rendering.py#CliRenderer.loglevel_value": {},
     "py://packages/stitcher-cli/src/stitcher/cli/rendering.py#CliRenderer.render": {
       "baseline_code_signature_text": "def render(self, message: str, level: str):",
-      "baseline_code_structure_hash": "92afbd272a6d674fca2cfa99e3548adaa018e08a00636d1c63b6e112eba21442"
+      "baseline_code_structure_hash": "92afbd272a6d674fca2cfa99e3548adaa018e08a00636d1c63b6e112eba21442",
+      "baseline_yaml_content_hash": "5a3187501a02574a684f7f39f5f2e653752b137360d10cf386a48e34d5eae4c7"
     },
     "py://packages/stitcher-cli/src/stitcher/cli/rendering.py#CliRenderer.verbose": {
       "baseline_yaml_content_hash": "336ebcdcedb0fe0d1aab3d423edfa41d1678808c65335e3556d7d0bc4fb0487e"
