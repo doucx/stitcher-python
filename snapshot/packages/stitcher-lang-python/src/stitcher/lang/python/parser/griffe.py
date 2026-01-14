@@ -1,6 +1,6 @@
 import ast
 from pathlib import Path
-from typing import List, cast, Any, Optional, Union
+from typing import List, cast, Any, Optional, Union, Set
 import logging
 
 import griffe
