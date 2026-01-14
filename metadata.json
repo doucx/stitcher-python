@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "style: ruff and stitcher Capture: M config.py, M stitcher.lock", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768374309.105314, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] refactor(workspace): 集中化工作区根目录发现逻辑", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768374561.0489187, "duration_ms": 0}}
