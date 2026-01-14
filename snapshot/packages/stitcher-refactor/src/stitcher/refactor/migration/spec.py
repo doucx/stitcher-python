@@ -12,6 +12,8 @@ class MigrationSpec:
         return self
 
     def add_map(self, rename_map: Dict[str, str]) -> "MigrationSpec":
+        from stitcher.refactor.operations.rename_symbol import RenameSymbolOperation
+
         for old_fqn, new_fqn in rename_map.items():
             self.add(RenameSymbolOperation(old_fqn, new_fqn))
         return self
