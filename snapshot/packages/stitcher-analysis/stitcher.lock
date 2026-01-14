@@ -60,7 +60,7 @@
     "py://packages/stitcher-analysis/src/stitcher/analysis/graph/algorithms.py#detect_circular_dependencies": {
       "baseline_code_signature_text": "def detect_circular_dependencies(graph: nx.DiGraph) -> List[List[str]]:",
       "baseline_code_structure_hash": "ba1ee5b6b8e27620960925384e91df5bbf474171b569a0d0da4d4bcd5a94876d",
-      "baseline_yaml_content_hash": "0458d90a26878070f920912db032fcc5770f2f911f7d238f2bb45e10ff859f62"
+      "baseline_yaml_content_hash": "44f026a10d47113760cabbe69138fd7fc247992b58a83e20a9dbe90fa57b5362"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/graph/algorithms.py#has_path": {
       "baseline_code_signature_text": "def has_path(graph: nx.DiGraph, source: str, target: str) -> bool:",

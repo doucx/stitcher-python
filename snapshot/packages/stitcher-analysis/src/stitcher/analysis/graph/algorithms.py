@@ -3,11 +3,6 @@ import networkx as nx
 
 
 def detect_circular_dependencies(graph: nx.DiGraph) -> List[List[str]]:
-    """
-    Detects circular dependencies by finding strongly connected components (SCCs)
-    and then sampling one cycle from each non-trivial SCC. This is significantly
-    more performant than enumerating all simple cycles.
-    """
     cycles = []
     # 1. Find all strongly connected components (SCCs).
     # An SCC is a subgraph where every node is reachable from every other node.
