@@ -54,3 +54,13 @@ class DependencyEdge:
     target_fqn: str
     kind: str
     lineno: int
+
+
+@dataclass
+class DocEntryRecord:
+    symbol_id: str
+    content_hash: str
+    ir_data_json: str
+    lineno: int
+    file_id: Optional[int] = None
+    id: Optional[int] = None

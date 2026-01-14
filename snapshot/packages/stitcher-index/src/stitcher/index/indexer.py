@@ -111,5 +111,11 @@ class FileIndexer:
             return
 
         # Let exceptions bubble up to be caught by the caller
-        symbols, references = adapter.parse(abs_path, text_content)
-        self.store.update_analysis(file_id, symbols, references)
+        result = adapter.parse(abs_path, text_content)
+        if len(result) == 3:
+            symbols, references, doc_entries = result  # type: ignore
+        else:
+            symbols, references = result  # type: ignore
+            doc_entries = []
+
+        self.store.update_analysis(file_id, symbols, references, doc_entries)

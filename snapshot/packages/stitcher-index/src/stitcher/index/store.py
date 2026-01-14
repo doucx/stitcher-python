@@ -6,6 +6,7 @@ from stitcher.spec.index import (
     SymbolRecord,
     ReferenceRecord,
     DependencyEdge,
+    DocEntryRecord,
 )
 
 
@@ -75,6 +76,7 @@ class IndexStore:
         file_id: int,
         symbols: List[SymbolRecord],
         references: List[ReferenceRecord],
+        doc_entries: List["DocEntryRecord"] = [],
     ) -> None:
         with self.db.get_connection() as conn:
             # 1. Clear old data for this file
@@ -82,6 +84,7 @@ class IndexStore:
             conn.execute(
                 "DELETE FROM 'references' WHERE source_file_id = ?", (file_id,)
             )
+            conn.execute("DELETE FROM doc_entries WHERE file_id = ?", (file_id,))
 
             # 2. Insert new symbols
             if symbols:
@@ -141,7 +144,27 @@ class IndexStore:
                     ],
                 )
 
-            # 4. Mark as indexed
+            # 4. Insert new doc entries
+            if doc_entries:
+                conn.executemany(
+                    """
+                    INSERT INTO doc_entries (
+                        file_id, symbol_id, content_hash, ir_data_json, lineno
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            file_id,
+                            d.symbol_id,
+                            d.content_hash,
+                            d.ir_data_json,
+                            d.lineno,
+                        )
+                        for d in doc_entries
+                    ],
+                )
+
+            # 5. Mark as indexed
             conn.execute(
                 "UPDATE files SET indexing_status = 1 WHERE id = ?", (file_id,)
             )
