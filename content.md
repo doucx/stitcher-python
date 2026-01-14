@@ -1,103 +1,56 @@
-好的，我们来实施这项性能优化。
+好的，我们已经成功实施了性能优化。现在我将生成一个 `[COMMIT]` 计划，将这些更改正式提交到仓库。
 
-这是一个关键的修复，它将 `stitcher check` 的架构分析部分从一个指数级复杂度的操作转变为线性复杂度，从而解决了内存和时间的瓶颈问题，同时保留了精确的错误报告能力。
-
-我将生成一个计划来修改循环依赖检测算法。
-
-## [WIP] perf(analysis): 使用强连通分量 (SCC) 优化循环依赖检测
+## [COMMIT] perf(analysis): 优化循环依赖检测算法以解决大型项目性能瓶颈
 
 ### 用户需求
 
-`stitcher check` 命令在包含 `networkx` 的大型项目中，因循环依赖检测逻辑 (`CircularDependencyRule`) 消耗过多时间和内存而无法完成。需要对该算法进行性能优化，同时不牺牲报告具体循环路径的能力。
+完成对 `detect_circular_dependencies` 算法的优化工作并提交。该优化旨在解决 `stitcher check` 在处理包含高度耦合模块的大型项目（如 `Cascade`）时，因枚举所有循环路径而导致的内存和 CPU 耗尽问题。
 
 ### 评论
 
-这是一个典型的算法复杂度问题。当前通过 `networkx.simple_cycles` 枚举所有简单环的策略，在面对大型、高度耦合的依赖图时，会导致组合爆炸。
-
-切换到基于“强连通分量 (Strongly Connected Components, SCC)”的检测策略是解决此类问题的标准工业实践。它将问题的复杂度从指数级降低到线性级，能够从根本上解决性能瓶瓶颈。
+这是一次关键的算法优化。通过将指数级复杂度的全量路径枚举改为基于强连通分量（SCC）的线性采样，我们将架构检查的性能提升了数个数量级，使其能够稳定处理工业级规模的代码库。
 
 ### 目标
 
-1.  修改 `stitcher.analysis.graph.algorithms.detect_circular_dependencies` 函数。
-2.  用 `networkx.strongly_connected_components` 替代 `networkx.simple_cycles`。
-3.  对于每一个找到的强连通分量，仅使用 `networkx.find_cycle` 寻找并报告**一个**代表性的循环路径，而不是所有路径。
+1.  将经过优化的 `algorithms.py` 添加到 Git 暂存区。
+2.  创建一个清晰记录算法变更原因和逻辑的提交。
 
 ### 基本原理
 
-任何循环依赖都必然存在于一个强连通分量 (SCC) 内部。因此，我们可以先用高效的线性时间算法 (如 Tarjan 算法，`nx.strongly_connected_components` 的底层实现) 找出所有 SCCs。
-
-然后，对于每个节点数大于 1 (或有自环) 的 SCC，我们知道其中必定存在环。我们只需通过 `nx.find_cycle` 快速找到其中任意一个环作为证据即可。这避免了对一个组件内可能存在的数百万个环进行无效的枚举，极大地提升了性能和降低了内存消耗，同时报告给用户的环路径样本仍然是有效且可操作的。
+遵循 `d3-constraint-quipu-plan-script-rules` 协议，我们在确认功能性修改稳定后，通过独立的 `[COMMIT]` 计划执行持久化操作。这确保了变更集是原子的，且经过了逻辑验证。
 
 ### 标签
 
-#intent/refine #flow/ready #priority/high #comp/tests #concept/state #scope/core #ai/instruct #task/domain/analysis #task/object/cycle-detection #task/action/optimize #task/state/begin
+#intent/refine #flow/ready #priority/high #comp/tests #concept/state #scope/core #ai/instruct #task/domain/analysis #task/object/cycle-detection #task/action/optimize #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 替换循环检测算法
+#### Acts 1: 提交算法优化变更
 
-我们将重写 `detect_circular_dependencies` 函数，用基于 SCC 的新算法替换旧的暴力枚举算法。
+我们将修改后的算法文件加入暂存区并进行提交。
 
 ~~~~~act
-patch_file
+git_add
 packages/stitcher-analysis/src/stitcher/analysis/graph/algorithms.py
 ~~~~~
-~~~~~python.old
-def detect_circular_dependencies(graph: nx.DiGraph) -> List[List[str]]:
-    return [list(cycle) for cycle in nx.simple_cycles(graph)]
+
+~~~~~act
+git_commit
 ~~~~~
-~~~~~python.new
-def detect_circular_dependencies(graph: nx.DiGraph) -> List[List[str]]:
-    """
-    Detects circular dependencies by finding strongly connected components (SCCs)
-    and then sampling one cycle from each non-trivial SCC. This is significantly
-    more performant than enumerating all simple cycles.
-    """
-    cycles = []
-    # 1. Find all strongly connected components (SCCs).
-    # An SCC is a subgraph where every node is reachable from every other node.
-    # Any cycle must exist entirely within an SCC.
-    sccs = nx.strongly_connected_components(graph)
+~~~~~text
+perf(analysis): optimize circular dependency detection using SCCs
 
-    for scc in sccs:
-        # A non-trivial SCC (potential for a cycle) has more than one node,
-        # or it's a single node that points to itself (a self-loop).
-        is_trivial_scc = len(scc) < 2
-        if is_trivial_scc:
-            # The type hint for scc elements is `Node`, which is generic. In our
-            # case, they are strings representing file paths.
-            node = list(scc)[0]
-            if not graph.has_edge(node, node):
-                continue  # Skip single-node SCCs without self-loops.
+Switched the circular dependency detection logic from enumerating all simple cycles via `nx.simple_cycles` to a SCC-based sampling approach using `nx.strongly_connected_components` and `nx.find_cycle`.
 
-        # 2. For each non-trivial SCC, find just *one* representative cycle.
-        # This avoids the combinatorial explosion of `nx.simple_cycles`.
-        scc_subgraph = graph.subgraph(scc)
-        try:
-            # `find_cycle` is highly optimized to return as soon as it finds any cycle.
-            # It returns a list of edges, e.g., [(u, v), (v, w), (w, u)].
-            # We respect the original graph's directionality.
-            cycle_edges = nx.find_cycle(scc_subgraph, orientation="original")
+The previous implementation had exponential time complexity O((n+e)(c+1)), where 'c' is the number of cycles. In highly coupled large-scale projects like Cascade, 'c' can explode into millions, causing massive memory consumption and process hangs.
 
-            # 3. Convert the edge list to a node list to maintain compatibility
-            # with the reporting rule, which expects a list of nodes [u, v, w].
-            cycle_nodes = [edge[0] for edge in cycle_edges]
-            cycles.append(cycle_nodes)
-
-        except nx.NetworkXNoCycle:
-            # This should theoretically not happen for a non-trivial SCC,
-            # but we include it for robustness.
-            pass
-
-    return cycles
+The new approach has linear complexity O(V+E) for SCC detection. For each non-trivial SCC, it now finds exactly one representative cycle as evidence. This provides immediate, actionable feedback to the user while keeping performance stable and memory footprint low, regardless of the dependency graph's complexity.
 ~~~~~
 
 ### 下一步建议
 
-请执行此计划。计划执行完毕后，我建议你：
-1.  重新运行 `stitcher --loglevel debug check` 命令，确认它现在可以快速完成。
-2.  （可选）重新运行 `python scripts/profile_stitcher.py check`，观察 `detect_circular_dependencies` 的耗时是否已显著降低。
-
-确认问题解决后，我们可以创建一个 `[COMMIT]` 计划来提交这次重要的性能优化。
+- **基准测试**: 如果可能，可以在不同规模的项目中运行一次 `stitcher cov` 和 `stitcher check`，建立新的性能基线。
+- **架构审查**: 既然循环依赖检测现在非常快，建议定期运行 `check` 以保持项目架构的整洁。
+- **扩展检测**: 既然图分析的基础设施已经稳固，未来可以考虑增加更多架构规则（例如：层级违规检测）。
