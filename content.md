@@ -1,139 +1,212 @@
-这是一个针对 Foreign Key 约束失败问题的修复计划。
+这个 Profiling 结果揭示了一个严重的**计算冗余**问题，以及一个潜在的**索引未命中**问题。
 
-## [WIP] fix: 修复 Sidecar 索引时的外键约束冲突
+1.  **3倍冗余计算 (Redundant Computation)**:
+    *   `IndexCheckSubjectAdapter.get_all_symbol_states` 被调用了 **3次**（分别由 `SignatureRule`, `ExistenceRule`, `ContentRule` 触发）。
+    *   每次调用都完整执行了 `load_docs_for_path` 和 `LockFileManager.load`。
+    *   这导致了昂贵的 IO 操作（无论是读文件还是查库）被重复执行了 3 次。
+    *   **影响**: 占据了总耗时的绝大部分（约 1.0s / 1.34s）。
 
-### 错误分析
-多个集成测试失败，错误信息为 `sqlite3.OperationalError: FOREIGN KEY constraint failed`。
-原因在于 `SidecarIndexerAdapter` 在创建 `ReferenceRecord` 时，直接生成了 Python 文件的 SURI 并赋值给了 `target_id`。
-在数据库 Schema 中，`references.target_id` 是一个指向 `symbols.id` 的外键。
-如果 `.stitcher.yaml` 文件在对应的 `.py` 文件之前被索引（或者两者在同一批次中但 Python 符号尚未提交），数据库中就不存在对应的 Python 符号记录，从而导致外键约束检查失败。
+2.  **索引回退 (Index Fallback)**:
+    *   Profiling 明确显示调用栈进入了 `ruamel.yaml` 的解析逻辑 (`YAML.load`)。
+    *   这意味着 `DocumentManager.load_docs_for_path` 中的 `if self.index_store` 检查虽然执行了，但未能从索引中获取到数据，因此回退到了文件系统读取。
+    *   这说明尽管我们已经实施了“Sidecar 进索引”的架构，但在实际运行时，索引可能因为某种原因（如文件未被发现、解析失败或查询路径不匹配）未能提供服务。
+
+为了立即解决性能瓶颈，我们将采取**两步走**策略：
+
+1.  **第一步（即时止血）：在 Adapter 层增加缓存**。
+    *   `IndexCheckSubjectAdapter` 在一次分析生命周期内，其状态是不变的。
+    *   我们将使用 `functools.cached_property` 或手动缓存来确保 `get_all_symbol_states` 只执行一次。
+    *   这将直接消除 2/3 的开销，立竿见影。
+
+2.  **第二步（根本原因）：诊断并修复索引未命中**。
+    *   虽然缓存能减少 IO 次数，但单次 IO 仍然走的是慢速的文件系统路径。
+    *   我们需要确保 `.stitcher.yaml` 被正确索引并能被查询到。
+
+以下计划将首先实施**缓存优化**。
+
+## [WIP] perf: 为 CheckSubjectAdapter 增加状态缓存以消除冗余 IO
 
 ### 用户需求
-修复测试中的数据库错误，确保 Sidecar 文件可以被正常索引，而不受文件索引顺序的影响。
+根据 Profiling 报告，`stitcher check` 的大部分时间消耗在重复加载文档和 Lock 文件上。用户需要通过消除这些冗余操作来提升 CLI 响应速度。
 
 ### 评论
-这是“分布式”或“乱序”索引系统中常见的问题。正确的解法是**延迟链接（Late Binding）**。我们不应该在解析阶段（Parse Phase）强行绑定 ID，而应该记录“意图”（即 `target_fqn`），并让链接器（Linker）在所有符号都入库后，统一解决引用关系。这正是 Stitcher 架构的设计初衷。
+这是一个典型的“以空间换时间”优化。在 `ConsistencyEngine` 的设计中，一个 Subject 会被多个 Rule 访问。Subject 应当保证其数据获取是幂等的且高效的。引入缓存不仅能解决当前的性能问题，还能使系统对未来的 Rule 扩展更具鲁棒性。
 
 ### 目标
-1.  修改 `SidecarIndexerAdapter`，不再直接设置 `target_id`。
-2.  引入 `path_to_logical_fqn` 工具，计算目标 Python 符号的逻辑全名（FQN），并将其存入 `target_fqn`。
-3.  依赖现有的 `Linker` 机制在索引后期自动填充 `target_id`。
+1.  修改 `IndexCheckSubjectAdapter`，缓存 `get_all_symbol_states` 的结果。
+2.  修改 `ASTCheckSubjectAdapter`，同样增加缓存机制。
 
 ### 基本原理
-通过只存储 `target_fqn`，我们解耦了 Sidecar 索引和 Python 索引的依赖关系。无论哪个文件先被处理，`references` 表都能成功写入。当所有文件处理完毕后，`Linker` 会运行 SQL 语句，根据 `target_fqn` 查找对应的 `symbols` 表记录，并回填 `target_id`，从而建立强连接。
+利用 Python 的 `@functools.lru_cache(maxsize=1)` 或手动 `self._cached_states` 变量，确保昂贵的数据加载逻辑在对象生命周期内只执行一次。
 
 ### 标签
-#intent/fix #flow/ready #priority/critical #comp/indexer #comp/sidecar #concept/linking #scope/core #ai/instruct #task/domain/indexing #task/object/adapter #task/action/fix-foreign-key #task/state/end
+#intent/refine #intent/perf #flow/ready #priority/high #comp/application #comp/analysis #concept/caching #scope/core #ai/instruct #task/domain/performance #task/object/adapter #task/action/cache #task/state/begin
 
 ---
 
 ### Script
 
-#### Acts 1: Modify `SidecarIndexerAdapter` to use Late Binding
-I will modify the adapter to compute the logical FQN of the target Python symbol instead of constructing its SURI directly.
+#### Acts 1: Cache `IndexCheckSubjectAdapter` states
+I will add caching to the index-based adapter. Since `get_all_symbol_states` is a method that might be called multiple times, caching its return value is crucial.
 
 ~~~~~act
 patch_file
-packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/indexer.py
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
 ~~~~~
 ~~~~~python.old
-from stitcher.spec import URIGeneratorProtocol, DocstringSerializerProtocol
-from stitcher.spec.registry import LanguageAdapter
-from stitcher.spec.index import SymbolRecord, ReferenceRecord
-from stitcher.lang.sidecar.parser import parse_doc_references
-from stitcher.lang.python.analysis.models import ReferenceType
+    def __init__(
+        self,
+        file_path: str,
+        index_store: IndexStoreProtocol,
+        doc_manager: DocumentManagerProtocol,
+        lock_manager: LockManagerProtocol,
+        uri_generator: URIGeneratorProtocol,
+        workspace: Workspace,
+        root_path: Path,
+    ):
+        self._file_path = file_path
+        self._index_store = index_store
+        self._doc_manager = doc_manager
+        self._lock_manager = lock_manager
+        self._uri_generator = uri_generator
+        self._workspace = workspace
+        self._root_path = root_path
 
-
-class SidecarIndexerAdapter(LanguageAdapter):
+    @property
 ~~~~~
 ~~~~~python.new
-from stitcher.spec import URIGeneratorProtocol, DocstringSerializerProtocol
-from stitcher.spec.registry import LanguageAdapter
-from stitcher.spec.index import SymbolRecord, ReferenceRecord
-from stitcher.lang.sidecar.parser import parse_doc_references
-from stitcher.lang.python.analysis.models import ReferenceType
-from stitcher.lang.python.analysis.utils import path_to_logical_fqn
+    def __init__(
+        self,
+        file_path: str,
+        index_store: IndexStoreProtocol,
+        doc_manager: DocumentManagerProtocol,
+        lock_manager: LockManagerProtocol,
+        uri_generator: URIGeneratorProtocol,
+        workspace: Workspace,
+        root_path: Path,
+    ):
+        self._file_path = file_path
+        self._index_store = index_store
+        self._doc_manager = doc_manager
+        self._lock_manager = lock_manager
+        self._uri_generator = uri_generator
+        self._workspace = workspace
+        self._root_path = root_path
+        self._cached_states: Optional[Dict[str, SymbolState]] = None
 
-
-class SidecarIndexerAdapter(LanguageAdapter):
+    @property
 ~~~~~
 
 ~~~~~act
 patch_file
-packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/indexer.py
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
 ~~~~~
 ~~~~~python.old
-        # 2. Determine paths
-        # file_path passed here is relative to project root (physical path)
-        # We need to determine the companion Python file path for references
-        py_name = file_path.name.replace(".stitcher.yaml", ".py")
-        py_path_rel = file_path.with_name(py_name)
-        
-        # 3. Parse references with location info using the helper
+    def get_all_symbol_states(self) -> Dict[str, SymbolState]:
+        # 1. Load data from all sources
+        symbols_from_db = self._index_store.get_symbols_by_file_path(self.file_path)
+        yaml_docs = self._doc_manager.load_docs_for_path(self.file_path)
+
+        # Load Lock Data
 ~~~~~
 ~~~~~python.new
-        # 2. Determine paths
-        # file_path passed here is relative to project root (physical path)
-        # We need to determine the companion Python file path for references
-        py_name = file_path.name.replace(".stitcher.yaml", ".py")
-        py_path_rel = file_path.with_name(py_name)
-        
-        # Pre-calculate logical module FQN for linking
-        logical_module_fqn = path_to_logical_fqn(py_path_rel.as_posix())
+    def get_all_symbol_states(self) -> Dict[str, SymbolState]:
+        if self._cached_states is not None:
+            return self._cached_states
 
-        # 3. Parse references with location info using the helper
+        # 1. Load data from all sources
+        symbols_from_db = self._index_store.get_symbols_by_file_path(self.file_path)
+        yaml_docs = self._doc_manager.load_docs_for_path(self.file_path)
+
+        # Load Lock Data
 ~~~~~
 
 ~~~~~act
 patch_file
-packages/stitcher-lang-sidecar/src/stitcher/lang/sidecar/indexer.py
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
 ~~~~~
 ~~~~~python.old
-            symbols.append(symbol)
-
-            # --- Build Reference (Binding to Python) ---
-            python_suri = f"py://{py_path_rel}#{fragment}"
-            if fragment == "__doc__":
-                python_suri = f"py://{py_path_rel}"
-            
-            ref = ReferenceRecord(
-                source_file_id=None,
-                target_fqn=None,
-                target_id=python_suri,
-                kind="doc_binding",
-                lineno=lineno,
-                col_offset=col_offset,
-                end_lineno=lineno,
-                end_col_offset=col_offset + len(fragment)
+                baseline_yaml_content_hash=stored_fp.get("baseline_yaml_content_hash"),
             )
-            references.append(ref)
 
-        return symbols, references
+        return states
+
+
+class ASTCheckSubjectAdapter(CheckSubject):
 ~~~~~
 ~~~~~python.new
-            symbols.append(symbol)
-
-            # --- Build Reference (Binding to Python) ---
-            # Use Late Binding (FQN) instead of Early Binding (ID) to avoid Foreign Key constraint violations
-            # if the Python file hasn't been indexed yet.
-            target_fqn = f"{logical_module_fqn}.{fragment}"
-            if fragment == "__doc__":
-                target_fqn = logical_module_fqn
-            
-            ref = ReferenceRecord(
-                source_file_id=None,
-                target_fqn=target_fqn,
-                target_id=None, # Leave NULL, let Linker resolve it
-                kind="doc_binding",
-                lineno=lineno,
-                col_offset=col_offset,
-                end_lineno=lineno,
-                end_col_offset=col_offset + len(fragment)
+                baseline_yaml_content_hash=stored_fp.get("baseline_yaml_content_hash"),
             )
-            references.append(ref)
 
-        return symbols, references
+        self._cached_states = states
+        return states
+
+
+class ASTCheckSubjectAdapter(CheckSubject):
+~~~~~
+
+#### Acts 2: Cache `ASTCheckSubjectAdapter` states
+Apply the same optimization to the AST-based adapter for consistency and performance in virtual/plugin scenarios.
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
+~~~~~
+~~~~~python.old
+        self._workspace = workspace
+        self._fingerprint_strategy = fingerprint_strategy
+        self._root_path = root_path
+
+    @property
+    def file_path(self) -> str:
+~~~~~
+~~~~~python.new
+        self._workspace = workspace
+        self._fingerprint_strategy = fingerprint_strategy
+        self._root_path = root_path
+        self._cached_states: Optional[Dict[str, SymbolState]] = None
+
+    @property
+    def file_path(self) -> str:
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
+~~~~~
+~~~~~python.old
+    def get_all_symbol_states(self) -> Dict[str, SymbolState]:
+        # 1. Load all necessary data from various sources
+        source_docs = self._doc_manager.flatten_module_docs(self._module)
+        yaml_docs = self._doc_manager.load_docs_for_module(self._module)
+~~~~~
+~~~~~python.new
+    def get_all_symbol_states(self) -> Dict[str, SymbolState]:
+        if self._cached_states is not None:
+            return self._cached_states
+
+        # 1. Load all necessary data from various sources
+        source_docs = self._doc_manager.flatten_module_docs(self._module)
+        yaml_docs = self._doc_manager.load_docs_for_module(self._module)
+~~~~~
+
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/check/subject.py
+~~~~~
+~~~~~python.old
+                baseline_yaml_content_hash=stored_fp.get("baseline_yaml_content_hash"),
+            )
+
+        return states
+~~~~~
+~~~~~python.new
+                baseline_yaml_content_hash=stored_fp.get("baseline_yaml_content_hash"),
+            )
+
+        self._cached_states = states
+        return states
 ~~~~~
 
 ### 下一步建议
-This change should resolve the `FOREIGN KEY constraint failed` errors. I will re-run the tests to verify. Once the tests pass, the "Sidecar as First-Class Citizen" refactor will be complete and robust.
+实施缓存后，Profiling 中的重复调用应该会消失。如果系统仍然慢，那就要集中精力解决“索引回退”的问题，即为什么 `load_docs_for_path` 没有命中 DB。建议在这次优化后再次运行 Profile 或测试。
