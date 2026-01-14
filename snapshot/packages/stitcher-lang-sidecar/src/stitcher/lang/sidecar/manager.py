@@ -128,17 +128,17 @@ class DocumentManager:
             try:
                 rel_doc_path = doc_path.relative_to(self.root_path).as_posix()
                 symbols = self.index_store.get_symbols_by_file_path(rel_doc_path)
-                # If we have symbols (even if empty list, meaning file tracked but empty), we trust index.
-                # However, if the file is not in index (get_symbols returns []), it might be untracked or new.
-                # For robustness, if symbols is empty list, we double check if file exists on disk?
-                # Actually, StitcherApp ensures index freshness.
-                if symbols:
+                # If the index returns a list (even empty), it means the file is tracked.
+                # An empty list signifies a tracked but empty .stitcher.yaml file.
+                # We can trust the index completely because `ensure_index_fresh` runs before `check`.
+                if symbols is not None:
                     return self._hydrate_from_symbols(symbols)
             except ValueError:
-                # Path issue (e.g. peripheral), fallback to IO
+                # This can happen if the path is outside the project root (e.g., a peripheral).
+                # In this case, we fall back to direct I/O.
                 pass
 
-        # 2. Fallback to File IO (Legacy/No-Index mode)
+        # 2. Fallback to File IO (for peripherals or non-indexed scenarios)
         return self._sidecar_adapter.load_doc_irs(doc_path, self.serializer)
 
     def _hydrate_from_symbols(
@@ -146,18 +146,19 @@ class DocumentManager:
     ) -> Dict[str, DocstringIR]:
         docs = {}
         for sym in symbols:
-            # We only care about doc fragments here
+            # We only care about doc fragments from sidecar files.
             if sym.kind != "doc_fragment" or not sym.docstring_content:
                 continue
 
             try:
-                # The content in DB is JSON-serialized View Data (from SidecarIndexerAdapter)
+                # The content in DB is a JSON string representing the "View Data".
                 view_data = json.loads(sym.docstring_content)
-                # Convert View Data -> IR using the current configured strategy
+                # Convert this View Data -> IR using the currently configured strategy.
                 ir = self.serializer.from_view_data(view_data)
+                # The symbol's name is the FQN fragment (e.g., "MyClass.my_method").
                 docs[sym.name] = ir
-            except Exception:
-                # If data is corrupt, skip
+            except (json.JSONDecodeError, TypeError):
+                # If data is corrupt or not in the expected format, skip this entry.
                 continue
         return docs
 
