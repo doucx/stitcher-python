@@ -7,7 +7,7 @@ from stitcher.test_utils import (
 from needle.pointer import L
 
 
-def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
+def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch, spy_bus: SpyBus):
     """
     验证 init 不会破坏已存在的 Sidecar 基线。
     场景：
@@ -25,7 +25,6 @@ def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
     )
 
     app = create_test_app(root_path=project_root)
-    spy_bus = SpyBus()
 
     # 执行 init (现在等于 pump --reconcile)
     with spy_bus.patch(monkeypatch):
@@ -49,7 +48,7 @@ def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
     spy_bus.assert_id_called(L.pump.info.reconciled, level="info")
 
 
-def test_index_stats_should_distinguish_sidecars(tmp_path, monkeypatch):
+def test_index_stats_should_distinguish_sidecars(tmp_path, monkeypatch, spy_bus: SpyBus):
     """
     验证索引统计信息应当区分 Sidecar 文件。
     """
@@ -62,7 +61,6 @@ def test_index_stats_should_distinguish_sidecars(tmp_path, monkeypatch):
     )
 
     app = create_test_app(root_path=project_root)
-    spy_bus = SpyBus()
 
     with spy_bus.patch(monkeypatch):
         app.run_index_build()
