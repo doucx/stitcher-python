@@ -70,11 +70,14 @@ class InitRunner:
                 module_abs_path = self.root_path / module.file_path
                 module_ws_rel = self.workspace.to_workspace_relative(module_abs_path)
 
-                # Generate IRs from source code; this is the source of truth for init.
-                ir_map = self.doc_manager.flatten_module_docs(module)
+                # Prioritize existing sidecar file as the source of truth for the baseline.
+                ir_map = self.doc_manager.load_docs_for_module(module)
+                if not ir_map:
+                    # If no sidecar exists, fall back to extracting from source.
+                    ir_map = self.doc_manager.flatten_module_docs(module)
 
                 computed_fingerprints = self._compute_fingerprints(module)
-                # CRITICAL FIX: Compute hashes from the in-memory IR map, NOT from the index.
+                # Hashes are now computed from the correct source of truth (sidecar or source)
                 yaml_hashes = {
                     fqn: self.doc_manager.compute_ir_hash(ir)
                     for fqn, ir in ir_map.items()

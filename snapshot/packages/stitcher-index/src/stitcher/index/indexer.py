@@ -28,6 +28,7 @@ class FileIndexer:
             "errors": 0,
             "error_details": [],
             "modified_paths": set(),
+            "sidecars": 0,
         }
 
         # Load DB state
@@ -84,6 +85,8 @@ class FileIndexer:
             if is_new_content:
                 stats["updated" if record else "added"] += 1
                 stats["modified_paths"].add(rel_path_str)
+                if rel_path_str.endswith(".stitcher.yaml"):
+                    stats["sidecars"] += 1
 
             try:
                 self._process_file_content(file_id, abs_path, content_bytes)

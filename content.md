@@ -1,104 +1,199 @@
-我将首先创建一个集成测试来捕捉这个“基线破坏”行为和索引统计不透明的问题。
+好的，测试已经成功地暴露了问题。现在我将生成一个计划来修复它们。
 
-## [WIP] test: 捕捉 Init 指令破坏现有 Sidecar 基线及索引统计不透明的问题
+**错误分析**:
+
+1.  **`test_init_respects_existing_sidecar_baseline` 失败**: 测试断言失败，`stored_yaml_hash` 为 `None`。这比预想的更严重：`InitRunner` 在发现 `.stitcher.yaml` 已存在时，不仅没有优先使用其内容，甚至完全跳过了为该符号生成 `baseline_yaml_content_hash`。原因是 `ir_map` 完全依赖于从源码 AST 提取的 `flatten_module_docs`，而 `save_docs_for_module` 会跳过已存在的文件，导致 `init` 流程中没有一个环节去读取已存在的 Sidecar 内容来更新 Lock 文件。
+2.  **`test_index_stats_should_distinguish_sidecars` 失败**: 测试断言失败，因为 `L.index.run.complete` 消息的参数中不包含 `sidecars` 字段。`FileIndexer` 的统计逻辑是扁平的，没有区分普通源码文件和 Sidecar 文件，因此无法在最终的报告中体现 Sidecar 的处理情况。
+
+**解决方案**:
+
+1.  **`InitRunner` 基线修正**: 修改 `InitRunner`，使其在计算 `yaml_hashes` 时，优先从已存在的 `.stitcher.yaml` 文件加载 IR（通过 `doc_manager.load_docs_for_module`）。只有当 Sidecar 文件不存在时，才回退到从源码中提取 IR（通过 `doc_manager.flatten_module_docs`）。这确保了 `init` 操作会尊重并保护已有的 Sidecar 基线。
+2.  **索引统计增强**:
+    *   在 `FileIndexer` 中增加一个 `sidecars` 计数器，当处理（新增或更新）一个 `.stitcher.yaml` 文件时，递增此计数器。
+    *   在 `IndexRunner` 中，将这个新的 `sidecars` 统计数据传递给消息总线。
+    *   更新 `en` 和 `zh` 语言的 I18N 资源文件，以在 `L.index.run.complete` 消息中显示 Sidecar 计数。
+
+## [WIP] fix: 修正 Init 基线逻辑并增强索引统计
 
 ### 用户需求
-1.  `stitcher init` 应当是幂等的，如果 Sidecar 已存在，它不应将其基线哈希强制改为源码内容。
-2.  `stitcher index build` 的输出应当区分源码文件和 Sidecar 文件。
+1.  `stitcher init` 必须是幂等的，且不能破坏已有的 Sidecar 资产。
+2.  索引操作（`stitcher index build`）应当在输出中明确告知用户处理了多少个 Sidecar 文件。
 
 ### 评论
-当前的 `InitRunner` 逻辑过于简化，它假设初始化总是“从无到有”的。但在实际工程中，用户可能先创建了 Sidecar，或者希望在不改变现有 Sidecar 的情况下重新同步 Lock 文件。忽略已存在的 Sidecar 会导致基线漂移，这是架构上的不严谨。
+这是一个关键的正确性修复。`init` 作为一个“建立基线”的命令，其核心职责是稳定性和可预测性。破坏现有资产是不可接受的。同样，索引统计的透明度对于用户理解系统后台行为至关重要。
 
 ### 目标
-1.  创建一个集成测试 `test_init_respects_existing_sidecar_baseline`，验证 `init` 后 Lock 文件中的 `baseline_yaml_content_hash` 是否指向 Sidecar 的内容而非源码内容。
-2.  创建一个集成测试 `test_index_stats_reports_sidecars`，验证索引输出是否包含 Sidecar 的统计信息。
+1.  修改 `InitRunner` 以优先使用现有 Sidecar 文件内容作为基线。
+2.  修改 `FileIndexer` 以便在其统计输出中区分 Sidecar 文件。
+3.  修改 `IndexRunner` 以报告 Sidecar 统计信息。
+4.  更新 I18N 消息模板以显示 Sidecar 数量。
 
 ### 基本原理
-通过 `WorkspaceFactory` 构建一个包含“不一致”状态的初始环境（源码 doc 与 Sidecar 内容不同），执行 `init` 或 `index`，然后通过断言 `SpyBus` 捕获的消息内容和 `stitcher.lock` 的实际存储值来验证故障。
+通过调整 `InitRunner` 中 `ir_map` 的数据来源优先级，可以轻松解决基线问题。对于统计，通过在 `FileIndexer` 的文件处理循环中增加一个基于文件名的条件判断，即可实现对 Sidecar 的分类计数。
 
 ### 标签
-#intent/test #flow/ready #priority/high #comp/application #comp/index #concept/state #scope/dx #ai/delegate #task/domain/testing #task/object/init-idempotency #task/action/reproduce #task/state/begin
+#intent/fix #flow/ready #priority/high #comp/application #comp/index #concept/state #scope/core #scope/ux #ai/delegate #task/domain/testing #task/object/init-idempotency #task/action/implementation #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 创建复现测试用例
+#### Acts 1: 修正 `InitRunner` 的基线逻辑
 
-我们将创建一个新的集成测试文件，专门用于验证 `init` 的幂等性和 Sidecar 基线保护。
+我们将修改 `init.py`，确保它在生成 Lock 文件时优先读取已存在的 Sidecar 文件。
 
 ~~~~~act
-write_file
-packages/stitcher-application/tests/integration/test_init_sidecar_idempotency.py
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/init.py
 ~~~~~
-~~~~~python
-import hashlib
-from stitcher.test_utils import create_test_app, SpyBus, WorkspaceFactory, get_stored_hashes
-from needle.pointer import L
+~~~~~python.old
+                # Generate IRs from source code; this is the source of truth for init.
+                ir_map = self.doc_manager.flatten_module_docs(module)
 
-def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
-    """
-    验证 init 不会破坏已存在的 Sidecar 基线。
-    场景：
-    - 源码中函数 f 的 doc 为 "Source Doc"
-    - Sidecar 文件中 f 的内容为 "Sidecar Doc"
-    - 执行 init 后，lock 文件中的基线哈希应当对应 "Sidecar Doc"
-    """
-    factory = WorkspaceFactory(tmp_path)
-    # 准备环境
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/lib.py", 'def f(): """Source Doc"""\n    pass')
-        .with_docs("src/lib.stitcher.yaml", {"f": "Sidecar Doc"})
-        .build()
-    )
+                computed_fingerprints = self._compute_fingerprints(module)
+                # CRITICAL FIX: Compute hashes from the in-memory IR map, NOT from the index.
+                yaml_hashes = {
+                    fqn: self.doc_manager.compute_ir_hash(ir)
+                    for fqn, ir in ir_map.items()
+                }
+~~~~~
+~~~~~python.new
+                # Prioritize existing sidecar file as the source of truth for the baseline.
+                ir_map = self.doc_manager.load_docs_for_module(module)
+                if not ir_map:
+                    # If no sidecar exists, fall back to extracting from source.
+                    ir_map = self.doc_manager.flatten_module_docs(module)
 
-    app = create_test_app(root_path=project_root)
-    spy_bus = SpyBus()
+                computed_fingerprints = self._compute_fingerprints(module)
+                # Hashes are now computed from the correct source of truth (sidecar or source)
+                yaml_hashes = {
+                    fqn: self.doc_manager.compute_ir_hash(ir)
+                    for fqn, ir in ir_map.items()
+                }
+~~~~~
 
-    # 执行 init
-    with spy_bus.patch(monkeypatch):
-        app.run_init()
+#### Acts 2: 增强 `FileIndexer` 的统计能力
 
-    # 获取 Lock 文件中记录的哈希
-    hashes = get_stored_hashes(project_root, "src/lib.py")
-    stored_yaml_hash = hashes.get("f", {}).get("baseline_yaml_content_hash")
-    
-    # 计算预期哈希（Sidecar 的内容）
-    expected_hash = hashlib.sha256("Sidecar Doc".encode("utf-8")).hexdigest()
-    
-    # 预期失败：目前的实现会使用 "Source Doc" 的哈希
-    assert stored_yaml_hash == expected_hash, f"Expected baseline to match Sidecar Doc ({expected_hash}), but got {stored_yaml_hash}"
+现在，我们来修改索引器，使其能够统计 Sidecar 文件。
 
-def test_index_stats_should_distinguish_sidecars(tmp_path, monkeypatch):
-    """
-    验证索引统计信息应当区分 Sidecar 文件。
-    """
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/lib.py", 'def f(): """Doc"""\n    pass')
-        .with_docs("src/lib.stitcher.yaml", {"f": "Doc"})
-        .build()
-    )
+~~~~~act
+patch_file
+packages/stitcher-index/src/stitcher/index/indexer.py
+~~~~~
+~~~~~python.old
+    def index_files(self, discovered_paths: Set[str]) -> Dict[str, Any]:
+        stats: Dict[str, Any] = {
+            "added": 0,
+            "updated": 0,
+            "deleted": 0,
+            "skipped": 0,
+            "errors": 0,
+            "error_details": [],
+            "modified_paths": set(),
+        }
+~~~~~
+~~~~~python.new
+    def index_files(self, discovered_paths: Set[str]) -> Dict[str, Any]:
+        stats: Dict[str, Any] = {
+            "added": 0,
+            "updated": 0,
+            "deleted": 0,
+            "skipped": 0,
+            "errors": 0,
+            "error_details": [],
+            "modified_paths": set(),
+            "sidecars": 0,
+        }
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-index/src/stitcher/index/indexer.py
+~~~~~
+~~~~~python.old
+            file_id, is_new_content = self.store.sync_file(
+                rel_path_str, current_hash, current_mtime, current_size
+            )
+            if is_new_content:
+                stats["updated" if record else "added"] += 1
+                stats["modified_paths"].add(rel_path_str)
+~~~~~
+~~~~~python.new
+            file_id, is_new_content = self.store.sync_file(
+                rel_path_str, current_hash, current_mtime, current_size
+            )
+            if is_new_content:
+                stats["updated" if record else "added"] += 1
+                stats["modified_paths"].add(rel_path_str)
+                if rel_path_str.endswith(".stitcher.yaml"):
+                    stats["sidecars"] += 1
+~~~~~
 
-    app = create_test_app(root_path=project_root)
-    spy_bus = SpyBus()
+#### Acts 3: 更新 `IndexRunner` 以报告新统计数据
 
-    with spy_bus.patch(monkeypatch):
-        app.run_index_build()
+接着，让 `IndexRunner` 将 Sidecar 统计数据传递给消息总线。
 
-    # 验证消息中是否包含 sidecars 统计字段
-    # 预期失败：目前 L.index.run.complete 可能不支持 sidecars 参数，或者参数为 0
-    messages = spy_bus.get_messages()
-    index_complete_msg = next(m for m in messages if m["id"] == str(L.index.run.complete))
-    
-    assert "sidecars" in index_complete_msg["params"], "Index summary should include sidecar count"
-    assert index_complete_msg["params"]["sidecars"] == 1
+~~~~~act
+patch_file
+packages/stitcher-application/src/stitcher/app/runners/index.py
+~~~~~
+~~~~~python.old
+        bus.success(
+            L.index.run.complete,
+            added=stats["added"],
+            updated=stats["updated"],
+            deleted=stats["deleted"],
+            skipped=stats["skipped"],
+        )
+~~~~~
+~~~~~python.new
+        bus.success(
+            L.index.run.complete,
+            added=stats["added"],
+            updated=stats["updated"],
+            deleted=stats["deleted"],
+            skipped=stats["skipped"],
+            sidecars=stats.get("sidecars", 0),
+        )
+~~~~~
+
+#### Acts 4: 更新 I18N 消息模板
+
+最后，更新语言文件以显示新的统计信息。
+
+~~~~~act
+patch_file
+packages/stitcher-common/src/stitcher/common/assets/needle/en/index/run.json
+~~~~~
+~~~~~json.old
+{
+  "start": "🔄 Starting incremental index build...",
+  "complete": "✨ Indexing complete. Added: {added}, Updated: {updated}, Deleted: {deleted}, Skipped: {skipped}"
+}
+~~~~~
+~~~~~json.new
+{
+  "start": "🔄 Starting incremental index build...",
+  "complete": "✨ Indexing complete. Added: {added}, Updated: {updated}, Deleted: {deleted}, Skipped: {skipped}, Sidecars: {sidecars}"
+}
+~~~~~
+~~~~~act
+patch_file
+packages/stitcher-common/src/stitcher/common/assets/needle/zh/index/run.json
+~~~~~
+~~~~~json.old
+{
+  "start": "🔄 开始增量索引构建...",
+  "complete": "✨ 索引构建完成。新增: {added}, 更新: {updated}, 删除: {deleted}, 跳过: {skipped}"
+}
+~~~~~
+~~~~~json.new
+{
+  "start": "🔄 开始增量索引构建...",
+  "complete": "✨ 索引构建完成。新增: {added}, 更新: {updated}, 删除: {deleted}, 跳过: {skipped}, Sidecar: {sidecars}"
+}
 ~~~~~
 
 ### 下一步建议
-1.  运行测试：执行 `pytest packages/stitcher-application/tests/integration/test_init_sidecar_idempotency.py`，确认测试失败。
-2.  修改 `FileIndexer`：增强其 `stats` 结构，使其能够区分通过 `SidecarIndexerAdapter` 解析的文件。
-3.  修改 `InitRunner`：在执行 `init` 时，优先从 `doc_manager.load_docs_for_module` 加载已有的磁盘文档作为基线，如果磁盘不存在，再退回到源码提取。
-4.  更新 I18N 资产：为 `L.index.run.complete` 增加 `sidecars` 参数的显示。
+现在所有的代码修改都已完成。我建议你再次运行我们之前创建的测试，以验证修复是否成功。
+
+执行 `pytest packages/stitcher-application/tests/integration/test_init_sidecar_idempotency.py`，预期所有测试都将通过。

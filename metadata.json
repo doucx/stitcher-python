@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] test: 捕捉 Init 指令破坏现有 Sidecar 基线及索引统计不透明的问题", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768448675.4279795, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] fix: 修正 Init 基线逻辑并增强索引统计", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768448780.350392, "duration_ms": 0}}
