@@ -18,7 +18,6 @@ from stitcher.lang.sidecar import DocumentManager, DocstringMerger
 from stitcher.common.services import Differ
 from stitcher.spec.interaction import InteractionHandler
 from .runners.check.runner import CheckRunner
-from .runners.init import InitRunner
 from .runners.pump.runner import PumpRunner
 from .runners.transform import TransformRunner
 from .runners.coverage import CoverageRunner
@@ -150,14 +149,6 @@ class StitcherApp:
             fingerprint_strategy=self.fingerprint_strategy,
         )
 
-        self.init_runner = InitRunner(
-            root_path,
-            self.workspace,
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            fingerprint_strategy=self.fingerprint_strategy,
-        )
         self.transform_runner = TransformRunner(
             root_path, self.doc_manager, transformer
         )
@@ -229,28 +220,12 @@ class StitcherApp:
             bus.success(L.generate.run.complete, count=len(all_generated))
         return all_generated
 
-    def run_init(self) -> List[Path]:
-        configs, _ = self._load_configs()
-        all_created: List[Path] = []
-        found_any = False
-
-        for config in configs:
-            modules = self._configure_and_scan(config)
-            if not modules:
-                continue
-            found_any = True
-
-            created = self.init_runner.run_batch(modules)
-            all_created.extend(created)
-
-        if not found_any:
-            bus.info(L.init.no_docs_found)
-        elif all_created:
-            bus.success(L.init.run.complete, count=len(all_created))
-        else:
-            bus.info(L.init.no_docs_found)
-
-        return all_created
+    def run_init(self) -> None:
+        """
+        Alias for 'pump --reconcile'.
+        Initializes the project by syncing source docs to YAML, respecting existing YAML content.
+        """
+        self.run_pump(reconcile=True)
 
     def run_check(self, force_relink: bool = False, reconcile: bool = False) -> bool:
         self.scanner.had_errors = False

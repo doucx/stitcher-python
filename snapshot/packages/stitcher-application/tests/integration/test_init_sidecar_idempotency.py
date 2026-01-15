@@ -22,7 +22,7 @@ def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
     app = create_test_app(root_path=project_root)
     spy_bus = SpyBus()
 
-    # 执行 init
+    # 执行 init (现在等于 pump --reconcile)
     with spy_bus.patch(monkeypatch):
         app.run_init()
 
@@ -33,8 +33,11 @@ def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
     # 计算预期哈希（Sidecar 的内容）
     expected_hash = hashlib.sha256("Sidecar Doc".encode("utf-8")).hexdigest()
     
-    # 预期失败：目前的实现会使用 "Source Doc" 的哈希
+    # 验证 pump --reconcile 正确保留了 Sidecar 内容作为基线
     assert stored_yaml_hash == expected_hash, f"Expected baseline to match Sidecar Doc ({expected_hash}), but got {stored_yaml_hash}"
+    
+    # 验证输出消息（应该包含 Reconciled 信息）
+    spy_bus.assert_id_called(L.pump.info.reconciled, level="info")
 
 def test_index_stats_should_distinguish_sidecars(tmp_path, monkeypatch):
     """
