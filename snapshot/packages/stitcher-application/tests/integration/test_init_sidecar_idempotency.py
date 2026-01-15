@@ -31,8 +31,12 @@ def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
     with spy_bus.patch(monkeypatch):
         app.run_init()
 
+
     # 获取 Lock 文件中记录的哈希
     hashes = get_stored_hashes(project_root, "src/lib.py")
+    print(spy_bus.get_messages())
+    print(hashes)
+    print(list(project_root.iterdir()))
     stored_yaml_hash = hashes.get("f", {}).get("baseline_yaml_content_hash")
 
     # 计算预期哈希（Sidecar 的内容）
