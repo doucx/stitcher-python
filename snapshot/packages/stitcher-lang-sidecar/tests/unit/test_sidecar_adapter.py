@@ -189,9 +189,7 @@ def test_save_doc_irs_forces_literal_block_style_repro(tmp_path: Path):
     doc_path = tmp_path / "repro.stitcher.yaml"
 
     # 使用一个简单的单行文档字符串进行测试
-    irs = {
-        "my_func": DocstringIR(summary="This is a docstring.")
-    }
+    irs = {"my_func": DocstringIR(summary="This is a docstring.")}
 
     adapter.save_doc_irs(doc_path, irs, serializer)
     content = doc_path.read_text()
