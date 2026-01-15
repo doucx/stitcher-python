@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[COMMIT] fix: 稳定 LockSession 状态管理与调和逻辑", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768454545.3610032, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "Capture: A conftest.py, M test_check_ignores_imports.py, M test_loglevel_option.py", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768457662.4234936, "duration_ms": 0}}
