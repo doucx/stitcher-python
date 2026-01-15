@@ -24,9 +24,9 @@ class MockAdapter:
         return [sym], []
 
 
-def test_index_files_git_discovery(tmp_path, store):
+def test_index_files_git_discovery(workspace_factory: WorkspaceFactory, store):
     """Test that indexer processes files found by Workspace via git."""
-    wf = WorkspaceFactory(tmp_path)
+    wf = workspace_factory
     wf.init_git()
     wf.with_source("tracked.py", "print('tracked')")
     wf.with_source("ignored.py", "print('ignored')")
@@ -45,9 +45,9 @@ def test_index_files_git_discovery(tmp_path, store):
     assert store.get_file_by_path("ignored.py") is None
 
 
-def test_index_files_stat_optimization(tmp_path, store):
+def test_index_files_stat_optimization(workspace_factory: WorkspaceFactory, store):
     """Test Phase 2 optimization: skip if mtime/size matches."""
-    wf = WorkspaceFactory(tmp_path).init_git()
+    wf = workspace_factory.init_git()
     wf.with_source("main.py", "content")
     wf.build()
 
@@ -66,9 +66,9 @@ def test_index_files_stat_optimization(tmp_path, store):
     assert stats2["updated"] == 0
 
 
-def test_index_files_content_update(tmp_path, store):
+def test_index_files_content_update(workspace_factory: WorkspaceFactory, store):
     """Test Phase 3: Update if content changes."""
-    wf = WorkspaceFactory(tmp_path).init_git()
+    wf = workspace_factory.init_git()
     wf.with_source("main.py", "v1")
     wf.build()
 
@@ -83,9 +83,9 @@ def test_index_files_content_update(tmp_path, store):
     assert stats["updated"] == 1
 
 
-def test_index_files_binary_file(tmp_path, store):
+def test_index_files_binary_file(workspace_factory: WorkspaceFactory, store):
     """Test Phase 4: Binary files are tracked but not parsed."""
-    wf = WorkspaceFactory(tmp_path).init_git()
+    wf = workspace_factory.init_git()
     wf.build()
     (tmp_path / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00")
 
@@ -101,9 +101,9 @@ def test_index_files_binary_file(tmp_path, store):
     assert len(store.get_symbols_by_file(rec.id)) == 0
 
 
-def test_index_files_adapter_integration(tmp_path, store):
+def test_index_files_adapter_integration(workspace_factory: WorkspaceFactory, store):
     """Test Phase 4: Adapter is called for text files."""
-    wf = WorkspaceFactory(tmp_path).init_git()
+    wf = workspace_factory.init_git()
     wf.with_source("app.py", "class Main: pass")
     wf.build()
 
@@ -119,9 +119,9 @@ def test_index_files_adapter_integration(tmp_path, store):
     assert syms[0].name == "Main"
 
 
-def test_index_files_deletion(tmp_path, store):
+def test_index_files_deletion(workspace_factory: WorkspaceFactory, store):
     """Test deletion sync."""
-    wf = WorkspaceFactory(tmp_path).init_git()
+    wf = workspace_factory.init_git()
     wf.with_source("todelete.py", "pass")
     wf.build()
 
