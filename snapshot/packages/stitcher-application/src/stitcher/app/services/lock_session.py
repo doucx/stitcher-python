@@ -1,44 +1,3 @@
-`LockSession` is now cleaner and faster.
-
-Let's execute the acts.
-
-这是一个构建 `LockSession` 核心组件的计划。
-我们将实现 `LockSession` 类，作为管理 Lock 文件状态的单一事实来源，并将其置于 `stitcher.app.services` 包中。
-
-## [WIP] feat: 引入 LockSession 以集中管理状态
-
-### 用户需求
-解决 `stitcher.lock` 更新逻辑分散（DRY 违例）和状态管理不一致的问题。需要一个集中的组件来在内存中暂存状态变更，并在事务结束时统一提交。
-
-### 评论
-这是架构演进的关键一步。通过 `LockSession`，我们将彻底解耦业务决策（Runner）与状态持久化（Persistence），并天然支持 Dry-Run 和原子性提交。
-
-### 目标
-1.  在 `stitcher-application` 中创建 `LockSession` 类。
-2.  实现基于 `ModuleDef` 和 `Fingerprint` 的状态记录接口。
-3.  实现基于 `TransactionManager` 的延迟提交逻辑。
-
-### 基本原理
--   **SSoT (Single Source of Truth)**: 所有的 Lock 更新必须通过 `LockSession` 进行。
--   **Unit of Work**: 状态变更在内存中聚合，直到明确调用 commit 才生成文件操作。
--   **Performance**: 通过让调用方传递预计算的 `Fingerprint`，避免在 Session 内部重复解析代码。
-
-### 标签
-#intent/architect #flow/ready #priority/high #comp/runtime #concept/state #scope/core #ai/instruct #task/domain/storage #task/object/lock-session #task/action/implementation #task/state/begin
-
----
-
-### Script
-
-#### Acts 1: 创建 LockSession 类
-
-我们将创建 `packages/stitcher-application/src/stitcher/app/services/lock_session.py` 文件，实现核心逻辑。
-
-~~~~~act
-write_file
-packages/stitcher-application/src/stitcher/app/services/lock_session.py
-~~~~~
-~~~~~python
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -168,7 +127,3 @@ class LockSession:
             except ValueError:
                 # Fallback/Safety: Should not happen if pkg_root is inside root_path
                 pass
-~~~~~
-
-### 下一步建议
-现在核心组件已就位，下一步是将 `LockSession` 集成到 `StitcherApp` 中，并开始重构 `PumpExecutor` 以使用这个新组件。这对应路线图的**阶段 2**。
