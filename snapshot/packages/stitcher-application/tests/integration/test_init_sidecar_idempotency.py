@@ -1,4 +1,3 @@
-import hashlib
 from stitcher.test_utils import (
     create_test_app,
     SpyBus,
@@ -37,7 +36,15 @@ def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
     stored_yaml_hash = hashes.get("f", {}).get("baseline_yaml_content_hash")
 
     # 计算预期哈希（Sidecar 的内容）
-    expected_hash = hashlib.sha256("Sidecar Doc".encode("utf-8")).hexdigest()
+    # The hash is computed from the serialized DocstringIR, not the raw string.
+    # To test this correctly, we get the app's doc manager and simulate the hash calculation.
+    doc_manager = app.doc_manager
+
+    # When "Sidecar Doc" is loaded from YAML, the RawSerializer turns it into this IR:
+    ir = doc_manager.serializer.from_view_data("Sidecar Doc")
+
+    # The application then computes the baseline hash from this IR.
+    expected_hash = doc_manager.compute_ir_hash(ir)
 
     # 验证 pump --reconcile 正确保留了 Sidecar 内容作为基线
     assert stored_yaml_hash == expected_hash, (
