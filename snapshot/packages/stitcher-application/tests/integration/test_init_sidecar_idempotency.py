@@ -19,7 +19,7 @@ def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
     # 准备环境
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/lib.py", 'def f(): """Source Doc"""\n    pass')
+        .with_source("src/lib.py", 'def f():\n    """Source Doc"""\n    pass')
         .with_docs("src/lib.stitcher.yaml", {"f": "Sidecar Doc"})
         .build()
     )
@@ -31,23 +31,13 @@ def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
     with spy_bus.patch(monkeypatch):
         app.run_init()
 
-
     # 获取 Lock 文件中记录的哈希
     hashes = get_stored_hashes(project_root, "src/lib.py")
-    print(spy_bus.get_messages())
-    print(hashes)
-    print(list(project_root.iterdir()))
     stored_yaml_hash = hashes.get("f", {}).get("baseline_yaml_content_hash")
 
     # 计算预期哈希（Sidecar 的内容）
-    # The hash is computed from the serialized DocstringIR, not the raw string.
-    # To test this correctly, we get the app's doc manager and simulate the hash calculation.
     doc_manager = app.doc_manager
-
-    # When "Sidecar Doc" is loaded from YAML, the RawSerializer turns it into this IR:
     ir = doc_manager.serializer.from_view_data("Sidecar Doc")
-
-    # The application then computes the baseline hash from this IR.
     expected_hash = doc_manager.compute_ir_hash(ir)
 
     # 验证 pump --reconcile 正确保留了 Sidecar 内容作为基线
@@ -66,7 +56,7 @@ def test_index_stats_should_distinguish_sidecars(tmp_path, monkeypatch):
     factory = WorkspaceFactory(tmp_path)
     project_root = (
         factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/lib.py", 'def f(): """Doc"""\n    pass')
+        .with_source("src/lib.py", 'def f():\n    """Doc"""\n    pass')
         .with_docs("src/lib.stitcher.yaml", {"f": "Doc"})
         .build()
     )
@@ -78,7 +68,6 @@ def test_index_stats_should_distinguish_sidecars(tmp_path, monkeypatch):
         app.run_index_build()
 
     # 验证消息中是否包含 sidecars 统计字段
-    # 预期失败：目前 L.index.run.complete 可能不支持 sidecars 参数，或者参数为 0
     messages = spy_bus.get_messages()
     index_complete_msg = next(
         m for m in messages if m["id"] == str(L.index.run.complete)
