@@ -14,3 +14,4 @@ dependencies = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/stitcher"]
+include = ["/src/stitcher/bus/assets"]

@@ -23,8 +23,8 @@
       "baseline_yaml_content_hash": "9f10975bee36dcf20e228e8cc9d7a048c780b80f2127546f89e09c9b503f7bbf"
     },
     "py://packages/stitcher-test-utils/src/stitcher/test_utils/bus.py#SpyBus.patch": {
-      "baseline_code_signature_text": "def patch(self, monkeypatch: Any, target: str = 'stitcher.common.bus'):",
-      "baseline_code_structure_hash": "8465d9020a2f9c66dbdc4e9da0357cd816e0dd636d9419a544c4e6b6333185c0",
+      "baseline_code_signature_text": "def patch(self, monkeypatch: Any, target: str = 'stitcher.bus.bus'):",
+      "baseline_code_structure_hash": "99f7cf8f7b93e7061b78a2502d8af3c38e3c2a1f19926697190f588fe155a384",
       "baseline_yaml_content_hash": "2aaeca98632eec49a42d23fc988d415363615710f8fdf19986594a163e370695"
     },
     "py://packages/stitcher-test-utils/src/stitcher/test_utils/bus.py#SpyRenderer": {

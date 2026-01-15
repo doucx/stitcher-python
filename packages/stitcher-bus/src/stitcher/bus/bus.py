@@ -1,7 +1,7 @@
 from typing import Any, Optional, Union, Callable
 
 from needle.pointer import SemanticPointer
-from stitcher.bus.protocols import Renderer
+from .protocols import Renderer
 
 
 class FeedbackBus:

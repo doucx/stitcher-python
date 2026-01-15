@@ -12,19 +12,6 @@
     "py://packages/stitcher-common/src/stitcher/common/__init__.py#_operator_cache": {},
     "py://packages/stitcher-common/src/stitcher/common/__init__.py#_project_root": {},
     "py://packages/stitcher-common/src/stitcher/common/__init__.py#_user_factory": {},
-    "py://packages/stitcher-common/src/stitcher/common/__init__.py#bus": {
-      "baseline_yaml_content_hash": "b8d3ba9451cfde6a8099864b56144108c887962665753a9e9470dec2564d5a0c"
-    },
-    "py://packages/stitcher-common/src/stitcher/common/__init__.py#get_current_renderer": {
-      "baseline_code_signature_text": "def get_current_renderer() -> OverlayOperator:",
-      "baseline_code_structure_hash": "28a0e399d8cdbf153ce3f23f754d24686ed9a00f302833703e079fe0a4e2fd5a",
-      "baseline_yaml_content_hash": "36009db2b66bca7d75f86635cbe910eeed7a29a4fa748c4daccaed2160e330a8"
-    },
-    "py://packages/stitcher-common/src/stitcher/common/__init__.py#stitcher_operator": {
-      "baseline_code_signature_text": "def stitcher_operator(key):",
-      "baseline_code_structure_hash": "c2101eaed3099b1b4efdf16190b79f922dada8a3ba21572db182e6cb87ccb9c0",
-      "baseline_yaml_content_hash": "5f23bd0f1cf4607806a0796f3ac856e022f4ef877ba58a355455e6d97bb17171"
-    },
     "py://packages/stitcher-common/src/stitcher/common/formatting.py#format_docstring": {
       "baseline_code_signature_text": "def format_docstring(content: str, indent_str: str) -> str:",
       "baseline_code_structure_hash": "0002f315d5415e31c8d0a4114ad4dce0f6a4242360dcc41aa10a82cd0f53e693",
