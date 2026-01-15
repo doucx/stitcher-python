@@ -28,6 +28,8 @@ def sample_module() -> ModuleDef:
 @pytest.fixture
 def executor(tmp_path, mocker) -> PumpExecutor:
     """A PumpExecutor instance for testing its internal methods."""
+    from stitcher.app.services.lock_session import LockSession
+
     return PumpExecutor(
         root_path=tmp_path,
         workspace=mocker.create_autospec(Workspace, instance=True),
@@ -39,6 +41,7 @@ def executor(tmp_path, mocker) -> PumpExecutor:
         transformer=MagicMock(),
         merger=DocstringMerger(),
         fingerprint_strategy=MagicMock(),
+        lock_session=mocker.create_autospec(LockSession, instance=True),
     )
 
 
