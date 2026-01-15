@@ -1,624 +1,213 @@
-检测到“确定性缺失”违例，已根据 **ADAP v1.0** 协议分析当前系统行为。
+您的分析非常敏锐，尤其是关于 `init` 的必要性和 lock file 更新逻辑的 DRY 问题。您发现了一个比表面 Bug 更深层次的架构异味。
 
-分析显示，为了继续执行任务，我必须解决以下未经证实的核心假设：
-*   **假设 `InitRunner` 的存在是必要的**：目前的架构中，`InitRunner` 和 `PumpRunner` 在功能上高度重叠。`init` 的核心职责（提取文档、创建 Sidecar、更新 Lock）完全被 `pump` 覆盖。
-*   **事实**：`pump` 拥有更完善的“检查-决策-执行”循环，能够处理冲突、剥离和调和，而 `init` 只是一个简陋的、易出错的脚本。
+1.  **核心逻辑缺陷 (Bug)**: `test_init_sidecar_idempotency` 失败的根源在于，我之前对 `PumpExecutor` 的修复不完整。当 `pump --reconcile` 运行时，它正确地决定保留磁盘上的 YAML 内容，但**未能将该 YAML 内容的哈希更新到 Lock 文件中**。`_generate_execution_plan` 方法仅在 `hydrate_yaml` 为 `True` 时才设置 `update_doc_fingerprint` 标志。在 `--reconcile` 场景下，`hydrate_yaml` 为 `False`，导致 Lock 文件中的 `baseline_yaml_content_hash` 从未被写入，因此测试中断言时得到 `None`。
 
-根据 **HFEA v1.0** 的“模块可毁灭性”原则，既然 `InitRunner` 是一个功能不完备且产生 Bug 的冗余组件，**正确的做法不是修复它，而是销毁它**。
+2.  **级联测试失败 (Cascade Failures)**:
+    *   `test_init_command`: `run_init` 的签名已从 `-> List[Path]` 更改为 `-> None`，但测试代码 `created_files = app.run_init()` 仍然期望一个返回值，导致 `TypeError`。
+    *   `test_check_signatures` & `test_check_regression`: 这两个测试的设置步骤 `app.run_init()` 现在由于上述核心逻辑缺陷，未能正确生成 Lock 文件，导致后续的 `check` 操作因缺少基线而失败。
 
-我们将把 `stitcher init` 重定义为 `stitcher pump --reconcile` 的语义别名。这不仅解决了你的 Bug，还消除了大量的死代码。
+您的怀疑完全正确。`InitRunner` 是一个典型的架构冗余组件，它违反了 **HFEA** 的“真理单一来源 (SSoT)”原则。系统中不应该有两个组件（`InitRunner` 和 `PumpRunner`）都在做“从代码建立基线”这件事。`pump` 命令已经具备了更强大、更完整的逻辑，`init` 的存在只会带来维护成本和逻辑不一致的风险。
 
-## [WIP] refactor: 将 Init 命令重构为 Pump 的语义别名
+**将 `init` 视为 `pump` 的别名是正确的战略决策。**
 
-### 用户需求
-1.  `stitcher init` 必须尊重现有的 Sidecar 文件（幂等性）。
-2.  `stitcher init` 应当能够处理“部分有文档、部分无文档”的复杂场景。
-3.  消除 `InitRunner` 与 `PumpRunner` 之间的逻辑冗余。
+关于您提出的“Lock file 更新逻辑”的 DRY 问题，这也是一个精准的洞察。目前，`CheckResolver` 和 `PumpExecutor` 都在独立地操作 Lock 文件。这不仅重复了代码，更危险的是，它们可能对“更新基线”这一核心操作有不同的实现，从而引入细微的不一致性。
 
-### 评论
-这是一个架构级的减法操作。通过移除 `InitRunner`，我们将“初始化”这一概念重新定义为“将项目状态泵入（Pump）一致性状态”。这符合 Stitcher “缝合”的核心隐喻：初始化只是缝合的第一针。
+**理想的架构演进方向**：
+我们应该创建一个专门的、可重用的服务，例如 `BaselineManager` 或 `LockSynchronizer`。该服务的唯一职责就是接收“新的基线状态”（例如，哪个符号的代码签名是什么，哪个符号的文档哈希是什么），然后负责所有与 Lock 文件交互的底层细节（加载、更新、保存）。`CheckResolver` 和 `PumpExecutor` 将不再直接操作 Lock 文件，而是委托给这个中心化的服务。
+
+**当前行动**：
+为了快速修复当前的故障，我将首先进行战术修复。但这为我们下一步进行上述的架构重构铺平了道路。
+
+## [WIP] fix: 修正 Pump 对 reconcile 的处理并修复级联测试失败
 
 ### 目标
-1.  修改 `StitcherApp.run_init`，使其直接调用 `self.run_pump(reconcile=True)`。
-2.  删除 `packages/stitcher-application/src/stitcher/app/runners/init.py`。
-3.  更新集成测试，使其断言 `pump` 的成功消息（而非旧的 `init` 消息）。
-
-### 基本原理
-`pump` 命令具备完整的逻辑来处理源码与 YAML 的同步。
-*   如果 YAML 不存在：`pump` 会创建它（等同于旧 `init`）。
-*   如果 YAML 存在且一致：`pump` 会更新 Lock（等同于旧 `init` 幂等）。
-*   如果 YAML 存在但冲突：`--reconcile` 参数指示 `pump` 信任 YAML（满足用户对 Sidecar 优先的需求）。
+1.  **战术修复**: 修改 `PumpExecutor`，确保在 `--reconcile` 模式下，即使不写入 YAML 文件，也会用现有 YAML 的内容哈希去更新 Lock 文件。
+2.  **测试修复**: 修正所有因 `run_init` 签名变更和行为变更而失败的集成测试。
 
 ### 标签
-#intent/refactor #flow/ready #priority/high #comp/application #concept/state #scope/core #ai/instruct #task/domain/application #task/object/init-command #task/action/unify #task/state/continue
+#intent/fix #flow/ready #priority/critical #comp/application #concept/state #scope/core #ai/instruct #task/domain/application #task/object/init-command #task/action/unify #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 重构 StitcherApp.run_init
+#### Acts 1: 修正 PumpExecutor 的核心逻辑
 
-我们将修改 `StitcherApp`，移除 `InitRunner` 的实例化，并将 `run_init` 转发给 `run_pump`。
+我们将修改 `_generate_execution_plan` 和 `execute`，确保 `reconcile` 决策能正确更新 Lock 文件。
 
 ~~~~~act
 patch_file
-packages/stitcher-application/src/stitcher/app/core.py
+packages/stitcher-application/src/stitcher/app/runners/pump/executor.py
 ~~~~~
 ~~~~~python.old
-from .runners.check.runner import CheckRunner
-from .runners.init import InitRunner
-from .runners.pump.runner import PumpRunner
-from .runners.transform import TransformRunner
-from .runners.coverage import CoverageRunner
-from .runners.refactor import RefactorRunner
-from .runners.index import IndexRunner
-from .runners.check.resolver import CheckResolver
-from .runners.check.reporter import CheckReporter
-from .runners.pump.executor import PumpExecutor
-from stitcher.analysis.engines import create_pump_engine, create_architecture_engine
-from stitcher.common.transaction import TransactionManager
-from typing import Callable
-from stitcher.analysis.schema import FileCheckResult
-from .types import PumpResult, CoverageResult
-from stitcher.index.db import DatabaseManager
-from stitcher.index.store import IndexStore
-from stitcher.index.indexer import FileIndexer
-from stitcher.lang.python import PythonAdapter
-from stitcher.workspace import Workspace
-from stitcher.lang.python.docstring import (
-    get_docstring_codec,
-    get_docstring_serializer,
-)
-from stitcher.spec.interaction import InteractionContext
-from stitcher.spec.protocols import URIGeneratorProtocol
-from stitcher.lang.sidecar import (
-    LockFileManager,
-    SidecarIndexerAdapter,
-    SidecarURIGenerator,
-)
-from stitcher.lang.python import PythonURIGenerator
-
-
-class StitcherApp:
-    def __init__(
+    def _generate_execution_plan(
         self,
-        root_path: Path,
-        parser: LanguageParserProtocol,
-        transformer: LanguageTransformerProtocol,
-        fingerprint_strategy: FingerprintStrategyProtocol,
-        interaction_handler: Optional[InteractionHandler] = None,
-    ):
-        self.root_path = root_path
-        self.workspace = Workspace(root_path)
-        self.fingerprint_strategy = fingerprint_strategy
-        self.uri_generator: URIGeneratorProtocol = PythonURIGenerator()
-
-        # 1. Indexing Subsystem (Promoted to Priority 1 initialization)
-        index_db_path = root_path / ".stitcher" / "index" / "index.db"
-        self.db_manager = DatabaseManager(index_db_path)
-        self.db_manager.initialize()
-        self.index_store = IndexStore(self.db_manager)
-        self.file_indexer = FileIndexer(root_path, self.index_store)
-
-        # 2. Core Services
-        # DocumentManager now depends on IndexStore
-        self.doc_manager = DocumentManager(
-            root_path, self.uri_generator, self.index_store
-        )
-        self.lock_manager = LockFileManager()
-        # self.uri_generator instantiated above
-        self.scanner = ScannerService(root_path, parser)
-        self.differ = Differ()
-        self.merger = DocstringMerger()
-        self.stubgen_service = StubgenService(
-            root_path, self.scanner, self.doc_manager, transformer
-        )
-
-        # 3. Register Adapters
-        search_paths = self.workspace.get_search_paths()
-
-        # Python Adapter
-        python_adapter = PythonAdapter(
-            root_path, search_paths, uri_generator=self.uri_generator
-        )
-        self.file_indexer.register_adapter(".py", python_adapter)
-
-        # Sidecar Adapter (NEW)
-        sidecar_uri_generator = SidecarURIGenerator()
-        sidecar_adapter = SidecarIndexerAdapter(root_path, sidecar_uri_generator)
-        # Register for .yaml because FileIndexer uses path.suffix.
-        # The adapter itself filters for .stitcher.yaml files.
-        self.file_indexer.register_adapter(".yaml", sidecar_adapter)
-
-        # 4. Runners (Command Handlers)
-        check_resolver = CheckResolver(
-            root_path,
-            self.workspace,
-            parser,
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            interaction_handler,
-            self.fingerprint_strategy,
-        )
-        check_reporter = CheckReporter()
-        self.check_runner = CheckRunner(
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            self.fingerprint_strategy,
-            self.index_store,
-            self.workspace,
-            differ=self.differ,
-            resolver=check_resolver,
-            reporter=check_reporter,
-            root_path=self.root_path,
-        )
-
-        pump_engine = create_pump_engine(differ=self.differ)
-        pump_executor = PumpExecutor(
-            root_path,
-            self.workspace,
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            transformer,
-            self.merger,
-            self.fingerprint_strategy,
-        )
-        self.pump_runner = PumpRunner(
-            pump_engine=pump_engine,
-            executor=pump_executor,
-            interaction_handler=interaction_handler,
-            # Pass dependencies needed for subject creation
-            doc_manager=self.doc_manager,
-            lock_manager=self.lock_manager,
-            uri_generator=self.uri_generator,
-            workspace=self.workspace,
-            fingerprint_strategy=self.fingerprint_strategy,
-        )
-
-        self.init_runner = InitRunner(
-            root_path,
-            self.workspace,
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            fingerprint_strategy=self.fingerprint_strategy,
-        )
-        self.transform_runner = TransformRunner(
-            root_path, self.doc_manager, transformer
-        )
-        self.coverage_runner = CoverageRunner(
-            root_path, self.doc_manager, self.index_store
-        )
-        self.index_runner = IndexRunner(self.db_manager, self.file_indexer)
-        self.architecture_engine = create_architecture_engine()
-
-        # 4. Refactor Runner (depends on Indexing)
-        self.refactor_runner = RefactorRunner(
-            root_path, self.index_store, self.file_indexer, self.uri_generator
-        )
-
-    def _load_configs(self) -> Tuple[List[StitcherConfig], Optional[str]]:
-        return load_config_from_path(self.root_path)
-
-    def ensure_index_fresh(self) -> Dict[str, Any]:
-        with self.db_manager.session():
-            return self.index_runner.run_build(self.workspace)
-
-    def _configure_and_scan(self, config: StitcherConfig) -> List[ModuleDef]:
-        if config.name != "default":
-            bus.info(L.generate.target.processing, name=config.name)
-
-        # Configure Docstring Strategy
-        parser, renderer = get_docstring_codec(config.docstring_style)
-        serializer = get_docstring_serializer(config.docstring_style)
-        self.doc_manager.set_strategy(parser, serializer)
-
-        # Inject renderer into generate runner
-        self.stubgen_service.set_renderer(renderer)
-
-        # Handle Plugins
-        plugin_modules = self.scanner.process_plugins(config.plugins)
-
-        # Handle Files
-        unique_files = self.scanner.get_files_from_config(config)
-        source_modules = self.scanner.scan_files(unique_files)
-
-        all_modules = source_modules + plugin_modules
-        if not all_modules:
-            pass
-
-        return all_modules
-
-    def run_from_config(self, dry_run: bool = False) -> List[Path]:
-        self.ensure_index_fresh()
-        configs, project_name = self._load_configs()
-        all_generated: List[Path] = []
-        found_any = False
-        tm = TransactionManager(self.root_path, dry_run=dry_run)
-
-        for config in configs:
-            modules = self._configure_and_scan(config)
-            if not modules:
-                continue
-            found_any = True
-
-            paths = self.stubgen_service.generate(modules, config, tm, project_name)
-            all_generated.extend(paths)
-
-        if not found_any and len(configs) == 1 and not tm.dry_run:
-            bus.warning(L.warning.no_files_or_plugins_found)
-
-        tm.commit()
-
-        if all_generated and not tm.dry_run:
-            bus.success(L.generate.run.complete, count=len(all_generated))
-        return all_generated
-
-    def run_init(self) -> List[Path]:
-        configs, _ = self._load_configs()
-        all_created: List[Path] = []
-        found_any = False
-
-        for config in configs:
-            modules = self._configure_and_scan(config)
-            if not modules:
-                continue
-            found_any = True
-
-            created = self.init_runner.run_batch(modules)
-            all_created.extend(created)
-
-        if not found_any:
-            bus.info(L.init.no_docs_found)
-        elif all_created:
-            bus.success(L.init.run.complete, count=len(all_created))
-        else:
-            bus.info(L.init.no_docs_found)
-
-        return all_created
-
-    def run_check(self, force_relink: bool = False, reconcile: bool = False) -> bool:
+        module: ModuleDef,
+        decisions: Dict[str, ResolutionAction],
+        strip_requested: bool,
+        source_docs: Dict[str, DocstringIR],
+    ) -> Dict[str, FunctionExecutionPlan]:
+        plan: Dict[str, FunctionExecutionPlan] = {}
+        for fqn in module.get_all_fqns():
+            decision = decisions.get(fqn)
+            has_source_doc = fqn in source_docs
+            exec_plan = FunctionExecutionPlan(fqn=fqn)
+            if decision != ResolutionAction.SKIP:
+                exec_plan.update_code_fingerprint = True
+                if decision == ResolutionAction.HYDRATE_OVERWRITE or (
+                    decision is None and has_source_doc
+                ):
+                    exec_plan.hydrate_yaml = True
+                    exec_plan.update_doc_fingerprint = True
+                if strip_requested and (
+                    decision == ResolutionAction.HYDRATE_OVERWRITE
+                    or decision == ResolutionAction.HYDRATE_KEEP_EXISTING
+                    or (decision is None and has_source_doc)
+                ):
+                    exec_plan.strip_source_docstring = True
+            plan[fqn] = exec_plan
+        return plan
 ~~~~~
 ~~~~~python.new
-from .runners.check.runner import CheckRunner
-from .runners.pump.runner import PumpRunner
-from .runners.transform import TransformRunner
-from .runners.coverage import CoverageRunner
-from .runners.refactor import RefactorRunner
-from .runners.index import IndexRunner
-from .runners.check.resolver import CheckResolver
-from .runners.check.reporter import CheckReporter
-from .runners.pump.executor import PumpExecutor
-from stitcher.analysis.engines import create_pump_engine, create_architecture_engine
-from stitcher.common.transaction import TransactionManager
-from typing import Callable
-from stitcher.analysis.schema import FileCheckResult
-from .types import PumpResult, CoverageResult
-from stitcher.index.db import DatabaseManager
-from stitcher.index.store import IndexStore
-from stitcher.index.indexer import FileIndexer
-from stitcher.lang.python import PythonAdapter
-from stitcher.workspace import Workspace
-from stitcher.lang.python.docstring import (
-    get_docstring_codec,
-    get_docstring_serializer,
-)
-from stitcher.spec.interaction import InteractionContext
-from stitcher.spec.protocols import URIGeneratorProtocol
-from stitcher.lang.sidecar import (
-    LockFileManager,
-    SidecarIndexerAdapter,
-    SidecarURIGenerator,
-)
-from stitcher.lang.python import PythonURIGenerator
-
-
-class StitcherApp:
-    def __init__(
+    def _generate_execution_plan(
         self,
-        root_path: Path,
-        parser: LanguageParserProtocol,
-        transformer: LanguageTransformerProtocol,
-        fingerprint_strategy: FingerprintStrategyProtocol,
-        interaction_handler: Optional[InteractionHandler] = None,
-    ):
-        self.root_path = root_path
-        self.workspace = Workspace(root_path)
-        self.fingerprint_strategy = fingerprint_strategy
-        self.uri_generator: URIGeneratorProtocol = PythonURIGenerator()
-
-        # 1. Indexing Subsystem (Promoted to Priority 1 initialization)
-        index_db_path = root_path / ".stitcher" / "index" / "index.db"
-        self.db_manager = DatabaseManager(index_db_path)
-        self.db_manager.initialize()
-        self.index_store = IndexStore(self.db_manager)
-        self.file_indexer = FileIndexer(root_path, self.index_store)
-
-        # 2. Core Services
-        # DocumentManager now depends on IndexStore
-        self.doc_manager = DocumentManager(
-            root_path, self.uri_generator, self.index_store
-        )
-        self.lock_manager = LockFileManager()
-        # self.uri_generator instantiated above
-        self.scanner = ScannerService(root_path, parser)
-        self.differ = Differ()
-        self.merger = DocstringMerger()
-        self.stubgen_service = StubgenService(
-            root_path, self.scanner, self.doc_manager, transformer
+        module: ModuleDef,
+        decisions: Dict[str, ResolutionAction],
+        strip_requested: bool,
+        source_docs: Dict[str, DocstringIR],
+    ) -> Dict[str, FunctionExecutionPlan]:
+        plan: Dict[str, FunctionExecutionPlan] = {}
+        # Get all FQNs from code AND existing YAML to handle dangling docs
+        all_fqns = set(module.get_all_fqns()) | set(
+            self.doc_manager.load_docs_for_module(module).keys()
         )
 
-        # 3. Register Adapters
-        search_paths = self.workspace.get_search_paths()
-
-        # Python Adapter
-        python_adapter = PythonAdapter(
-            root_path, search_paths, uri_generator=self.uri_generator
-        )
-        self.file_indexer.register_adapter(".py", python_adapter)
-
-        # Sidecar Adapter (NEW)
-        sidecar_uri_generator = SidecarURIGenerator()
-        sidecar_adapter = SidecarIndexerAdapter(root_path, sidecar_uri_generator)
-        # Register for .yaml because FileIndexer uses path.suffix.
-        # The adapter itself filters for .stitcher.yaml files.
-        self.file_indexer.register_adapter(".yaml", sidecar_adapter)
-
-        # 4. Runners (Command Handlers)
-        check_resolver = CheckResolver(
-            root_path,
-            self.workspace,
-            parser,
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            interaction_handler,
-            self.fingerprint_strategy,
-        )
-        check_reporter = CheckReporter()
-        self.check_runner = CheckRunner(
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            self.fingerprint_strategy,
-            self.index_store,
-            self.workspace,
-            differ=self.differ,
-            resolver=check_resolver,
-            reporter=check_reporter,
-            root_path=self.root_path,
-        )
-
-        pump_engine = create_pump_engine(differ=self.differ)
-        pump_executor = PumpExecutor(
-            root_path,
-            self.workspace,
-            self.doc_manager,
-            self.lock_manager,
-            self.uri_generator,
-            transformer,
-            self.merger,
-            self.fingerprint_strategy,
-        )
-        self.pump_runner = PumpRunner(
-            pump_engine=pump_engine,
-            executor=pump_executor,
-            interaction_handler=interaction_handler,
-            # Pass dependencies needed for subject creation
-            doc_manager=self.doc_manager,
-            lock_manager=self.lock_manager,
-            uri_generator=self.uri_generator,
-            workspace=self.workspace,
-            fingerprint_strategy=self.fingerprint_strategy,
-        )
-
-        self.transform_runner = TransformRunner(
-            root_path, self.doc_manager, transformer
-        )
-        self.coverage_runner = CoverageRunner(
-            root_path, self.doc_manager, self.index_store
-        )
-        self.index_runner = IndexRunner(self.db_manager, self.file_indexer)
-        self.architecture_engine = create_architecture_engine()
-
-        # 4. Refactor Runner (depends on Indexing)
-        self.refactor_runner = RefactorRunner(
-            root_path, self.index_store, self.file_indexer, self.uri_generator
-        )
-
-    def _load_configs(self) -> Tuple[List[StitcherConfig], Optional[str]]:
-        return load_config_from_path(self.root_path)
-
-    def ensure_index_fresh(self) -> Dict[str, Any]:
-        with self.db_manager.session():
-            return self.index_runner.run_build(self.workspace)
-
-    def _configure_and_scan(self, config: StitcherConfig) -> List[ModuleDef]:
-        if config.name != "default":
-            bus.info(L.generate.target.processing, name=config.name)
-
-        # Configure Docstring Strategy
-        parser, renderer = get_docstring_codec(config.docstring_style)
-        serializer = get_docstring_serializer(config.docstring_style)
-        self.doc_manager.set_strategy(parser, serializer)
-
-        # Inject renderer into generate runner
-        self.stubgen_service.set_renderer(renderer)
-
-        # Handle Plugins
-        plugin_modules = self.scanner.process_plugins(config.plugins)
-
-        # Handle Files
-        unique_files = self.scanner.get_files_from_config(config)
-        source_modules = self.scanner.scan_files(unique_files)
-
-        all_modules = source_modules + plugin_modules
-        if not all_modules:
-            pass
-
-        return all_modules
-
-    def run_from_config(self, dry_run: bool = False) -> List[Path]:
-        self.ensure_index_fresh()
-        configs, project_name = self._load_configs()
-        all_generated: List[Path] = []
-        found_any = False
-        tm = TransactionManager(self.root_path, dry_run=dry_run)
-
-        for config in configs:
-            modules = self._configure_and_scan(config)
-            if not modules:
+        for fqn in all_fqns:
+            decision = decisions.get(fqn)
+            has_source_doc = fqn in source_docs
+            exec_plan = FunctionExecutionPlan(fqn=fqn)
+            if decision == ResolutionAction.SKIP:
+                plan[fqn] = exec_plan
                 continue
-            found_any = True
 
-            paths = self.stubgen_service.generate(modules, config, tm, project_name)
-            all_generated.extend(paths)
+            exec_plan.update_code_fingerprint = True
 
-        if not found_any and len(configs) == 1 and not tm.dry_run:
-            bus.warning(L.warning.no_files_or_plugins_found)
+            # Case 1: Overwrite YAML with source code doc
+            if decision == ResolutionAction.HYDRATE_OVERWRITE or (
+                decision is None and has_source_doc
+            ):
+                exec_plan.hydrate_yaml = True
+                exec_plan.update_doc_fingerprint = True
 
-        tm.commit()
+            # Case 2: Keep existing YAML (reconcile)
+            elif decision == ResolutionAction.HYDRATE_KEEP_EXISTING:
+                # CRITICAL FIX: We still need to update the lock file with the hash
+                # of the YAML content we decided to keep.
+                exec_plan.update_doc_fingerprint = True
 
-        if all_generated and not tm.dry_run:
-            bus.success(L.generate.run.complete, count=len(all_generated))
-        return all_generated
+            # Strip logic is independent of hydration logic
+            if strip_requested and (
+                decision == ResolutionAction.HYDRATE_OVERWRITE
+                or decision == ResolutionAction.HYDRATE_KEEP_EXISTING
+                or (decision is None and has_source_doc)
+            ):
+                exec_plan.strip_source_docstring = True
 
-    def run_init(self) -> None:
-        """
-        Alias for 'pump --reconcile'.
-        Initializes the project by syncing source docs to YAML, respecting existing YAML content.
-        """
-        self.run_pump(reconcile=True)
-
-    def run_check(self, force_relink: bool = False, reconcile: bool = False) -> bool:
+            plan[fqn] = exec_plan
+        return plan
 ~~~~~
-
-#### Acts 2: 更新测试用例
-
-由于 `init` 现在调用 `pump`，我们必须更新测试用例以匹配 `pump` 的预期行为和输出。
 
 ~~~~~act
 patch_file
-packages/stitcher-application/tests/integration/test_init_sidecar_idempotency.py
+packages/stitcher-application/src/stitcher/app/runners/pump/executor.py
 ~~~~~
 ~~~~~python.old
-    spy_bus = SpyBus()
-
-    # 执行 init
-    with spy_bus.patch(monkeypatch):
-        app.run_init()
-
-    # 获取 Lock 文件中记录的哈希
-    hashes = get_stored_hashes(project_root, "src/lib.py")
-    stored_yaml_hash = hashes.get("f", {}).get("baseline_yaml_content_hash")
-    
-    # 计算预期哈希（Sidecar 的内容）
-    expected_hash = hashlib.sha256("Sidecar Doc".encode("utf-8")).hexdigest()
-    
-    # 预期失败：目前的实现会使用 "Source Doc" 的哈希
-    assert stored_yaml_hash == expected_hash, f"Expected baseline to match Sidecar Doc ({expected_hash}), but got {stored_yaml_hash}"
+                    if plan.update_doc_fingerprint and fqn in source_docs:
+                        ir_to_save = new_yaml_docs.get(fqn)
+                        if ir_to_save:
+                            fp["baseline_yaml_content_hash"] = (
+                                self.doc_manager.compute_ir_hash(ir_to_save)
+                            )
+                            fqn_was_updated = True
 ~~~~~
 ~~~~~python.new
-    spy_bus = SpyBus()
-
-    # 执行 init (现在等于 pump --reconcile)
-    with spy_bus.patch(monkeypatch):
-        app.run_init()
-
-    # 获取 Lock 文件中记录的哈希
-    hashes = get_stored_hashes(project_root, "src/lib.py")
-    stored_yaml_hash = hashes.get("f", {}).get("baseline_yaml_content_hash")
-    
-    # 计算预期哈希（Sidecar 的内容）
-    expected_hash = hashlib.sha256("Sidecar Doc".encode("utf-8")).hexdigest()
-    
-    # 验证 pump --reconcile 正确保留了 Sidecar 内容作为基线
-    assert stored_yaml_hash == expected_hash, f"Expected baseline to match Sidecar Doc ({expected_hash}), but got {stored_yaml_hash}"
-    
-    # 验证输出消息（应该包含 Reconciled 信息）
-    spy_bus.assert_id_called(L.pump.info.reconciled, level="info")
+                    if plan.update_doc_fingerprint:
+                        # If hydrating, use the merged IR.
+                        # If reconciling, use the existing IR from disk.
+                        ir_to_hash = new_yaml_docs.get(fqn)
+                        if ir_to_hash:
+                            fp["baseline_yaml_content_hash"] = (
+                                self.doc_manager.compute_ir_hash(ir_to_hash)
+                            )
+                            fqn_was_updated = True
+                        # If the key was deleted from YAML but still exists in code,
+                        # the lock file needs to reflect its doc is now gone.
+                        elif "baseline_yaml_content_hash" in fp:
+                            del fp["baseline_yaml_content_hash"]
+                            fqn_was_updated = True
 ~~~~~
 
-#### Acts 3: 修复之前的集成测试
+#### Acts 2: 修复集成测试
 
-旧的测试 `test_init_command.py` 仍然在断言 `L.init.*` 消息，我们需要将其更新为 `L.pump.*`。
+修复所有因 `init` 重构而失败的测试。
 
 ~~~~~act
 patch_file
 packages/stitcher-application/tests/integration/test_init_command.py
 ~~~~~
 ~~~~~python.old
-    # Check for block style. ruamel.yaml is smart and won't quote simple keys.
-    assert "my_func: |-" in content
-    assert "  This is a docstring." in content
-
-    spy_bus.assert_id_called(L.init.file.created, level="success")
-    spy_bus.assert_id_called(L.init.run.complete, level="success")
-
-
-def test_init_skips_files_without_docs(tmp_path, monkeypatch):
-    # 1. Arrange
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/main.py", "def no_doc(): pass")
-        .build()
-    )
-
-    app = create_test_app(root_path=project_root)
-    spy_bus = SpyBus()
-
     # 2. Act
     with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
         created_files = app.run_init()
 
     # 3. Assert
-    assert len(created_files) == 0
-    spy_bus.assert_id_called(L.init.no_docs_found, level="info")
+    expected_yaml = project_root / "src/main.stitcher.yaml"
+    assert expected_yaml in created_files
 ~~~~~
 ~~~~~python.new
-    # Check for block style. ruamel.yaml is smart and won't quote simple keys.
-    assert "my_func: |-" in content
-    assert "  This is a docstring." in content
-
-    # Updated assertions for Pump behavior
-    # L.init.file.created -> L.pump.file.success (since keys were updated)
-    spy_bus.assert_id_called(L.pump.file.success, level="success")
-    spy_bus.assert_id_called(L.pump.run.complete, level="success")
-
-
-def test_init_skips_files_without_docs(tmp_path, monkeypatch):
-    # 1. Arrange
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/main.py", "def no_doc(): pass")
-        .build()
-    )
-
-    app = create_test_app(root_path=project_root)
-    spy_bus = SpyBus()
-
     # 2. Act
     with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
         app.run_init()
 
-    # 3. Assert - Pump returns No Changes info
-    spy_bus.assert_id_called(L.pump.run.no_changes, level="info")
+    # 3. Assert
+    expected_yaml = project_root / "src/main.stitcher.yaml"
+    assert expected_yaml.exists()
 ~~~~~
 
-#### Acts 4: 删除废弃的 InitRunner
+~~~~~act
+patch_file
+packages/stitcher-application/tests/integration/test_check_signatures.py
+~~~~~
+~~~~~python.old
+    _assert_no_errors(spy_bus)
+    spy_bus.assert_id_called(L.init.run.complete, level="success")
 
-最后，删除已经不再使用的 `packages/stitcher-application/src/stitcher/app/runners/init.py`。
+    # Modify Code: Change signature AND remove docstring
+~~~~~
+~~~~~python.new
+    # Pump should find one new key to add.
+    spy_bus.assert_id_called(L.pump.file.success, level="success")
+    _assert_no_errors(spy_bus)
+
+    # Modify Code: Change signature AND remove docstring
+~~~~~
 
 ~~~~~act
-delete_file
-packages/stitcher-application/src/stitcher/app/runners/init.py
+patch_file
+packages/stitcher-application/tests/test_check_regression.py
+~~~~~
+~~~~~python.old
+    # Verify init happened
+    hashes_initial = get_stored_hashes(tmp_path, "src/pkg1/mod.py")
+    assert hashes_initial["func"]["baseline_yaml_content_hash"] is not None
+~~~~~
+~~~~~python.new
+    # Verify init (pump) happened correctly, reconciling code and docs
+    hashes_initial = get_stored_hashes(tmp_path, "src/pkg1/mod.py")
+    assert hashes_initial["func"]["baseline_yaml_content_hash"] is not None, "Init (pump) failed to create baseline hash"
+    assert hashes_initial["func"]["baseline_code_structure_hash"] is not None, "Init (pump) failed to create code hash"
 ~~~~~
 
 ### 下一步建议
-1.  运行所有测试：`pytest packages/stitcher-application/tests/integration/`，确保重构后的 `init` 行为符合预期。
-2.  注意：`InitRunner` 曾负责生成返回值 `List[Path]`，而 `run_pump` 返回 `PumpResult`。如果你有其他代码依赖 `run_init` 的返回值，可能会有类型错误。当前 `main.py` 似乎没有使用返回值，但需要留意。
+1.  **全面测试**: 再次运行整个测试套件。修复 `PumpExecutor` 的核心缺陷应该能解决所有报告的失败。
+2.  **架构重构**: 创建一个新的计划，其目标是实现您提出的 `BaselineManager` 服务，以彻底根除 Lock 文件更新逻辑的 DRY 问题。这将是系统迈向更高稳定性的关键一步。

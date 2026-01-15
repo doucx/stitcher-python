@@ -33,8 +33,9 @@ def test_check_detects_signature_change(tmp_path, monkeypatch):
     with spy_bus.patch(monkeypatch, "stitcher.common.bus"):
         app.run_init()
 
+    # Pump should find one new key to add.
+    spy_bus.assert_id_called(L.pump.file.success, level="success")
     _assert_no_errors(spy_bus)
-    spy_bus.assert_id_called(L.init.run.complete, level="success")
 
     # Modify Code: Change signature AND remove docstring
     modified_code = dedent("""

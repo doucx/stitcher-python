@@ -63,23 +63,42 @@ class PumpExecutor:
         source_docs: Dict[str, DocstringIR],
     ) -> Dict[str, FunctionExecutionPlan]:
         plan: Dict[str, FunctionExecutionPlan] = {}
-        for fqn in module.get_all_fqns():
+        # Get all FQNs from code AND existing YAML to handle dangling docs
+        all_fqns = set(module.get_all_fqns()) | set(
+            self.doc_manager.load_docs_for_module(module).keys()
+        )
+
+        for fqn in all_fqns:
             decision = decisions.get(fqn)
             has_source_doc = fqn in source_docs
             exec_plan = FunctionExecutionPlan(fqn=fqn)
-            if decision != ResolutionAction.SKIP:
-                exec_plan.update_code_fingerprint = True
-                if decision == ResolutionAction.HYDRATE_OVERWRITE or (
-                    decision is None and has_source_doc
-                ):
-                    exec_plan.hydrate_yaml = True
-                    exec_plan.update_doc_fingerprint = True
-                if strip_requested and (
-                    decision == ResolutionAction.HYDRATE_OVERWRITE
-                    or decision == ResolutionAction.HYDRATE_KEEP_EXISTING
-                    or (decision is None and has_source_doc)
-                ):
-                    exec_plan.strip_source_docstring = True
+            if decision == ResolutionAction.SKIP:
+                plan[fqn] = exec_plan
+                continue
+
+            exec_plan.update_code_fingerprint = True
+
+            # Case 1: Overwrite YAML with source code doc
+            if decision == ResolutionAction.HYDRATE_OVERWRITE or (
+                decision is None and has_source_doc
+            ):
+                exec_plan.hydrate_yaml = True
+                exec_plan.update_doc_fingerprint = True
+
+            # Case 2: Keep existing YAML (reconcile)
+            elif decision == ResolutionAction.HYDRATE_KEEP_EXISTING:
+                # CRITICAL FIX: We still need to update the lock file with the hash
+                # of the YAML content we decided to keep.
+                exec_plan.update_doc_fingerprint = True
+
+            # Strip logic is independent of hydration logic
+            if strip_requested and (
+                decision == ResolutionAction.HYDRATE_OVERWRITE
+                or decision == ResolutionAction.HYDRATE_KEEP_EXISTING
+                or (decision is None and has_source_doc)
+            ):
+                exec_plan.strip_source_docstring = True
+
             plan[fqn] = exec_plan
         return plan
 
@@ -163,12 +182,19 @@ class PumpExecutor:
                             ]
                         fqn_was_updated = True
 
-                    if plan.update_doc_fingerprint and fqn in source_docs:
-                        ir_to_save = new_yaml_docs.get(fqn)
-                        if ir_to_save:
+                    if plan.update_doc_fingerprint:
+                        # If hydrating, use the merged IR.
+                        # If reconciling, use the existing IR from disk.
+                        ir_to_hash = new_yaml_docs.get(fqn)
+                        if ir_to_hash:
                             fp["baseline_yaml_content_hash"] = (
-                                self.doc_manager.compute_ir_hash(ir_to_save)
+                                self.doc_manager.compute_ir_hash(ir_to_hash)
                             )
+                            fqn_was_updated = True
+                        # If the key was deleted from YAML but still exists in code,
+                        # the lock file needs to reflect its doc is now gone.
+                        elif "baseline_yaml_content_hash" in fp:
+                            del fp["baseline_yaml_content_hash"]
                             fqn_was_updated = True
 
                     if fqn_was_updated:
