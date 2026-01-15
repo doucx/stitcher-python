@@ -1,129 +1,80 @@
-简要回答
-发现了。由于在 `def` 行末尾直接写了文档字符串（一写多）后，下一行又出现了缩进的 `pass`，导致 Python 解释器（及 Griffe 解析器）判定为 `unexpected indent` 语法错误。
+好的，我们已经成功解决了 `LockSession` 的状态污染问题，修正了 `PumpExecutor` 在调和模式下的指纹更新逻辑，并完成了测试套件的全面适配。现在系统状态已经稳定，所有的集成测试和单元测试都已恢复正常。
 
-这导致文件未能被正确解析，进而导致 `pump` 流程直接跳过，最终 `stored_yaml_hash` 为 `None`。我将修正测试中的源码模板。
+我将生成一个 `[COMMIT]` 计划，将这些关键的稳定性修复提交到仓库。
 
-## [WIP] fix: 修正测试用例中的 Python 源码语法错误
+## [COMMIT] fix: 稳定 LockSession 状态管理与调和逻辑
 
 ### 错误分析
-测试中使用的源码字符串：
-```python
-'def f(): """Source Doc"""\n    pass'
-```
-在 Python 中，如果函数定义在同一行包含了语句（如 docstring），则该语句块已结束。下一行带有缩进的 `pass` 会触发 `IndentationError: unexpected indent`。
-
-解析失败导致 `ScannerService` 无法生成 `ModuleDef`，`StitcherApp.run_init()` 因此没有执行任何实际的 `pump` 逻辑，也没有更新 `stitcher.lock`。
+在引入基于 `LockSession` 的增量更新机制后，发现了以下关键问题：
+1.  **状态持久化竞态**: `StitcherApp` 在执行命令时未清理 `LockSession` 缓存，导致在长生命周期的应用实例（如测试运行器）中，旧的内存状态会覆盖后续操作的磁盘结果。
+2.  **基线更新缺失**: 在 `pump --reconcile` (现 `init` 的底层实现) 模式下，系统虽然决定保留 YAML 内容，但未将其记录为新的指纹基线，导致状态机始终处于“待调和”状态。
+3.  **自动调和冲突**: `CheckResolver` 之前的 `auto_reconcile_docs` 逻辑绕过了 `LockSession` 直接操作磁盘，在 `StitcherApp` 命令结束提交时被缓存状态覆盖。
+4.  **测试脆弱性**: 多个集成测试因 `init` 到 `pump` 的架构迁移导致的输出消息变化而失败，且部分测试源码存在导致解析失败的 Python 语法错误。
 
 ### 用户需求
-修正 `packages/stitcher-application/tests/integration/test_init_sidecar_idempotency.py` 中的语法错误。
+确保 Stitcher 的状态机在各种命令切换和复杂冲突场景下保持绝对的确定性，并使 `init` 逻辑完全对齐到 `pump` 流程。
 
 ### 评论
-这类语法错误在动态生成代码的测试中很常见。将文档字符串移至新行是标准且安全的做法。
+这次修复通过在 `LockSession` 中引入显式的生命周期管理 (`clear`)，并将所有状态变更动作收敛到统一的 Session 接口，彻底消除了内存与磁盘状态不一致的隐患。
 
 ### 目标
-1.  修正 `test_init_respects_existing_sidecar_baseline` 中的源码字符串。
-2.  修正 `test_index_stats_should_distinguish_sidecars` 中的源码字符串。
-3.  移除调试用的 `print` 语句。
+1.  持久化 `LockSession` 的清理机制。
+2.  确保所有同步路径（Pump, Reconcile, Auto-reconcile）均正确触发指纹更新。
+3.  对齐测试套件的断言与新的命令体系。
 
 ### 基本原理
-通过将 docstring 放置在缩进块内，确保源码符合 PEP 8 规范且能被 AST 解析器正确处理。
+根据 **SSoT (单一事实来源)** 原则，我们将 `StitcherApp` 塑造为一个受控的环境。每个命令的执行都是一个独立的事务单元，在开始前确保环境干净，在结束后确保状态已提交并重置。
 
 ### 标签
-#intent/fix #flow/ready #priority/high #comp/tests #task/domain/testing #task/object/test-syntax #task/action/fix #task/state/continue
+#intent/fix #flow/ready #priority/high #comp/runtime #comp/tests #concept/state #scope/core #ai/instruct #task/domain/runtime #task/object/state-management #task/action/fix #task/state/end #task/status/completed
 
 ---
 
 ### Script
 
-#### Acts 1: 修正测试文件中的语法错误及清理调试代码
+#### Acts 1: 提交稳定性修复
 
-我们将修正测试中的 Python 源码定义，并移除之前为了排查错误添加的 `print` 语句。
+我们将所有受影响的核心组件和测试文件添加到暂存区并提交。
 
 ~~~~~act
-write_file
+git_add
+packages/stitcher-application/src/stitcher/app/services/lock_session.py
+packages/stitcher-application/src/stitcher/app/core.py
+packages/stitcher-application/src/stitcher/app/runners/pump/executor.py
+packages/stitcher-application/src/stitcher/app/runners/check/resolver.py
+packages/stitcher-application/tests/integration/test_check_signatures.py
+packages/stitcher-application/tests/integration/test_init_command.py
+packages/stitcher-application/tests/unit/test_execution_planner.py
 packages/stitcher-application/tests/integration/test_init_sidecar_idempotency.py
 ~~~~~
-~~~~~python
-from stitcher.test_utils import (
-    create_test_app,
-    SpyBus,
-    WorkspaceFactory,
-    get_stored_hashes,
-)
-from needle.pointer import L
 
+~~~~~act
+git_commit
+~~~~~
+~~~~~text
+fix(runtime): stabilize lock state management and reconciliation logic
 
-def test_init_respects_existing_sidecar_baseline(tmp_path, monkeypatch):
-    """
-    验证 init 不会破坏已存在的 Sidecar 基线。
-    场景：
-    - 源码中函数 f 的 doc 为 "Source Doc"
-    - Sidecar 文件中 f 的内容为 "Sidecar Doc"
-    - 执行 init 后，lock 文件中的基线哈希应当对应 "Sidecar Doc"
-    """
-    factory = WorkspaceFactory(tmp_path)
-    # 准备环境
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/lib.py", 'def f():\n    """Source Doc"""\n    pass')
-        .with_docs("src/lib.stitcher.yaml", {"f": "Sidecar Doc"})
-        .build()
-    )
+This commit fixes several critical issues in the state management and 
+reconciliation workflow that were causing integration test failures:
 
-    app = create_test_app(root_path=project_root)
-    spy_bus = SpyBus()
+1. Lifecycle Control: Added `LockSession.clear()` and integrated it into 
+   `StitcherApp` command entries (run_check, run_pump) to prevent stale 
+   memory state from polluting subsequent operations in the same process.
+2. Baseline Updates: Fixed `PumpExecutor` to ensure doc fingerprints are 
+   updated even in 'reconcile' (YAML-first) mode, preventing perpetual 
+   out-of-sync states.
+3. Resolver Refactoring: Rebuilt `CheckResolver.auto_reconcile_docs` to 
+   operate through the `LockSession` instead of direct disk I/O, ensuring 
+   atomic commits and consistent state.
+4. Test Alignment: Updated integration tests to match the new 'init-as-pump' 
+   message IDs and return values. Fixed Python syntax errors in test source 
+   templates that caused parser failures.
 
-    # 执行 init (现在等于 pump --reconcile)
-    with spy_bus.patch(monkeypatch):
-        app.run_init()
-
-    # 获取 Lock 文件中记录的哈希
-    hashes = get_stored_hashes(project_root, "src/lib.py")
-    stored_yaml_hash = hashes.get("f", {}).get("baseline_yaml_content_hash")
-
-    # 计算预期哈希（Sidecar 的内容）
-    doc_manager = app.doc_manager
-    ir = doc_manager.serializer.from_view_data("Sidecar Doc")
-    expected_hash = doc_manager.compute_ir_hash(ir)
-
-    # 验证 pump --reconcile 正确保留了 Sidecar 内容作为基线
-    assert stored_yaml_hash == expected_hash, (
-        f"Expected baseline to match Sidecar Doc ({expected_hash}), but got {stored_yaml_hash}"
-    )
-
-    # 验证输出消息（应该包含 Reconciled 信息）
-    spy_bus.assert_id_called(L.pump.info.reconciled, level="info")
-
-
-def test_index_stats_should_distinguish_sidecars(tmp_path, monkeypatch):
-    """
-    验证索引统计信息应当区分 Sidecar 文件。
-    """
-    factory = WorkspaceFactory(tmp_path)
-    project_root = (
-        factory.with_config({"scan_paths": ["src"]})
-        .with_source("src/lib.py", 'def f():\n    """Doc"""\n    pass')
-        .with_docs("src/lib.stitcher.yaml", {"f": "Doc"})
-        .build()
-    )
-
-    app = create_test_app(root_path=project_root)
-    spy_bus = SpyBus()
-
-    with spy_bus.patch(monkeypatch):
-        app.run_index_build()
-
-    # 验证消息中是否包含 sidecars 统计字段
-    messages = spy_bus.get_messages()
-    index_complete_msg = next(
-        m for m in messages if m["id"] == str(L.index.run.complete)
-    )
-
-    assert "sidecars" in index_complete_msg["params"], (
-        "Index summary should include sidecar count"
-    )
-    assert index_complete_msg["params"]["sidecars"] == 1
+These changes ensure that the state machine remains deterministic across 
+multiple command invocations.
 ~~~~~
 
 ### 下一步建议
-语法修正后，解析器应当能正确识别 `lib.py` 中的函数 `f`。请再次运行测试。如果仍然失败，请检查 `LockSession` 在处理 `RECONCILE` 动作时是否确实调用了 `record_fresh_state`。
+- **回归测试**: 建议在不同的操作系统（特别是 Windows，涉及路径分隔符）上运行全量测试套件。
+- **并发审计**: 考虑 `LockSession` 在多线程环境下的安全性（虽然当前 CLI 是单线程执行）。
+- **文档更新**: 内部架构文档应记录 `LockSession` 的生命周期要求，告知后续开发者在添加新的 Runner 时必须遵守清理协议。
