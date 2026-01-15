@@ -85,7 +85,8 @@ def test_plan_for_keep_existing_with_strip(executor, sample_module):
 
     p_a = plan["func_a"]
     assert p_a.hydrate_yaml is False
-    assert p_a.update_doc_fingerprint is False
+    # We update doc fingerprint to record the existing YAML content as the new baseline
+    assert p_a.update_doc_fingerprint is True
     assert p_a.strip_source_docstring is True
     assert p_a.update_code_fingerprint is True
 
@@ -100,7 +101,8 @@ def test_plan_for_keep_existing_without_strip(executor, sample_module):
 
     p_a = plan["func_a"]
     assert p_a.hydrate_yaml is False
-    assert p_a.update_doc_fingerprint is False
+    # We update doc fingerprint to record the existing YAML content as the new baseline
+    assert p_a.update_doc_fingerprint is True
     assert p_a.strip_source_docstring is False
     assert p_a.update_code_fingerprint is True
 
