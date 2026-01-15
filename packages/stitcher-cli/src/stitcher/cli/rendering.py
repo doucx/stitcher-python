@@ -1,5 +1,5 @@
 import typer
-from stitcher.common.messaging import protocols
+from stitcher.bus.protocols import Renderer
 from enum import Enum
 
 
@@ -20,7 +20,7 @@ LEVEL_MAP = {
 }
 
 
-class CliRenderer(protocols.Renderer):
+class CliRenderer(Renderer):
     def __init__(self, loglevel: LogLevel = LogLevel.INFO):
         self.loglevel_value = LEVEL_MAP[loglevel.value]
 
