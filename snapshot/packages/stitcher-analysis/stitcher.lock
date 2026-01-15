@@ -77,7 +77,7 @@
     "py://packages/stitcher-analysis/src/stitcher/analysis/graph/algorithms.py#has_path": {
       "baseline_code_signature_text": "def has_path(graph: nx.DiGraph, source: str, target: str) -> bool:",
       "baseline_code_structure_hash": "1c0e944cbf311d22f203c57ca5c1af6dc15bb595f9fc5303008f8c011a8a9aea",
-      "baseline_yaml_content_hash": "968b7728f56b8f1317a789dde13abf82223ba405f4cb8d0a862a2673480904bc"
+      "baseline_yaml_content_hash": "fc80385771f97007021b6d0773ef26707cae558f04d88ddcb0281e57bbf54924"
     },
     "py://packages/stitcher-analysis/src/stitcher/analysis/graph/builder.py#GraphBuilder": {
       "baseline_code_signature_text": "class GraphBuilder:",
