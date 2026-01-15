@@ -807,6 +807,12 @@ requires-dist = [
 name = "stitcher-common"
 version = "0.1.0"
 source = { editable = "packages/stitcher-common" }
+dependencies = [
+    { name = "stitcher-bus" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "stitcher-bus", editable = "packages/stitcher-bus" }]
 
 [[package]]
 name = "stitcher-index"
