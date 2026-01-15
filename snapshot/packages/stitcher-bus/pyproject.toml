@@ -14,7 +14,3 @@ dependencies = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/stitcher"]
-
-[tool.uv.sources]
-pyneedle-pointer = { workspace = true }
-pyneedle-spec = { workspace = true }

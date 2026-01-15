@@ -12,6 +12,7 @@ resolution-markers = [
 members = [
     "stitcher-analysis",
     "stitcher-application",
+    "stitcher-bus",
     "stitcher-cli",
     "stitcher-common",
     "stitcher-index",
@@ -767,6 +768,21 @@ requires-dist = [
 ]
 
 [[package]]
+name = "stitcher-bus"
+version = "0.1.0"
+source = { editable = "packages/stitcher-bus" }
+dependencies = [
+    { name = "pyneedle-pointer" },
+    { name = "pyneedle-spec" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyneedle-pointer", editable = "../Needle/packages/pyneedle-pointer" },
+    { name = "pyneedle-spec", editable = "../Needle/packages/pyneedle-spec" },
+]
+
+[[package]]
 name = "stitcher-cli"
 version = "0.1.0"
 source = { editable = "packages/stitcher-cli" }
@@ -863,6 +879,7 @@ dev = [
     { name = "ruff" },
     { name = "stitcher-analysis" },
     { name = "stitcher-application" },
+    { name = "stitcher-bus" },
     { name = "stitcher-cli" },
     { name = "stitcher-index" },
     { name = "stitcher-lang-python" },
@@ -886,6 +903,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'" },
     { name = "stitcher-analysis", marker = "extra == 'dev'", editable = "packages/stitcher-analysis" },
     { name = "stitcher-application", marker = "extra == 'dev'", editable = "packages/stitcher-application" },
+    { name = "stitcher-bus", marker = "extra == 'dev'", editable = "packages/stitcher-bus" },
     { name = "stitcher-cli", marker = "extra == 'dev'", editable = "packages/stitcher-cli" },
     { name = "stitcher-index", marker = "extra == 'dev'", editable = "packages/stitcher-index" },
     { name = "stitcher-lang-python", marker = "extra == 'dev'", editable = "packages/stitcher-lang-python" },
