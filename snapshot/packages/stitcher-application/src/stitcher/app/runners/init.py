@@ -64,17 +64,29 @@ class InitRunner:
             lock_updated = False
 
             for module in pkg_modules:
-                output_path = self.doc_manager.save_docs_for_module(module)
+                # 1. Load from both potential sources to determine the source of truth.
+                ir_from_sidecar = self.doc_manager.load_docs_for_module(module)
+                ir_from_source = self.doc_manager.flatten_module_docs(module)
+
+                ir_map = {}
+                output_path = None
+
+                if ir_from_sidecar:
+                    # 2. Sidecar exists and has content. It is the definitive source of truth for the lock file.
+                    ir_map = ir_from_sidecar
+                else:
+                    # 3. Sidecar does not exist or is empty. Use source docs as the source of truth.
+                    ir_map = ir_from_source
+                    # And if there are docs to save, create the sidecar file now.
+                    if ir_map:
+                        output_path = self.doc_manager.save_docs_for_module(module)
 
                 # Compute logical/relative paths for SURI generation
                 module_abs_path = self.root_path / module.file_path
                 module_ws_rel = self.workspace.to_workspace_relative(module_abs_path)
 
-                # Generate IRs from source code; this is the source of truth for init.
-                ir_map = self.doc_manager.flatten_module_docs(module)
-
                 computed_fingerprints = self._compute_fingerprints(module)
-                # CRITICAL FIX: Compute hashes from the in-memory IR map, NOT from the index.
+                # Compute hashes from the final, authoritative ir_map.
                 yaml_hashes = {
                     fqn: self.doc_manager.compute_ir_hash(ir)
                     for fqn, ir in ir_map.items()
