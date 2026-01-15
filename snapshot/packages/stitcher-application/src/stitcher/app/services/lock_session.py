@@ -134,3 +134,10 @@ class LockSession:
             except ValueError:
                 # Fallback/Safety: Should not happen if pkg_root is inside root_path
                 pass
+
+    def clear(self):
+        """
+        Clears the internal buffer. Should be called at the end of a command execution
+        to prevent stale state from polluting subsequent runs.
+        """
+        self._locks.clear()

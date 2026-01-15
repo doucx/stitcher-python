@@ -71,11 +71,20 @@ class PumpExecutor:
             exec_plan = FunctionExecutionPlan(fqn=fqn)
             if decision != ResolutionAction.SKIP:
                 exec_plan.update_code_fingerprint = True
-                if decision == ResolutionAction.HYDRATE_OVERWRITE or (
-                    decision is None and has_source_doc
+                if (
+                    decision == ResolutionAction.HYDRATE_OVERWRITE
+                    or (decision is None and has_source_doc)
+                    or decision == ResolutionAction.HYDRATE_KEEP_EXISTING
+                ):
+                    # We must update doc fingerprint even if we don't write to YAML (reconcile)
+                    exec_plan.update_doc_fingerprint = True
+
+                if (
+                    decision == ResolutionAction.HYDRATE_OVERWRITE
+                    or (decision is None and has_source_doc)
                 ):
                     exec_plan.hydrate_yaml = True
-                    exec_plan.update_doc_fingerprint = True
+
                 if strip_requested and (
                     decision == ResolutionAction.HYDRATE_OVERWRITE
                     or decision == ResolutionAction.HYDRATE_KEEP_EXISTING

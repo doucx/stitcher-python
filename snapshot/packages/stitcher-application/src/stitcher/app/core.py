@@ -303,13 +303,16 @@ class StitcherApp:
             # --- Phase B: Architecture Check (Global) ---
             arch_violations = self.architecture_engine.analyze(self.index_store)
 
-        # 8. Commit Lock and Doc changes
-        self.lock_session.commit_to_transaction(tm)
-        tm.commit()
+        try:
+            # 8. Commit Lock and Doc changes
+            self.lock_session.commit_to_transaction(tm)
+            tm.commit()
 
-        # 9. Final Report
-        report_success = self.check_runner.report(all_results, arch_violations)
-        return report_success and not self.scanner.had_errors
+            # 9. Final Report
+            report_success = self.check_runner.report(all_results, arch_violations)
+            return report_success and not self.scanner.had_errors
+        finally:
+            self.lock_session.clear()
 
     def run_pump(
         self,
@@ -327,27 +330,30 @@ class StitcherApp:
         global_success = True
         all_redundant: List[Path] = []
 
-        with self.db_manager.session():
-            for config in configs:
-                modules = self._configure_and_scan(config)
-                if not modules:
-                    continue
+        try:
+            with self.db_manager.session():
+                for config in configs:
+                    modules = self._configure_and_scan(config)
+                    if not modules:
+                        continue
 
-                result = self.pump_runner.run_batch(
-                    modules, config, tm, strip, force, reconcile
-                )
-                if not result.success:
-                    global_success = False
-                all_redundant.extend(result.redundant_files)
+                    result = self.pump_runner.run_batch(
+                        modules, config, tm, strip, force, reconcile
+                    )
+                    if not result.success:
+                        global_success = False
+                    all_redundant.extend(result.redundant_files)
 
-        # Commit all lock changes buffered in the session to the transaction
-        self.lock_session.commit_to_transaction(tm)
+            # Commit all lock changes buffered in the session to the transaction
+            self.lock_session.commit_to_transaction(tm)
 
-        if self.scanner.had_errors:
-            global_success = False
+            if self.scanner.had_errors:
+                global_success = False
 
-        tm.commit()
-        return PumpResult(success=global_success, redundant_files=all_redundant)
+            tm.commit()
+            return PumpResult(success=global_success, redundant_files=all_redundant)
+        finally:
+            self.lock_session.clear()
 
     def run_strip(
         self, files: Optional[List[Path]] = None, dry_run: bool = False
