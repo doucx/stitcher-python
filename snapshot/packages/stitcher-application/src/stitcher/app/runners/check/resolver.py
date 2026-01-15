@@ -16,8 +16,10 @@ from stitcher.spec import (
 from stitcher.spec.managers import DocumentManagerProtocol
 from stitcher.spec.interaction import InteractionHandler, InteractionContext
 from stitcher.app.handlers.noop_handler import NoOpInteractionHandler
+from stitcher.app.services.lock_session import LockSession
 from stitcher.analysis.schema import FileCheckResult
 from stitcher.workspace import Workspace
+from stitcher.common.transaction import TransactionManager
 
 
 class CheckResolver:
@@ -31,6 +33,7 @@ class CheckResolver:
         uri_generator: URIGeneratorProtocol,
         interaction_handler: InteractionHandler | None,
         fingerprint_strategy: FingerprintStrategyProtocol,
+        lock_session: LockSession,
     ):
         self.root_path = root_path
         self.workspace = workspace
@@ -40,6 +43,7 @@ class CheckResolver:
         self.uri_generator = uri_generator
         self.interaction_handler = interaction_handler
         self.fingerprint_strategy = fingerprint_strategy
+        self.lock_session = lock_session
 
     def _compute_fingerprints(self, module: ModuleDef) -> Dict[str, Fingerprint]:
         # Helper duplicated here for simplicity in applying updates,
@@ -107,6 +111,7 @@ class CheckResolver:
         self,
         results: List[FileCheckResult],
         conflicts: List[InteractionContext],
+        tm: TransactionManager,
         force_relink: bool = False,
         reconcile: bool = False,
     ) -> bool:
@@ -114,12 +119,15 @@ class CheckResolver:
             return True
 
         if self.interaction_handler:
-            return self._resolve_interactive(results, conflicts)
+            return self._resolve_interactive(results, conflicts, tm)
         else:
-            return self._resolve_noop(results, conflicts, force_relink, reconcile)
+            return self._resolve_noop(results, conflicts, tm, force_relink, reconcile)
 
     def _resolve_interactive(
-        self, results: List[FileCheckResult], conflicts: List[InteractionContext]
+        self,
+        results: List[FileCheckResult],
+        conflicts: List[InteractionContext],
+        tm: TransactionManager,
     ) -> bool:
         assert self.interaction_handler is not None
 
@@ -143,7 +151,7 @@ class CheckResolver:
                 bus.warning(L.strip.run.aborted)
                 return False
 
-        self._apply_resolutions(dict(resolutions_by_file))
+        self._apply_resolutions(dict(resolutions_by_file), tm)
         self._update_results(results, dict(resolutions_by_file))
 
         # Unresolved conflicts are kept in the violations list, so no action needed.
@@ -153,6 +161,7 @@ class CheckResolver:
         self,
         results: List[FileCheckResult],
         conflicts: List[InteractionContext],
+        tm: TransactionManager,
         force_relink: bool,
         reconcile: bool,
     ) -> bool:
@@ -165,7 +174,7 @@ class CheckResolver:
             if action != ResolutionAction.SKIP:
                 resolutions_by_file[context.file_path].append((context, action))
 
-        self._apply_resolutions(dict(resolutions_by_file))
+        self._apply_resolutions(dict(resolutions_by_file), tm)
         self._update_results(results, dict(resolutions_by_file))
         return True
 
@@ -193,121 +202,93 @@ class CheckResolver:
             res.violations = remaining_violations
 
     def _apply_resolutions(
-        self, resolutions: dict[str, list[tuple[InteractionContext, ResolutionAction]]]
+        self,
+        resolutions: dict[str, list[tuple[InteractionContext, ResolutionAction]]],
+        tm: TransactionManager,
     ):
-        # 1. Group resolutions by Package Root (Lock Boundary)
-        updates_by_pkg: Dict[Path, Dict[str, Fingerprint]] = defaultdict(dict)
-        actions_by_file = defaultdict(list)
-
-        # Pre-process actions to group by file first for efficient parsing
+        # Process file-by-file, as each might need parsing.
+        # LockSession will handle aggregation by package root internally.
         for file_path, context_actions in resolutions.items():
             abs_path = self.root_path / file_path
-            pkg_root = self.workspace.find_owning_package(abs_path)
 
-            if pkg_root not in updates_by_pkg:
-                updates_by_pkg[pkg_root] = self.lock_manager.load(pkg_root)
-
-            actions_by_file[file_path].extend(context_actions)
-
-        # 2. Process file-by-file logic
-        purges_by_file = defaultdict(list)
-
-        for file_path, context_actions in actions_by_file.items():
-            abs_path = self.root_path / file_path
-            pkg_root = self.workspace.find_owning_package(abs_path)
-            ws_rel_path = self.workspace.to_workspace_relative(abs_path)
-
-            lock_data = updates_by_pkg[pkg_root]
-
-            # Need to parse code to get current state for Relink/Reconcile
-            has_sig_updates = any(
-                a in [ResolutionAction.RELINK, ResolutionAction.RECONCILE]
-                for _, a in context_actions
+            # Determine if we need to parse the file to get current state
+            needs_parsing = any(
+                action
+                in [
+                    ResolutionAction.RELINK,
+                    ResolutionAction.RECONCILE,
+                    ResolutionAction.HYDRATE_OVERWRITE,
+                    ResolutionAction.HYDRATE_KEEP_EXISTING,
+                ]
+                for _, action in context_actions
             )
 
-            computed_fingerprints = {}
-            current_yaml_map = {}
+            # --- Data Loading (on demand) ---
+            full_module_def: ModuleDef | None = None
+            computed_fingerprints: dict[str, Fingerprint] = {}
+            current_doc_irs: dict[str, "DocstringIR"] = {}
 
-            if has_sig_updates:
+            if needs_parsing:
                 full_module_def = self.parser.parse(
                     abs_path.read_text("utf-8"), file_path
                 )
                 computed_fingerprints = self._compute_fingerprints(full_module_def)
-                current_yaml_map = self.doc_manager.compute_yaml_content_hashes(
+                current_doc_irs = self.doc_manager.load_docs_for_module(
                     full_module_def
                 )
 
+            # --- Action Execution ---
+            fqns_to_purge_from_doc: list[str] = []
             for context, action in context_actions:
                 fqn = context.fqn
+                # Use a lightweight stub for purge actions if we didn't parse
+                module_stub = full_module_def or ModuleDef(file_path=file_path)
 
-                if action == ResolutionAction.PURGE_DOC:
-                    purges_by_file[file_path].append(fqn)
-                    continue
+                if action == ResolutionAction.RELINK:
+                    code_fp = computed_fingerprints.get(fqn)
+                    if code_fp:
+                        self.lock_session.record_relink(module_stub, fqn, code_fp)
 
-                suri = self.uri_generator.generate_symbol_uri(ws_rel_path, fqn)
-                if suri in lock_data:
-                    fp = lock_data[suri]
-                    current_fp = computed_fingerprints.get(fqn, Fingerprint())
-                    current_code_hash = current_fp.get("current_code_structure_hash")
+                elif action in [
+                    ResolutionAction.RECONCILE,
+                    ResolutionAction.HYDRATE_OVERWRITE,
+                    ResolutionAction.HYDRATE_KEEP_EXISTING, # In check, this is a reconcile
+                ]:
+                    self.lock_session.record_fresh_state(
+                        module_stub,
+                        fqn,
+                        doc_ir=current_doc_irs.get(fqn),
+                        code_fingerprint=computed_fingerprints.get(fqn),
+                    )
 
-                    if action == ResolutionAction.RELINK:
-                        if current_code_hash:
-                            fp["baseline_code_structure_hash"] = str(current_code_hash)
-                    elif action == ResolutionAction.RECONCILE:
-                        if current_code_hash:
-                            fp["baseline_code_structure_hash"] = str(current_code_hash)
-                        if fqn in current_yaml_map:
-                            fp["baseline_yaml_content_hash"] = str(
-                                current_yaml_map[fqn]
-                            )
+                elif action == ResolutionAction.PURGE_DOC:
+                    fqns_to_purge_from_doc.append(fqn)
+                    self.lock_session.record_purge(module_stub, fqn)
 
-        # 3. Save Lock Files
-        for pkg_root, lock_data in updates_by_pkg.items():
-            self.lock_manager.save(pkg_root, lock_data)
+            # --- Sidecar Doc File Updates (Transactional) ---
+            if fqns_to_purge_from_doc:
+                # Create a stub ModuleDef to pass to the doc manager
+                module_def_stub = ModuleDef(file_path=file_path)
+                docs = self.doc_manager.load_docs_for_module(module_def_stub)
+                original_len = len(docs)
 
-        # 4. Apply doc purges (Sidecar operations)
-        for file_path, fqns_to_purge in purges_by_file.items():
-            module_def = ModuleDef(file_path=file_path)
-            docs = self.doc_manager.load_docs_for_module(module_def)
-            original_len = len(docs)
+                for fqn in fqns_to_purge_from_doc:
+                    if fqn in docs:
+                        del docs[fqn]
 
-            for fqn in fqns_to_purge:
-                if fqn in docs:
-                    del docs[fqn]
-
-            if len(docs) < original_len:
-                doc_path = (self.root_path / file_path).with_suffix(".stitcher.yaml")
-                if not docs:
-                    if doc_path.exists():
-                        doc_path.unlink()
-                else:
-                    final_data = {
-                        k: self.doc_manager.serialize_ir(v) for k, v in docs.items()
-                    }
-                    content = self.doc_manager.dump_data(final_data)
-                    doc_path.write_text(content, encoding="utf-8")
-
-        # Apply doc purges
-        for file_path, fqns_to_purge in purges_by_file.items():
-            module_def = ModuleDef(file_path=file_path)
-            docs = self.doc_manager.load_docs_for_module(module_def)
-            original_len = len(docs)
-
-            for fqn in fqns_to_purge:
-                if fqn in docs:
-                    del docs[fqn]
-
-            if len(docs) < original_len:
-                doc_path = (self.root_path / file_path).with_suffix(".stitcher.yaml")
-                if not docs:
-                    if doc_path.exists():
-                        doc_path.unlink()
-                else:
-                    final_data = {
-                        k: self.doc_manager.serialize_ir(v) for k, v in docs.items()
-                    }
-                    content = self.doc_manager.dump_data(final_data)
-                    doc_path.write_text(content, encoding="utf-8")
+                if len(docs) < original_len:
+                    doc_path = abs_path.with_suffix(".stitcher.yaml")
+                    rel_doc_path = doc_path.relative_to(self.root_path)
+                    if not docs:
+                        if doc_path.exists():
+                            tm.add_delete_file(str(rel_doc_path))
+                    else:
+                        final_data = {
+                            k: self.doc_manager.serialize_ir_for_view(v)
+                            for k, v in docs.items()
+                        }
+                        content = self.doc_manager.dump_data(final_data)
+                        tm.add_write(str(rel_doc_path), content)
 
     def reformat_all(self, modules: List[ModuleDef]):
         bus.info(L.check.run.reformatting)

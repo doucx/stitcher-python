@@ -121,6 +121,7 @@ class StitcherApp:
             self.uri_generator,
             interaction_handler,
             self.fingerprint_strategy,
+            self.lock_session,
         )
         check_reporter = CheckReporter()
         self.check_runner = CheckRunner(
@@ -246,6 +247,8 @@ class StitcherApp:
 
         configs, _ = self._load_configs()
         all_results: List[FileCheckResult] = []
+        # Create a single transaction for the entire check run
+        tm = TransactionManager(self.root_path)
 
         # We wrap the entire multi-target check process in a single DB session
         with self.db_manager.session():
@@ -293,12 +296,16 @@ class StitcherApp:
 
                 # 7. Resolve interactive/manual conflicts
                 if not self.check_runner.resolve_conflicts(
-                    batch_results, batch_conflicts, force_relink, reconcile
+                    batch_results, batch_conflicts, tm, force_relink, reconcile
                 ):
                     return False
 
             # --- Phase B: Architecture Check (Global) ---
             arch_violations = self.architecture_engine.analyze(self.index_store)
+
+        # 8. Commit Lock and Doc changes
+        self.lock_session.commit_to_transaction(tm)
+        tm.commit()
 
         # 9. Final Report
         report_success = self.check_runner.report(all_results, arch_violations)

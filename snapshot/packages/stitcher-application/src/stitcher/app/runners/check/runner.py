@@ -128,11 +128,12 @@ class CheckRunner:
         self,
         results: List[AnalysisFileCheckResult],
         conflicts: List[InteractionContext],
+        tm: "TransactionManager",
         force_relink: bool = False,
         reconcile: bool = False,
     ) -> bool:
         return self.resolver.resolve_conflicts(
-            results, conflicts, force_relink, reconcile
+            results, conflicts, tm, force_relink, reconcile
         )
 
     def reformat_all(self, modules: List[ModuleDef]):
