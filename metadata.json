@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "Capture: M pyproject.toml, M uv.lock", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768471721.4480927, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] refactor: 将 FeedbackBus 从 stitcher-common 迁移至 stitcher-bus", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768471723.9506044, "duration_ms": 0}}
