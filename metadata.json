@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[WIP] refactor: 迁移消息总线相关的测试文件", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768472119.69181, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[COMMIT] refactor: 迁移 FeedbackBus 及其测试至独立的 stitcher-bus 包", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768472153.4677007, "duration_ms": 0}}
