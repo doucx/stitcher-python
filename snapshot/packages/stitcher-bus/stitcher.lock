@@ -51,6 +51,18 @@
       "baseline_code_structure_hash": "651c2c0ba80fe486d970ac50dcb73eed32e7f6693bcda46f1444cb5564847723",
       "baseline_yaml_content_hash": "4b0537d3ebde829e79b41e10fee688cdda6d5b6b337863a8e659e7a8b4465cb6"
     },
+    "py://packages/stitcher-bus/src/stitcher/bus/factory.py#_detect_lang": {
+      "baseline_code_signature_text": "def _detect_lang() -> str:",
+      "baseline_code_structure_hash": "29d68989a36b5b512bdf941a43b9c622f7519b84013b58f5caa0735eb7219220"
+    },
+    "py://packages/stitcher-bus/src/stitcher/bus/factory.py#get_current_renderer": {
+      "baseline_code_signature_text": "def get_current_renderer() -> OverlayOperator:",
+      "baseline_code_structure_hash": "28a0e399d8cdbf153ce3f23f754d24686ed9a00f302833703e079fe0a4e2fd5a"
+    },
+    "py://packages/stitcher-bus/src/stitcher/bus/factory.py#stitcher_operator": {
+      "baseline_code_signature_text": "def stitcher_operator(key):",
+      "baseline_code_structure_hash": "c2101eaed3099b1b4efdf16190b79f922dada8a3ba21572db182e6cb87ccb9c0"
+    },
     "py://packages/stitcher-bus/src/stitcher/bus/protocols.py#Renderer": {
       "baseline_code_signature_text": "class Renderer(Protocol):",
       "baseline_code_structure_hash": "8342694db8d308b36ba5d1ecf2dc07bba1460712ac3a9a9438c5abba24852b3d",
