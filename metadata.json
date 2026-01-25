@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "Capture: M circular_dependency.py", "type": "capture", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1768725758.3296585, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[WIP] chore: 将 stitcher 依赖从本地 pyneedle 切换为 PyPI 版本", "type": "plan", "generator": {"id": "manual", "tool": "pyquipu-cli"}, "env": {"quipu": "0.1.0", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1769360341.6417408, "duration_ms": 0}}
