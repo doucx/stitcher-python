@@ -1,4 +1,4 @@
-from stitcher.bus import bus
+from stitcher.common.bus import bus
 from needle.pointer import L
 from stitcher.index.db import DatabaseManager
 from stitcher.index.indexer import FileIndexer

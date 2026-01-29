@@ -1,7 +1,7 @@
 from typing import List
 from collections import defaultdict
 
-from stitcher.bus import bus
+from stitcher.common.bus import bus
 from needle.pointer import L
 from stitcher.analysis.schema import FileCheckResult
 

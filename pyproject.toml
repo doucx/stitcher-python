@@ -17,7 +17,6 @@ dependencies = [
     "stitcher-lang-python",
     "stitcher-lang-sidecar",
     "stitcher-analysis",
-    "stitcher-bus",
 ]
 
 [project.optional-dependencies]
@@ -41,7 +40,6 @@ dev = [
     "stitcher-lang-python",
     "stitcher-lang-sidecar",
     "stitcher-analysis",
-    "stitcher-bus",
 ]
 
 [tool.setuptools.packages.find]
@@ -68,7 +66,6 @@ stitcher-workspace = { workspace = true }
 stitcher-lang-python = { workspace = true }
 stitcher-lang-sidecar = { workspace = true }
 stitcher-analysis = { workspace = true }
-stitcher-bus = { workspace = true }
 
 [tool.pytest.ini_options]
 addopts = "-ra --cov=stitcher --cov-report=term-missing"
@@ -86,7 +83,6 @@ pythonpath = [
     "packages/stitcher-test-utils/src",
     "packages/stitcher-lang-python/src",
     "packages/stitcher-analysis/src",
-    "packages/stitcher-bus/src",
 ]
 
 [tool.stitcher.targets.stitcher]
@@ -103,7 +99,6 @@ scan_paths = [
     "packages/stitcher-test-utils/src",
     "packages/stitcher-lang-python/src",
     "packages/stitcher-analysis/src",
-    "packages/stitcher-bus/src",
 ]
 stub_package = "packages/stitcher-stubs"
 
@@ -122,5 +117,4 @@ extraPaths = [
     "packages/stitcher-workspace/src",
     "packages/stitcher-lang-python/src",
     "packages/stitcher-analysis/src",
-    "packages/stitcher-bus/src",
 ]
