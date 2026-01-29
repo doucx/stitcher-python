@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[FIX] refactor(tests): 修正 SpyBus 中的总线引用路径", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "unknown", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1769704566.4744766, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[FIX] refactor(cli): 适配 Renderer 协议以支持 kwargs 透传", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "unknown", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1769704731.8514488, "duration_ms": 0}}

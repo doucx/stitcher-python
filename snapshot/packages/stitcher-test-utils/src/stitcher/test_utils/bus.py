@@ -15,7 +15,7 @@ class SpyRenderer(Renderer):
     def __init__(self):
         self.messages: List[Dict[str, Any]] = []
 
-    def render(self, message: str, level: str) -> None:
+    def render(self, message: str, level: str, **kwargs: Any) -> None:
         # The spy logic mostly acts on record(), but satisfy interface
         pass
 
