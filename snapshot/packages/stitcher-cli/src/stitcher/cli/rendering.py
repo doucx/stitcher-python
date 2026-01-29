@@ -1,5 +1,5 @@
 import typer
-from stitcher.bus.protocols import Renderer
+from needle.spec import RendererProtocol as Renderer
 from enum import Enum
 
 
