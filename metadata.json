@@ -1,1 +1,1 @@
-{"meta_version": "1.0", "summary": "[FIX] refactor(cli): 适配 Renderer 协议以支持 kwargs 透传", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "unknown", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1769704731.8514488, "duration_ms": 0}}
+{"meta_version": "1.0", "summary": "[COMMIT] refactor(bus): 迁移 stitcher-bus 到 pyneedle-bus", "type": "plan", "generator": {"id": "manual", "tool": "quipu-cli"}, "env": {"quipu": "unknown", "python": "3.13.5", "os": "linux"}, "exec": {"start": 1769704837.5586371, "duration_ms": 0}}
