@@ -731,7 +731,7 @@ dependencies = [
 requires-dist = [
     { name = "griffe" },
     { name = "networkx" },
-    { name = "pyneedle-pointer", specifier = "==0.1.0" },
+    { name = "pyneedle-pointer", specifier = "~=0.1.0" },
     { name = "stitcher-common", editable = "packages/stitcher-common" },
     { name = "stitcher-index", editable = "packages/stitcher-index" },
     { name = "stitcher-spec", editable = "packages/stitcher-spec" },
@@ -756,7 +756,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pyneedle", specifier = "==0.1.0" },
+    { name = "pyneedle", specifier = "~=0.1.0" },
     { name = "stitcher-analysis", editable = "packages/stitcher-analysis" },
     { name = "stitcher-common", editable = "packages/stitcher-common" },
     { name = "stitcher-index", editable = "packages/stitcher-index" },
@@ -778,8 +778,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pyneedle-pointer", specifier = "==0.1.0" },
-    { name = "pyneedle-spec", specifier = "==0.1.0" },
+    { name = "pyneedle-pointer", specifier = "~=0.1.0" },
+    { name = "pyneedle-spec", specifier = "~=0.1.0" },
 ]
 
 [[package]]
@@ -796,7 +796,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pyneedle", specifier = "==0.1.0" },
+    { name = "pyneedle", specifier = "~=0.1.0" },
     { name = "stitcher-application", editable = "packages/stitcher-application" },
     { name = "stitcher-lang-python", editable = "packages/stitcher-lang-python" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
@@ -915,12 +915,12 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "mypy", marker = "extra == 'dev'" },
-    { name = "pyneedle", specifier = "==0.1.0" },
-    { name = "pyneedle", marker = "extra == 'dev'", specifier = "==0.1.0" },
-    { name = "pyneedle-pointer", specifier = "==0.1.0" },
-    { name = "pyneedle-pointer", marker = "extra == 'dev'", specifier = "==0.1.0" },
-    { name = "pyneedle-spec", specifier = "==0.1.0" },
-    { name = "pyneedle-spec", marker = "extra == 'dev'", specifier = "==0.1.0" },
+    { name = "pyneedle", specifier = "~=0.1.0" },
+    { name = "pyneedle", marker = "extra == 'dev'", specifier = "~=0.1.0" },
+    { name = "pyneedle-pointer", specifier = "~=0.1.0" },
+    { name = "pyneedle-pointer", marker = "extra == 'dev'", specifier = "~=0.1.0" },
+    { name = "pyneedle-spec", specifier = "~=0.1.0" },
+    { name = "pyneedle-spec", marker = "extra == 'dev'", specifier = "~=0.1.0" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "pytest-mock", marker = "extra == 'dev'" },
@@ -989,7 +989,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pyneedle-pointer", specifier = "==0.1.0" }]
+requires-dist = [{ name = "pyneedle-pointer", specifier = "~=0.1.0" }]
 
 [[package]]
 name = "stitcher-stubgen"
@@ -1026,7 +1026,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pyneedle", specifier = "==0.1.0" },
+    { name = "pyneedle", specifier = "~=0.1.0" },
     { name = "pyyaml" },
     { name = "stitcher-application", editable = "packages/stitcher-application" },
     { name = "stitcher-common", editable = "packages/stitcher-common" },
