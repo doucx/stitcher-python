@@ -16,3 +16,4 @@ packages = ["src/stitcher"]
 include = ["/src/stitcher/common/assets"]
 
 [tool.uv.sources]
+pyneedle-bus = { path = "../../../Needle/packages/pyneedle-bus", editable = true }

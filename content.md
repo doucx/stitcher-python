@@ -1,141 +1,100 @@
-好的，现在我们开始在 `stitcher-common` 中建立新的总线入口。这将作为整个 Stitcher 系统与 `pyneedle-bus` 之间的桥梁，并负责加载我们刚刚搬迁的资产。
+你的分析非常准确。在多项目协作的开发阶段，`uv` 需要明确的 `sources` 配置来将外部项目（`Needle`）的包映射到本地路径。
 
-## [WIP] feat(common): 建立基于 pyneedle-bus 的总线入口
+根据 `ADAP v1.0` 协议，我们需要消除这种“环境不确定性”。我将修改根目录和 `stitcher-common` 的配置文件，将 `pyneedle-*` 系列包指向你的 `Needle` 仓库。
+
+## [WIP] chore(env): 配置 uv 外部源码映射以支持 pyneedle-bus
 
 ### 用户需求
-在 `stitcher-common` 中创建一个新的总线入口模块，集成 `pyneedle-bus` 并自动加载 Stitcher 的 I18n 资源，从而取代原有的 `stitcher-bus` 包。
+配置 `uv` 的源码映射（Sources），使 `Stitcher` 项目能够正确加载位于 `../Needle` 目录下的 `pyneedle-bus` 及其依赖项。
 
 ### 评论
-通过在 `stitcher-common` 内部建立入口，我们可以实现“无痛替换”：业务代码只需要微调 import 路径，而不需要感知底层 `FeedbackBus` 实现的彻底改变。同时，利用 `MessageStore` 的 `register_asset_root` 机制，我们完美解决了资产加载路径随包位置变化的问题。
+由于 `pyneedle-bus` 尚未发布到公共仓库，且其本身依赖于 `Needle` 项目内的其他子包（`spec`, `pointer`, `runtime`），我们必须在 `uv` 配置中建立一条完整的“本地路径链”。
 
 ### 目标
-1.  修改 `stitcher-common` 的依赖，用 `pyneedle-bus` 替换 `stitcher-bus`。
-2.  创建 `packages/stitcher-common/src/stitcher/common/bus.py`，实现资产自动注册逻辑。
-3.  更新 `stitcher-common` 的导出接口，确保 `bus` 可以被全局访问。
+1.  在根目录 `pyproject.toml` 中添加 `pyneedle-bus`、`pyneedle-runtime`、`pyneedle-pointer` 和 `pyneedle-spec` 的路径映射。
+2.  在 `packages/stitcher-common/pyproject.toml` 中同步添加 `pyneedle-bus` 的源码映射。
 
 ### 基本原理
-我们在 `bus.py` 中利用 Python 的 `__file__` 属性定位当前包内的 `assets` 文件夹，并调用 `message_store.register_asset_root`。这确保了无论 Stitcher 被安装在哪里，总线都能准确找到其翻译模板。我们导出的 `bus` 实例将直接来自 `pyneedle-bus`，从而开启了未来使用 `EventBus` 和 `LogBridge` 的可能性。
+`uv` 的 `[tool.uv.sources]` 块允许我们将依赖项重定向到本地相对路径。
+*   从根目录出发，路径为 `../Needle/packages/pyneedle-*`。
+*   从 `packages/stitcher-common` 出发，路径为 `../../../Needle/packages/pyneedle-*`。
+
+我们将配置所有 4 个核心包，以确保 `uv` 在解析 `pyneedle-bus` 的依赖树时不会去查询远程仓库。
 
 ### 标签
-#intent/build #flow/ready #priority/high 
-#comp/common #concept/config #scope/api
+#intent/tooling #flow/ready #priority/high 
+#comp/build #scope/dx
 #ai/instruct
-#task/domain/bus #task/object/entrypoint #task/action/build #task/state/continue
+#task/domain/environment #task/object/uv-sources #task/action/configure #task/state/continue
 
 ---
 
 ### Script
 
-#### Acts 1: 更新 `stitcher-common` 的依赖项
+#### Acts 1: 配置根目录的源码映射
 
-我们将移除对 `stitcher-bus` 的依赖，并添加 `pyneedle-bus`。
+我们将这些外部依赖注册到工作区根目录。
+
+~~~~~act
+patch_file
+pyproject.toml
+~~~~~
+~~~~~toml.old
+[tool.uv.sources]
+stitcher-spec = { workspace = true }
+stitcher-common = { workspace = true }
+stitcher-application = { workspace = true }
+stitcher-cli = { workspace = true }
+stitcher-stubgen = { workspace = true }
+stitcher-test-utils = { workspace = true }
+stitcher-refactor = { workspace = true }
+stitcher-index = { workspace = true }
+stitcher-workspace = { workspace = true }
+stitcher-lang-python = { workspace = true }
+stitcher-lang-sidecar = { workspace = true }
+stitcher-analysis = { workspace = true }
+stitcher-bus = { workspace = true }
+~~~~~
+~~~~~toml.new
+[tool.uv.sources]
+stitcher-spec = { workspace = true }
+stitcher-common = { workspace = true }
+stitcher-application = { workspace = true }
+stitcher-cli = { workspace = true }
+stitcher-stubgen = { workspace = true }
+stitcher-test-utils = { workspace = true }
+stitcher-refactor = { workspace = true }
+stitcher-index = { workspace = true }
+stitcher-workspace = { workspace = true }
+stitcher-lang-python = { workspace = true }
+stitcher-lang-sidecar = { workspace = true }
+stitcher-analysis = { workspace = true }
+stitcher-bus = { workspace = true }
+
+# External Needle dependencies
+pyneedle-bus = { path = "../Needle/packages/pyneedle-bus", editable = true }
+pyneedle-runtime = { path = "../Needle/packages/pyneedle-runtime", editable = true }
+pyneedle-pointer = { path = "../Needle/packages/pyneedle-pointer", editable = true }
+pyneedle-spec = { path = "../Needle/packages/pyneedle-spec", editable = true }
+~~~~~
+
+#### Acts 2: 配置 `stitcher-common` 的源码映射
+
+为了确保包级别的独立解析也能成功，我们在 `stitcher-common` 中也添加对应的映射。
 
 ~~~~~act
 patch_file
 packages/stitcher-common/pyproject.toml
 ~~~~~
 ~~~~~toml.old
-[project]
-name = "stitcher-common"
-version = "0.1.0"
-description = "Common utilities and protocols for Stitcher."
-requires-python = ">=3.10"
-dependencies = [
-    "stitcher-bus",
-]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/stitcher"]
-include = ["/src/stitcher/common/assets"]
-
 [tool.uv.sources]
-stitcher-bus = { workspace = true }
 ~~~~~
 ~~~~~toml.new
-[project]
-name = "stitcher-common"
-version = "0.1.0"
-description = "Common utilities and protocols for Stitcher."
-requires-python = ">=3.10"
-dependencies = [
-    "pyneedle-bus ~= 0.1.0",
-]
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/stitcher"]
-include = ["/src/stitcher/common/assets"]
-
 [tool.uv.sources]
-~~~~~
-
-#### Acts 2: 创建新的总线桥接模块
-
-该模块负责将 `pyneedle-bus` 的单例与 Stitcher 的本地资产绑定。
-
-~~~~~act
-write_file
-packages/stitcher-common/src/stitcher/common/bus.py
-~~~~~
-~~~~~python
-from pathlib import Path
-from needle.bus import bus, message_store
-
-# 1. 定位资产根目录 (在此前的 Acts 中已搬迁至此)
-# assets 文件夹直接包含 needle/ 子目录
-_assets_root = Path(__file__).parent / "assets"
-
-# 2. 注册资产路径到 MessageStore
-# 这允许 FeedbackBus 能够找到 L.check.file.fail 等指针对应的翻译模板
-if _assets_root.exists():
-    message_store.register_asset_root(_assets_root)
-
-# 3. 导出全局单例，供下游业务使用
-# 这里的 bus 实际上是 pyneedle.bus.feedback.FeedbackBus 的实例
-__all__ = ["bus"]
-~~~~~
-
-#### Acts 3: 更新包的导出声明
-
-更新 `__init__.py`，使开发者可以通过 `stitcher.common.bus` 访问总线。
-
-~~~~~act
-patch_file
-packages/stitcher-common/src/stitcher/common/__init__.py
-~~~~~
-~~~~~python.old
-__path__ = __import__("pkgutil").extend_path(__path__, __name__)
-
-from .formatting import format_docstring, parse_docstring
-from stitcher.spec.persistence import DocumentAdapter
-
-# Note: The global 'bus' has been moved to stitcher.bus.
-# Please use 'from stitcher.bus import bus' instead.
-
-__all__ = [
-    "format_docstring",
-    "parse_docstring",
-    "DocumentAdapter",
-]
-~~~~~
-~~~~~python.new
-__path__ = __import__("pkgutil").extend_path(__path__, __name__)
-
-from .formatting import format_docstring, parse_docstring
-from stitcher.spec.persistence import DocumentAdapter
-from .bus import bus
-
-# Note: The global 'bus' is now powered by pyneedle-bus.
-# It is recommended to use 'from stitcher.common.bus import bus'.
-
-__all__ = [
-    "format_docstring",
-    "parse_docstring",
-    "DocumentAdapter",
-    "bus",
-]
+pyneedle-bus = { path = "../../../Needle/packages/pyneedle-bus", editable = true }
 ~~~~~
 
 ### 下一步建议
-现在新的总线架构已在 `stitcher-common` 中就绪。下一步我们将进入最耗时的步骤：**全局清理与替换**。我们需要遍历所有引用了 `stitcher.bus` 的文件（如 `CheckReporter`, `PumpExecutor`, `StitcherApp` 等），将它们的 import 路径重定向到 `stitcher.common.bus`。
+配置完成后，请再次尝试运行 `uv run pytest packages --prerelease=allow`。如果依赖解析成功，我们将继续执行 **全局清理与替换**，将代码中所有对旧 `bus` 的引用重定向到新入口。
 
-完成后，我们就可以安全地删除 `packages/stitcher-bus` 目录并验证功能是否依然正常。如果你准备好了，我可以开始生成全局替换的计划。
+*注意：如果报错提示找不到其他 `pyneedle-*` 包，我们可能还需要在 `stitcher-common` 的 sources 中补齐它们，但通常 workspace 根目录的配置足以覆盖。*

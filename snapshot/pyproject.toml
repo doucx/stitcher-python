@@ -70,6 +70,12 @@ stitcher-lang-sidecar = { workspace = true }
 stitcher-analysis = { workspace = true }
 stitcher-bus = { workspace = true }
 
+# External Needle dependencies
+pyneedle-bus = { path = "../Needle/packages/pyneedle-bus", editable = true }
+pyneedle-runtime = { path = "../Needle/packages/pyneedle-runtime", editable = true }
+pyneedle-pointer = { path = "../Needle/packages/pyneedle-pointer", editable = true }
+pyneedle-spec = { path = "../Needle/packages/pyneedle-spec", editable = true }
+
 [tool.pytest.ini_options]
 addopts = "-ra --cov=stitcher --cov-report=term-missing"
 testpaths = ["tests", "packages"]
