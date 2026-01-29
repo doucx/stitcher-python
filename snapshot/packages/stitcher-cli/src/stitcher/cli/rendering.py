@@ -1,6 +1,7 @@
 import typer
 from needle.spec import RendererProtocol as Renderer
 from enum import Enum
+from typing import Any
 
 
 class LogLevel(str, Enum):
@@ -19,8 +20,6 @@ LEVEL_MAP = {
     "error": 40,
 }
 
-
-from typing import Any
 
 class CliRenderer(Renderer):
     def __init__(self, loglevel: LogLevel = LogLevel.INFO):

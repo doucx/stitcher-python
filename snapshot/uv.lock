@@ -478,7 +478,7 @@ wheels = [
 
 [[package]]
 name = "pyneedle-bus"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "../Needle/packages/pyneedle-bus" }
 dependencies = [
     { name = "pyneedle-pointer" },
