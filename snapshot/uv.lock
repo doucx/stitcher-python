@@ -478,38 +478,52 @@ wheels = [
 ]
 
 [[package]]
+name = "pyneedle-bus"
+version = "0.1.0"
+source = { editable = "../Needle/packages/pyneedle-bus" }
+dependencies = [
+    { name = "pyneedle-pointer" },
+    { name = "pyneedle-runtime" },
+    { name = "pyneedle-spec" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyneedle-pointer", editable = "../Needle/packages/pyneedle-pointer" },
+    { name = "pyneedle-runtime", editable = "../Needle/packages/pyneedle-runtime" },
+    { name = "pyneedle-spec", editable = "../Needle/packages/pyneedle-spec" },
+]
+
+[[package]]
 name = "pyneedle-pointer"
 version = "0.1.0"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+source = { editable = "../Needle/packages/pyneedle-pointer" }
 dependencies = [
     { name = "pyneedle-spec" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/d2/2a/b1ae41af6e2c75b346974f8fea5bae0204b0e3414bfa29e49be97ddbe075/pyneedle_pointer-0.1.0.tar.gz", hash = "sha256:759b51da66609c866919962466ba3cee452534af0dcfb4fadb5dca083f2469dd" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/92/47/862e57fadde8431a74a8006be11e338cd4110cc0327f4b688865846cc23c/pyneedle_pointer-0.1.0-py3-none-any.whl", hash = "sha256:bca060b66e279fdd8a35cebbd552bd0a938fcb114540d96c44222131a4020d54" },
-]
+
+[package.metadata]
+requires-dist = [{ name = "pyneedle-spec", editable = "../Needle/packages/pyneedle-spec" }]
 
 [[package]]
 name = "pyneedle-runtime"
 version = "0.1.0"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
+source = { editable = "../Needle/packages/pyneedle-runtime" }
 dependencies = [
     { name = "pyneedle-pointer" },
     { name = "pyneedle-spec" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/1e/1a/ecef7e3e8ed7581eb63f40b03b03955a1fa4e6b56f9aec92f4729fc11504/pyneedle_runtime-0.1.0.tar.gz", hash = "sha256:d9ee20545e8ce31768319e040473def9182a6cc847dab3fa01ba6f7c334343da" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/64/17/450c19c0a0cebe575b7574335a5e05fd68e9fbcfa1a677773331f7d66976/pyneedle_runtime-0.1.0-py3-none-any.whl", hash = "sha256:d31f43cb176dabfe70ea5eba0051fcd465db61947377ea043276e659d3e858a2" },
+
+[package.metadata]
+requires-dist = [
+    { name = "pyneedle-pointer", editable = "../Needle/packages/pyneedle-pointer" },
+    { name = "pyneedle-spec", editable = "../Needle/packages/pyneedle-spec" },
 ]
 
 [[package]]
 name = "pyneedle-spec"
 version = "0.1.0"
-source = { registry = "https://mirrors.aliyun.com/pypi/simple/" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/dc/27/2abf68cb12be531b422940607b0ccdce48c10249c33bcd9795c493206755/pyneedle_spec-0.1.0.tar.gz", hash = "sha256:c293b5a713ae14ff0664d2a8d66b8a8caac46aa80340c16179a90ae423f3aca3" }
-wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/ad/6b/7bbb1971e74073d127764b01c90d6486262deb404f66e258a3ffb92f9ef6/pyneedle_spec-0.1.0-py3-none-any.whl", hash = "sha256:c20c6ea2d2c23bb2467ad7bdb13e7259cdc910383bca99cb6397c5e29b18fd12" },
-]
+source = { editable = "../Needle/packages/pyneedle-spec" }
 
 [[package]]
 name = "pytest"
@@ -731,7 +745,7 @@ dependencies = [
 requires-dist = [
     { name = "griffe" },
     { name = "networkx" },
-    { name = "pyneedle-pointer", specifier = "~=0.1.0" },
+    { name = "pyneedle-pointer", editable = "../Needle/packages/pyneedle-pointer" },
     { name = "stitcher-common", editable = "packages/stitcher-common" },
     { name = "stitcher-index", editable = "packages/stitcher-index" },
     { name = "stitcher-spec", editable = "packages/stitcher-spec" },
@@ -778,8 +792,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pyneedle-pointer", specifier = "~=0.1.0" },
-    { name = "pyneedle-spec", specifier = "~=0.1.0" },
+    { name = "pyneedle-pointer", editable = "../Needle/packages/pyneedle-pointer" },
+    { name = "pyneedle-spec", editable = "../Needle/packages/pyneedle-spec" },
 ]
 
 [[package]]
@@ -808,11 +822,11 @@ name = "stitcher-common"
 version = "0.1.0"
 source = { editable = "packages/stitcher-common" }
 dependencies = [
-    { name = "stitcher-bus" },
+    { name = "pyneedle-bus" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "stitcher-bus", editable = "packages/stitcher-bus" }]
+requires-dist = [{ name = "pyneedle-bus", editable = "../Needle/packages/pyneedle-bus" }]
 
 [[package]]
 name = "stitcher-index"
@@ -917,10 +931,10 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'" },
     { name = "pyneedle", specifier = "~=0.1.0" },
     { name = "pyneedle", marker = "extra == 'dev'", specifier = "~=0.1.0" },
-    { name = "pyneedle-pointer", specifier = "~=0.1.0" },
-    { name = "pyneedle-pointer", marker = "extra == 'dev'", specifier = "~=0.1.0" },
-    { name = "pyneedle-spec", specifier = "~=0.1.0" },
-    { name = "pyneedle-spec", marker = "extra == 'dev'", specifier = "~=0.1.0" },
+    { name = "pyneedle-pointer", editable = "../Needle/packages/pyneedle-pointer" },
+    { name = "pyneedle-pointer", marker = "extra == 'dev'", editable = "../Needle/packages/pyneedle-pointer" },
+    { name = "pyneedle-spec", editable = "../Needle/packages/pyneedle-spec" },
+    { name = "pyneedle-spec", marker = "extra == 'dev'", editable = "../Needle/packages/pyneedle-spec" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "pytest-mock", marker = "extra == 'dev'" },
@@ -989,7 +1003,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pyneedle-pointer", specifier = "~=0.1.0" }]
+requires-dist = [{ name = "pyneedle-pointer", editable = "../Needle/packages/pyneedle-pointer" }]
 
 [[package]]
 name = "stitcher-stubgen"
