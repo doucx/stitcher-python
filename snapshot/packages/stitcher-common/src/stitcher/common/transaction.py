@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Union, Protocol, Optional
 
-from stitcher.bus import bus
+from stitcher.common.bus import bus
 from needle.pointer import L
 
 

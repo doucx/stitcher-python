@@ -1,6 +1,7 @@
 import typer
-from stitcher.bus.protocols import Renderer
+from needle.spec import RendererProtocol as Renderer
 from enum import Enum
+from typing import Any
 
 
 class LogLevel(str, Enum):
@@ -24,7 +25,7 @@ class CliRenderer(Renderer):
     def __init__(self, loglevel: LogLevel = LogLevel.INFO):
         self.loglevel_value = LEVEL_MAP[loglevel.value]
 
-    def render(self, message: str, level: str):
+    def render(self, message: str, level: str, **kwargs: Any):
         if LEVEL_MAP.get(level, 0) < self.loglevel_value:
             return
 

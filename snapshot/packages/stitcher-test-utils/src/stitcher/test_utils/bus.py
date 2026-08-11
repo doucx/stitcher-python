@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, Union
 
 # Import the actual singleton to patch it in-place
 import stitcher.common
-from stitcher.bus.protocols import Renderer
+from needle.spec import RendererProtocol as Renderer
 from needle.pointer import SemanticPointer
 
 # This creates a dependency, but it's a necessary and deliberate one for a test utility
@@ -15,7 +15,7 @@ class SpyRenderer(Renderer):
     def __init__(self):
         self.messages: List[Dict[str, Any]] = []
 
-    def render(self, message: str, level: str) -> None:
+    def render(self, message: str, level: str, **kwargs: Any) -> None:
         # The spy logic mostly acts on record(), but satisfy interface
         pass
 
@@ -28,11 +28,11 @@ class SpyBus:
         self._spy_renderer = SpyRenderer()
 
     @contextmanager
-    def patch(self, monkeypatch: Any, target: str = "stitcher.bus.bus"):
-        real_bus = stitcher.bus.bus
+    def patch(self, monkeypatch: Any, target: str = "stitcher.common.bus"):
+        real_bus = stitcher.common.bus
 
-        def intercept_render(
-            level: str, msg_id: Union[str, SemanticPointer], **kwargs: Any
+        def intercept_present(
+            ptr: Union[str, SemanticPointer], level: str = "info", **kwargs: Any
         ) -> None:
             # This is the critical change. We now simulate the filtering logic
             # of the CliRenderer before deciding to record the message.
@@ -41,7 +41,6 @@ class SpyBus:
                 return
 
             # Get the loglevel value from the actual renderer instance
-            # Assumes the renderer has a 'loglevel_value' attribute.
             loglevel_value = getattr(renderer, "loglevel_value", 0)
 
             # Perform the filtering
@@ -49,14 +48,13 @@ class SpyBus:
                 return
 
             # If the message passes the filter, record it.
-            if isinstance(msg_id, SemanticPointer):
-                self._spy_renderer.record(level, msg_id, kwargs)
+            if isinstance(ptr, SemanticPointer):
+                self._spy_renderer.record(level, ptr, kwargs)
 
-        # We still patch _render, but now our patch is context-aware.
-        monkeypatch.setattr(real_bus, "_render", intercept_render)
+        # In pyneedle-bus, the entry point is 'present' instead of '_render'
+        monkeypatch.setattr(real_bus, "present", intercept_present)
 
-        # It's good practice to also set our spy renderer, though the logic
-        # now primarily relies on intercepting _render.
+        # Ensure our spy renderer is set
         monkeypatch.setattr(real_bus, "_renderer", self._spy_renderer)
 
         yield self
